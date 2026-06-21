@@ -1,0 +1,29 @@
+version: '3.9'
+
+services:
+  vigzone-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - ENV=production
+      - PORT=8000
+      - LOG_LEVEL=INFO
+      - CORS_ORIGINS=*
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_MODEL=${GROQ_MODEL:-llama-3.3-70b-versatile}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    networks:
+      - vigzone-net
+
+networks:
+  vigzone-net:
+    driver: bridge

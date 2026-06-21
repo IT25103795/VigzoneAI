@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" role="img" aria-label="Vigzone AI">
+  <defs>
+    <linearGradient id="vz-bg" x1="5" y1="3" x2="27" y2="29" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ff6b4a"/>
+      <stop offset="1" stop-color="#ff9a62"/>
+    </linearGradient>
+    <linearGradient id="vz-teal" x1="18" y1="6" x2="30" y2="22" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6ef0dc"/>
+      <stop offset="1" stop-color="#2fb8a1"/>
+    </linearGradient>
+    <radialGradient id="vz-glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(16 11.2) scale(5)">
+      <stop stop-color="#ffffff" stop-opacity=".45"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="32" height="32" rx="9" fill="url(#vz-bg)"/>
+  <ellipse cx="10.5" cy="8.5" rx="7.5" ry="4.5" fill="#ffffff" opacity=".14"/>
+  <path d="M21.5 9.2a10.8 10.8 0 0 1 2.2 6.1" stroke="url(#vz-teal)" stroke-width="1.7" stroke-linecap="round" opacity=".95"/>
+  <path d="M19.8 7.1a13.6 13.6 0 0 1 3.4 9.3" stroke="url(#vz-teal)" stroke-width="1.25" stroke-linecap="round" opacity=".58"/>
+  <path d="M18.1 5.2a16.2 16.2 0 0 1 4.6 12.2" stroke="url(#vz-teal)" stroke-width=".95" stroke-linecap="round" opacity=".32"/>
+  <path d="M9.4 11.8 16 22.8 22.6 11.8" stroke="#120a08" stroke-width="3.1" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M10.8 12.4 16 20.8 21.2 12.4" stroke="#ffffff" stroke-width="1.05" stroke-linecap="round" stroke-linejoin="round" opacity=".26"/>
+  <circle cx="16" cy="11.2" r="3.1" fill="url(#vz-glow)"/>
+  <circle cx="16" cy="11.2" r="2.35" fill="url(#vz-teal)"/>
+  <circle cx="16" cy="11.2" r="1" fill="#0a0d14" opacity=".28"/>
+</svg>
