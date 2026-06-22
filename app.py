@@ -13,8 +13,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi import Cookie, Depends, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -46,6 +46,8 @@ from stream_manager import (
     pause_stream,
     resume_stream,
 )
+import auth as authmod
+import secrets as _secrets
 
 # ==========================================
 # LOGGING SETUP
@@ -79,6 +81,11 @@ def _cleanup_knowledge_base() -> None:
     removed = prune_kb()
     if removed:
         logger.info("Pruned %d corrupted knowledge-base entries on startup", removed)
+
+
+@app.on_event("startup")
+def _init_auth_db() -> None:
+    authmod.init_db()
 
 # ==========================================
 # UPLOAD CONFIG
@@ -119,6 +126,46 @@ class ModelInfoResponse(BaseModel):
     status: str
 
 
+class SignupRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=200)
+    password: str = Field(..., min_length=8, max_length=200)
+    name: str = Field(default="", max_length=100)
+
+
+class LoginRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=200)
+    password: str = Field(..., min_length=1, max_length=200)
+
+
+def get_current_user(
+    vigzone_session: Optional[str] = Cookie(default=None),
+) -> Optional[dict]:
+    """Best-effort lookup — returns the signed-in user dict, or None."""
+    return authmod.get_user_by_session(vigzone_session)
+
+
+def require_current_user(
+    vigzone_session: Optional[str] = Cookie(default=None),
+) -> dict:
+    """Like get_current_user, but raises 401 if no one is signed in.
+    Used to protect the actual AI endpoints (chat, upload, image gen)."""
+    user = authmod.get_user_by_session(vigzone_session)
+    if not user:
+        raise HTTPException(status_code=401, detail="Please sign in to continue.")
+    return user
+
+
+def _set_session_cookie(response: JSONResponse, token: str) -> None:
+    response.set_cookie(
+        key=authmod.SESSION_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        max_age=authmod.SESSION_TTL_DAYS * 24 * 60 * 60,
+        path="/",
+    )
+
+
 # ==========================================
 # API ENDPOINTS
 # ==========================================
@@ -143,8 +190,101 @@ async def get_model_info():
     )
 
 
+# ==========================================
+# AUTH ENDPOINTS
+# ==========================================
+@app.post("/api/auth/signup", tags=["Auth"])
+async def signup(req: SignupRequest):
+    try:
+        user = authmod.create_user_with_password(req.email, req.password, req.name)
+    except authmod.AuthError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    token = authmod.create_session(user["id"])
+    response = JSONResponse({"user": user})
+    _set_session_cookie(response, token)
+    return response
+
+
+@app.post("/api/auth/login", tags=["Auth"])
+async def login(req: LoginRequest):
+    try:
+        user = authmod.verify_password_login(req.email, req.password)
+    except authmod.AuthError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+    token = authmod.create_session(user["id"])
+    response = JSONResponse({"user": user})
+    _set_session_cookie(response, token)
+    return response
+
+
+@app.post("/api/auth/logout", tags=["Auth"])
+async def logout(vigzone_session: Optional[str] = Cookie(default=None)):
+    authmod.delete_session(vigzone_session)
+    response = JSONResponse({"status": "signed_out"})
+    response.delete_cookie(authmod.SESSION_COOKIE_NAME, path="/")
+    return response
+
+
+@app.get("/api/auth/me", tags=["Auth"])
+async def me(user: Optional[dict] = Depends(get_current_user)):
+    if not user:
+        raise HTTPException(status_code=401, detail="Not signed in.")
+    return JSONResponse({"user": user})
+
+
+@app.get("/api/auth/google/login", tags=["Auth"])
+async def google_login():
+    if not authmod.google_is_configured():
+        return RedirectResponse(url="/?error=google_not_configured")
+
+    state = _secrets.token_urlsafe(16)
+    auth_url = authmod.google_build_auth_url(state)
+    response = RedirectResponse(url=auth_url)
+    response.set_cookie(
+        key="vigzone_oauth_state",
+        value=state,
+        httponly=True,
+        samesite="lax",
+        max_age=600,
+        path="/",
+    )
+    return response
+
+
+@app.get("/api/auth/google/callback", tags=["Auth"])
+async def google_callback(
+    request: Request,
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None,
+    vigzone_oauth_state: Optional[str] = Cookie(default=None),
+):
+    if error:
+        return RedirectResponse(url="/?error=google_cancelled")
+    if not code or not state or not vigzone_oauth_state or state != vigzone_oauth_state:
+        return RedirectResponse(url="/?error=google_failed")
+
+    try:
+        profile = await authmod.google_exchange_code(code)
+        if not profile.get("google_id") or not profile.get("email"):
+            return RedirectResponse(url="/?error=google_failed")
+        user = authmod.get_or_create_google_user(
+            profile["google_id"], profile["email"], profile["name"]
+        )
+    except authmod.AuthError:
+        return RedirectResponse(url="/?error=google_failed")
+
+    token = authmod.create_session(user["id"])
+    response = RedirectResponse(url="/chat")
+    _set_session_cookie(response, token)
+    response.delete_cookie("vigzone_oauth_state", path="/")
+    return response
+
+
 @app.post("/api/upload", tags=["Chat"])
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(file: UploadFile = File(...), user: dict = Depends(require_current_user)):
     """
     Accept one image or document, return it ready to attach to a chat message.
 
@@ -204,7 +344,7 @@ async def upload_file(file: UploadFile = File(...)):
 
 
 @app.post("/api/chat", tags=["Chat"])
-async def chat(request: ChatRequest):
+async def chat(request: ChatRequest, user: dict = Depends(require_current_user)):
     """
     Stream a chat response as Server-Sent Events.
 
@@ -289,7 +429,7 @@ async def chat(request: ChatRequest):
 
 
 @app.post("/api/chat/sync", tags=["Chat"])
-async def chat_sync(request: ChatRequest):
+async def chat_sync(request: ChatRequest, user: dict = Depends(require_current_user)):
     """Non-streaming variant — returns the full reply in one JSON response."""
     if not await is_configured():
         raise HTTPException(
@@ -335,7 +475,7 @@ class EditImageRequest(BaseModel):
 
 
 @app.post("/api/generate-image", tags=["Image"])
-async def api_generate_image(req: ImageRequest):
+async def api_generate_image(req: ImageRequest, user: dict = Depends(require_current_user)):
     """Generate an image from a text prompt using the configured provider.
 
     Defaults to the free, keyless Pollinations provider (no setup required).
@@ -356,7 +496,7 @@ async def api_generate_image(req: ImageRequest):
 
 
 @app.post("/api/edit-image", tags=["Image"])
-async def api_edit_image(req: EditImageRequest):
+async def api_edit_image(req: EditImageRequest, user: dict = Depends(require_current_user)):
     """Apply a described change to an uploaded photo.
 
     Requires OPENAI_API_KEY to be set (no free/keyless provider can edit a
@@ -405,8 +545,19 @@ async def resume_stream_endpoint(req: StreamControlRequest):
 
 
 @app.get("/", tags=["Web"])
-async def root():
-    """Serve the main chat interface"""
+async def root(vigzone_session: Optional[str] = Cookie(default=None)):
+    """Serve the landing/sign-in screen. If already signed in, skip
+    straight to the chat interface."""
+    if authmod.get_user_by_session(vigzone_session):
+        return RedirectResponse(url="/chat")
+    return FileResponse("static/landing.html", media_type="text/html")
+
+
+@app.get("/chat", tags=["Web"])
+async def chat_page(vigzone_session: Optional[str] = Cookie(default=None)):
+    """Serve the main chat interface — only to signed-in users."""
+    if not authmod.get_user_by_session(vigzone_session):
+        return RedirectResponse(url="/")
     return FileResponse("static/index.html", media_type="text/html")
 
 

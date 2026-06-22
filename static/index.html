@@ -895,7 +895,7 @@
           <div class="sidebar-user-dot" id="sidebarUserDot">?</div>
           <span class="sidebar-user-name" id="sidebarUserName">Add your name</span>
         </div>
-        <button class="edit-name-btn" id="editNameBtn">Edit</button>
+        <button class="edit-name-btn" id="signOutBtn">Sign out</button>
       </div>
       <div class="sidebar-footer-row">
         <span class="history-label" style="padding:0;margin:0;">Appearance</span>
@@ -937,7 +937,6 @@
       <div class="empty-state" id="emptyState">
         <div class="empty-mark"><img src="/static/icons/vigzone-icon.svg" alt="" width="56" height="56" /></div>
         <h1><span class="greeting-mark">✱</span><span id="greetingText">Welcome to Vigzone AI</span></h1>
-        <button class="greeting-name-btn" id="greetingNameBtn">Add your name</button>
         <p>Vigzone AI is a real conversational assistant — ask it to explain something, debug code, draft a message, think through a decision, or attach an image or document for it to look at.</p>
         <div class="suggestions">
           <div class="suggestion" data-prompt="Explain how recursion works using a simple example, then show me a tricky edge case.">
@@ -1020,8 +1019,7 @@
   const sidebarOverlay = $('#sidebarOverlay');
   const sidebarToggleBtn = $('#sidebarToggleBtn');
   const historyList = $('#historyList');
-  const editNameBtn = $('#editNameBtn');
-  let greetingNameBtn = $('#greetingNameBtn');
+  const signOutBtn = $('#signOutBtn');
   const sidebarUserName = $('#sidebarUserName');
   const sidebarUserDot = $('#sidebarUserDot');
   let greetingText = $('#greetingText');
@@ -1030,7 +1028,6 @@
     <div class="empty-state" id="emptyState">
       <div class="empty-mark"><img src="/static/icons/vigzone-icon.svg" alt="" width="56" height="56" /></div>
       <h1><span class="greeting-mark">\u2731</span><span id="greetingText">Welcome to Vigzone AI</span></h1>
-      <button class="greeting-name-btn" id="greetingNameBtn">Add your name</button>
       <p>Vigzone AI is a real conversational assistant — ask it to explain something, debug code, draft a message, think through a decision, or attach an image or document for it to look at.</p>
       <div class="suggestions">
         <div class="suggestion" data-prompt="Explain how recursion works using a simple example, then show me a tricky edge case.">
@@ -1060,9 +1057,7 @@
     chatInner.innerHTML = EMPTY_STATE_HTML;
     emptyState = document.getElementById('emptyState');
     greetingText = document.getElementById('greetingText');
-    greetingNameBtn = document.getElementById('greetingNameBtn');
     updateGreeting();
-    greetingNameBtn.addEventListener('click', askName);
   }
 
   // ---------- Multi-conversation store (chat history, like a typical AI chat app) ----------
@@ -1131,7 +1126,7 @@
   let messages = (store.activeId && store.conversations[store.activeId])
           ? store.conversations[store.activeId].messages
           : [];
-  let userName = (localStorage.getItem(NAME_KEY) || '').trim();
+  let userName = '';
   let streaming = false;
   let currentStreamId = null;
   let isPaused = false;
@@ -1491,35 +1486,46 @@
   sidebarToggleBtn.addEventListener('click', () => setSidebarCollapsed(!sidebar.classList.contains('collapsed')));
   sidebarOverlay.addEventListener('click', () => setSidebarCollapsed(true));
 
-  // ---------- Personalized greeting (name is stored locally, no account needed) ----------
+  // ---------- Personalized greeting (name comes from the signed-in account) ----------
   const GREETINGS = ['Back at it,', 'Welcome back,', 'Good to see you,', 'Hey there,'];
 
   function updateGreeting(){
     if (userName) {
       const g = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
       greetingText.textContent = `${g} ${userName}`;
-      greetingNameBtn.textContent = 'Edit name';
       sidebarUserName.textContent = userName;
       sidebarUserDot.textContent = userName.trim().charAt(0).toUpperCase() || '?';
     } else {
       greetingText.textContent = 'Welcome to Vigzone AI';
-      greetingNameBtn.textContent = 'Add your name';
-      sidebarUserName.textContent = 'Add your name';
+      sidebarUserName.textContent = 'Signed in';
       sidebarUserDot.textContent = '?';
     }
   }
 
-  function askName(){
-    const val = window.prompt('What should I call you?', userName || '');
-    if (val === null) return;
-    userName = val.trim();
-    if (userName) localStorage.setItem(NAME_KEY, userName);
-    else localStorage.removeItem(NAME_KEY);
-    updateGreeting();
+  async function loadAccount(){
+    try {
+      const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
+      if (!res.ok) {
+        // Session expired or missing — back to the sign-in screen.
+        window.location.href = '/';
+        return;
+      }
+      const data = await res.json();
+      userName = (data.user && data.user.name) || (data.user && data.user.email) || '';
+      updateGreeting();
+    } catch {
+      // Network hiccup — leave the UI as-is rather than bouncing the user.
+    }
   }
 
-  editNameBtn.addEventListener('click', askName);
-  greetingNameBtn.addEventListener('click', askName);
+  async function signOut(){
+    try {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+    } catch {}
+    window.location.href = '/';
+  }
+
+  signOutBtn.addEventListener('click', signOut);
 
   function autoResize(){
     input.style.height = 'auto';
@@ -2099,6 +2105,7 @@
 
   renderAll();
   checkHealth();
+  loadAccount();
   autoResize();
 </script>
 </body>
