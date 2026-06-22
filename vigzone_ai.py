@@ -6,24 +6,29 @@ Conversational AI backend powered by a locally-running Ollama server
 Runs entirely on your own machine — no API key, no internet connection
 needed once models are pulled.
 
-It exposes a single async generator, `stream_chat`, that streams response
-tokens as they arrive, plus a non-streaming convenience wrapper for callers
-that just want the final string.
+Performance notes (v2):
+- A single shared httpx.AsyncClient is reused across all requests instead
+  of opening a new connection per call. This eliminates TCP + TLS handshake
+  overhead on every message.
+- is_configured() result is cached for 10 seconds so the 3+ calls per
+  request cycle (health, model-info, chat gate) only hit the network once.
+- Degeneration checks run every 40 new tokens during streaming instead of
+  every single token.
+- max_tokens reduced to 800 (enough for conversational replies) — Ollama
+  won't stop generating until it hits this or a natural stop, so a ceiling
+  of 2048 forced it to slow-generate far more than needed.
 
 Setup (one-time):
     ollama pull llama3.2       # text chat model
     ollama pull llava          # vision model, for image uploads
-    ollama serve                # if not already running as a background service
-
-Models are selected via OLLAMA_MODEL / OLLAMA_VISION_MODEL in .env, and must
-already be pulled locally (`ollama list` to check, `ollama pull <name>` to
-fetch) — Ollama returns 404 for any model name it hasn't downloaded.
+    ollama serve               # if not already running as a background service
 """
 
 import json
 import logging
 import os
 import asyncio
+import time
 from typing import AsyncGenerator, Optional
 
 import httpx
@@ -35,14 +40,8 @@ logger = logging.getLogger(__name__)
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
 OLLAMA_API_URL = f"{OLLAMA_BASE_URL}/v1/chat/completions"
 DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
-
-# Used automatically whenever a message contains an image, regardless of
-# which text model the caller requested — llama3.2 (and most non-vision
-# Ollama models) can't see images, but a vision-tagged model like llava can.
 VISION_MODEL = os.getenv("OLLAMA_VISION_MODEL", "llava")
 
-# The persona/system prompt that makes "Vigzone AI" feel like an actual
-# product rather than a bare LLM passthrough.
 SYSTEM_PROMPT = """You are Vigzone AI, a general-purpose AI assistant built to genuinely help \
 people solve real problems: answering questions, explaining concepts clearly, helping with \
 code, writing, planning, and everyday decisions.
@@ -94,8 +93,48 @@ class VigzoneAIError(Exception):
     """Raised when the chat backend fails (Ollama unreachable, model not pulled, API error)."""
 
 
+# ── Shared HTTP client ───────────────────────────────────────────────────────
+# One persistent client reused across all requests — eliminates the TCP
+# connection setup cost that was paid on every single chat message before.
+_http_client: Optional[httpx.AsyncClient] = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=5.0, read=120.0, write=30.0, pool=5.0),
+            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+        )
+    return _http_client
+
+
+# ── is_configured cache ──────────────────────────────────────────────────────
+# is_configured() is called 3+ times per chat request (health check,
+# model-info, chat gate). Caching for 10 s means only the first call in
+# any request burst hits the network.
+_configured_cache: Optional[bool] = None
+_configured_cache_ts: float = 0.0
+_CONFIGURED_CACHE_TTL = 10.0  # seconds
+
+
+async def is_configured() -> bool:
+    global _configured_cache, _configured_cache_ts
+    now = time.monotonic()
+    if _configured_cache is not None and (now - _configured_cache_ts) < _CONFIGURED_CACHE_TTL:
+        return _configured_cache
+    try:
+        client = _get_client()
+        resp = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
+        result = resp.status_code == 200
+    except httpx.RequestError:
+        result = False
+    _configured_cache = result
+    _configured_cache_ts = now
+    return result
+
+
 def _contains_image(messages: list[dict]) -> bool:
-    """True if any message's content includes an image_url part."""
     for m in messages:
         content = m.get("content")
         if isinstance(content, list):
@@ -106,17 +145,11 @@ def _contains_image(messages: list[dict]) -> bool:
 
 
 def _build_payload(messages: list[dict], model: str, stream: bool) -> dict:
-    # Most local text models aren't multimodal — if there's an image in the
-    # conversation, force the vision model regardless of what was requested.
     effective_model = VISION_MODEL if _contains_image(messages) else model
-    # Try to retrieve a small set of relevant past interactions (local memory)
-    # and include them as an extra system message so the model can learn from
-    # previous examples. This is a lightweight retrieval-augmented approach
-    # (not online fine-tuning) that stores user/assistant exchanges locally.
+
     last_user = None
     for m in reversed(messages):
         if m.get("role") == "user":
-            # messages may contain structured content; prefer string
             last_user = m.get("content") if isinstance(m.get("content"), str) else None
             break
 
@@ -135,14 +168,17 @@ def _build_payload(messages: list[dict], model: str, stream: bool) -> dict:
         ]
     else:
         full_messages = [{"role": "system", "content": SYSTEM_PROMPT}, *messages]
+
     return {
         "model": effective_model,
         "messages": full_messages,
         "stream": stream,
         "temperature": 0.7,
-        "max_tokens": 2048,
-        # Discourage the model from getting stuck repeating the same
-        # word/phrase — the main driver of runaway "infinite" replies.
+        # 800 tokens is plenty for conversational replies and significantly
+        # faster than the previous 2048 ceiling — Ollama generates tokens
+        # until it hits max_tokens or a natural stop, so a high ceiling just
+        # means slow over-generation for simple answers.
+        "max_tokens": 800,
         "frequency_penalty": 0.6,
         "presence_penalty": 0.4,
     }
@@ -153,84 +189,83 @@ async def stream_chat(
     model: str = DEFAULT_MODEL,
     stream_id: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
-    """
-    Stream a chat completion token-by-token from a local Ollama server.
-
-    `messages` is a list of {"role": "user"|"assistant", "content": str},
-    representing the conversation so far (the system prompt is added
-    automatically — callers should not include one).
-
-    Yields plain text chunks as they arrive.
-    """
+    """Stream a chat completion token-by-token from a local Ollama server."""
     payload = _build_payload(messages, model, stream=True)
     headers = {"Content-Type": "application/json"}
+    client = _get_client()
 
     try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            async with client.stream("POST", OLLAMA_API_URL, json=payload, headers=headers) as resp:
-                if resp.status_code == 404:
-                    body = await resp.aread()
-                    raise VigzoneAIError(
-                        f"Model \"{payload['model']}\" isn't pulled in Ollama yet. Run "
-                        f"`ollama pull {payload['model']}` in a terminal, then try again. "
-                        f"(Raw error: {body.decode(errors='ignore')[:200]})"
-                    )
-                if resp.status_code != 200:
-                    body = await resp.aread()
-                    raise VigzoneAIError(
-                        f"Ollama API error {resp.status_code}: {body.decode(errors='ignore')[:300]}"
-                    )
+        async with client.stream("POST", OLLAMA_API_URL, json=payload, headers=headers) as resp:
+            if resp.status_code == 404:
+                body = await resp.aread()
+                raise VigzoneAIError(
+                    f"Model \"{payload['model']}\" isn't pulled in Ollama yet. Run "
+                    f"`ollama pull {payload['model']}` in a terminal, then try again. "
+                    f"(Raw error: {body.decode(errors='ignore')[:200]})"
+                )
+            if resp.status_code != 200:
+                body = await resp.aread()
+                raise VigzoneAIError(
+                    f"Ollama API error {resp.status_code}: {body.decode(errors='ignore')[:300]}"
+                )
 
-                full_text = ""
-                yielded_len = 0
-                async for line in resp.aiter_lines():
-                    if stream_id:
+            full_text = ""
+            yielded_len = 0
+            tokens_since_check = 0  # degeneration check throttle counter
+
+            async for line in resp.aiter_lines():
+                if stream_id:
+                    if stream_manager.is_cancelled(stream_id):
+                        break
+                    while stream_manager.is_paused(stream_id):
                         if stream_manager.is_cancelled(stream_id):
                             break
-                        while stream_manager.is_paused(stream_id):
-                            if stream_manager.is_cancelled(stream_id):
-                                break
-                            await asyncio.sleep(0.1)
-                    
-                    if stream_id and stream_manager.is_cancelled(stream_id):
-                        break
+                        await asyncio.sleep(0.1)
 
-                    if not line or not line.startswith("data: "):
-                        continue
-                    data = line[len("data: "):]
-                    if data.strip() == "[DONE]":
+                if stream_id and stream_manager.is_cancelled(stream_id):
+                    break
+
+                if not line or not line.startswith("data: "):
+                    continue
+                data = line[len("data: "):]
+                if data.strip() == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+
+                delta = chunk.get("choices", [{}])[0].get("delta", {})
+                content = delta.get("content")
+                if not content:
+                    continue
+
+                full_text += content
+                tokens_since_check += 1
+
+                # Throttle degeneration checks: only run every 40 new tokens
+                # instead of every single one — saves hundreds of O(n) scans
+                # per reply with no perceptible difference in catch latency.
+                if tokens_since_check >= 40:
+                    tokens_since_check = 0
+                    clean = trim_degeneration_tail(full_text)
+                    if len(clean) < len(full_text.rstrip()):
+                        if len(clean) > yielded_len:
+                            yield clean[yielded_len:]
+                        logger.warning("Trimmed echo loop from streamed reply.")
                         break
-                    try:
-                        chunk = json.loads(data)
-                    except json.JSONDecodeError:
-                        continue
-                    delta = chunk.get("choices", [{}])[0].get("delta", {})
-                    content = delta.get("content")
-                    if content:
-                        full_text += content
+                    if len(full_text) > 200 and is_degenerate_text(full_text):
                         clean = trim_degeneration_tail(full_text)
+                        if len(clean) > yielded_len:
+                            yield clean[yielded_len:]
+                        else:
+                            yield "\n\n_(Stopped early — I started repeating myself. Mind rephrasing?)_"
+                        break
 
-                        if len(clean) < len(full_text.rstrip()):
-                            if len(clean) > yielded_len:
-                                yield clean[yielded_len:]
-                            logger.warning(
-                                "Trimmed echo loop from streamed reply before it reached the user."
-                            )
-                            break
+                if len(full_text) > yielded_len:
+                    yield full_text[yielded_len:]
+                    yielded_len = len(full_text)
 
-                        if len(full_text) > 200 and is_degenerate_text(full_text):
-                            if len(clean) > yielded_len:
-                                yield clean[yielded_len:]
-                            else:
-                                logger.warning(
-                                    "Detected a repetition loop mid-stream — stopping early."
-                                )
-                                yield "\n\n_(Stopped early — I started repeating myself. Mind rephrasing the question?)_"
-                            break
-
-                        if len(full_text) > yielded_len:
-                            yield full_text[yielded_len:]
-                            yielded_len = len(full_text)
     except httpx.RequestError as e:
         raise VigzoneAIError(
             f"Could not reach Ollama at {OLLAMA_BASE_URL}. Make sure Ollama is running "
@@ -245,10 +280,10 @@ async def chat_once(
     """Non-streaming convenience wrapper. Returns the full reply as one string."""
     payload = _build_payload(messages, model, stream=False)
     headers = {"Content-Type": "application/json"}
+    client = _get_client()
 
     try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(OLLAMA_API_URL, json=payload, headers=headers)
+        resp = await client.post(OLLAMA_API_URL, json=payload, headers=headers)
     except httpx.RequestError as e:
         raise VigzoneAIError(
             f"Could not reach Ollama at {OLLAMA_BASE_URL}. Make sure Ollama is running "
@@ -270,23 +305,6 @@ async def chat_once(
         logger.warning("Trimmed echo loop from non-streaming completion.")
         return clean
     if is_degenerate_text(reply):
-        logger.warning("Detected a repetition loop in a non-streaming completion — trimming it.")
         reply = clean or reply[: max(0, len(reply) // 3)].rstrip()
         reply += "\n\n_(Cut short — I started repeating myself. Mind rephrasing the question?)_"
     return reply
-
-
-async def is_configured() -> bool:
-    """Check whether Ollama is actually reachable right now.
-
-    Unlike a hosted API, there's no "key" to check for a local server —
-    the only meaningful definition of "configured" is "is Ollama running
-    and responding". Pings Ollama's lightweight /api/tags endpoint rather
-    than sending a real chat request.
-    """
-    try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            resp = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
-            return resp.status_code == 200
-    except httpx.RequestError:
-        return False
