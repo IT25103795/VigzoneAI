@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#090a0f" id="themeColorMeta" />
+<title>Vigzone AI — Sign in</title>
+<link rel="icon" href="/static/icons/favicon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="/static/icons/vigzone-icon.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+  (function () {
+    var key = 'vigzone_theme';
+    var saved = localStorage.getItem(key);
+    var theme = (saved === 'light' || saved === 'dark')
+            ? saved
+            : (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+    document.documentElement.setAttribute('data-theme', theme);
+  })();
+</script>
+<style>
+  :root,
+  [data-theme="dark"]{
+    color-scheme: dark;
+    --bg: #090a0f;
+    --bg-mid: #12141c;
+    --surface: #161922;
+    --surface-2: #1e222d;
+    --surface-elevated: #222733;
+    --border: #ffffff0f;
+    --border-subtle: #ffffff08;
+    --text: #eceef4;
+    --text-muted: #8f96a8;
+    --accent: #ff6b4a;
+    --accent-hover: #ff7e5c;
+    --accent-dim: #ff6b4a1f;
+    --accent-2: #3fd9c0;
+    --accent-2-hover: #33c2aa;
+    --danger: #ff5c6c;
+    --danger-soft-bg: #ff5c6c18;
+    --danger-soft-border: #ff5c6c40;
+    --danger-soft-text: #ffc4cb;
+    --on-accent: #0a0d14;
+    --hover-border: #ffffff1a;
+    --bg-glow-1: #ff6b4a22;
+    --bg-glow-2: #3fd9c018;
+    --card-shadow: #000000a0;
+    --google-bg: #ffffff;
+    --google-text: #1f1f1f;
+    --google-border: #00000000;
+  }
+  [data-theme="light"]{
+    color-scheme: light;
+    --bg: #f3f5fb;
+    --bg-mid: #f3f5fb;
+    --surface: #ffffff;
+    --surface-2: #eef1f8;
+    --surface-elevated: #ffffff;
+    --border: #d5dbe8;
+    --border-subtle: #e3e8f2;
+    --text: #151b28;
+    --text-muted: #5f687c;
+    --accent: #ff6b4a;
+    --accent-hover: #ff5a36;
+    --accent-dim: #ff6b4a1a;
+    --accent-2: #1aab94;
+    --accent-2-hover: #159980;
+    --danger: #e84a5a;
+    --danger-soft-bg: #e84a5a14;
+    --danger-soft-border: #e84a5a40;
+    --danger-soft-text: #9f2333;
+    --on-accent: #ffffff;
+    --hover-border: #b8c2d6;
+    --bg-glow-1: #ff6b4a1f;
+    --bg-glow-2: #1aab9418;
+    --card-shadow: #151b2826;
+    --google-bg: #ffffff;
+    --google-text: #1f1f1f;
+    --google-border: #d5dbe8;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:'Inter',system-ui,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    min-height:100vh;
+    overflow-x:hidden;
+  }
+  h1,h2,.brand-name,.feature-title{font-family:'Sora',system-ui,sans-serif;}
+
+  .bg-glow{
+    position:fixed; inset:0; z-index:0; pointer-events:none;
+    background:
+      radial-gradient(700px 500px at 12% -8%, var(--bg-glow-1), transparent 60%),
+      radial-gradient(800px 600px at 110% 15%, var(--bg-glow-2), transparent 60%);
+  }
+
+  .page{
+    position:relative; z-index:1;
+    max-width:1180px; margin:0 auto;
+    padding:28px 28px 60px;
+    min-height:100vh;
+    display:flex; flex-direction:column;
+  }
+
+  /* ---------- top bar ---------- */
+  .topbar{display:flex; align-items:center; justify-content:space-between; gap:16px;}
+  .brand{display:flex; align-items:center; gap:10px;}
+  .brand-mark{width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:9px;background:var(--surface-2);}
+  .brand-name{font-size:17px;font-weight:700;letter-spacing:-0.01em;}
+  .theme-btn{
+    width:36px;height:36px;border-radius:10px;border:1px solid var(--border);
+    background:var(--surface); color:var(--text-muted);
+    display:flex;align-items:center;justify-content:center; cursor:pointer;
+  }
+  .theme-btn:hover{color:var(--text); border-color:var(--hover-border);}
+  .theme-btn svg{width:16px;height:16px;}
+  .theme-btn .icon-sun{display:none;}
+  .theme-btn .icon-moon{display:block;}
+  [data-theme="light"] .theme-btn .icon-sun{display:block;}
+  [data-theme="light"] .theme-btn .icon-moon{display:none;}
+
+  /* ---------- hero + grid layout ---------- */
+  .layout{
+    flex:1; display:grid; grid-template-columns:1.05fr 0.95fr; gap:56px;
+    align-items:center; margin-top:48px;
+  }
+
+  .hero-eyebrow{
+    display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:600;
+    color:var(--accent-2); text-transform:uppercase; letter-spacing:0.06em;
+    background:var(--accent-dim); padding:6px 12px; border-radius:999px; margin-bottom:18px;
+  }
+  .hero h1{
+    font-size:42px; line-height:1.12; font-weight:800; letter-spacing:-0.02em; margin:0 0 16px;
+  }
+  .hero h1 span{color:var(--accent);}
+  .hero p.lede{
+    font-size:16.5px; line-height:1.6; color:var(--text-muted); margin:0 0 36px; max-width:480px;
+  }
+
+  .features{display:flex; flex-direction:column; gap:14px;}
+  .feature{
+    display:flex; gap:14px; align-items:flex-start;
+    padding:16px 18px; border-radius:14px; background:var(--surface);
+    border:1px solid var(--border);
+  }
+  .feature-icon{
+    width:38px;height:38px;border-radius:10px;flex:0 0 auto;
+    display:flex;align-items:center;justify-content:center;
+    background:var(--accent-dim); color:var(--accent);
+  }
+  .feature-icon svg{width:18px;height:18px;}
+  .feature:nth-child(2) .feature-icon{background:#3fd9c01f; color:var(--accent-2);}
+  .feature:nth-child(3) .feature-icon{background:var(--accent-dim); color:var(--accent);}
+  .feature:nth-child(4) .feature-icon{background:#3fd9c01f; color:var(--accent-2);}
+  .feature-title{font-size:14.5px; font-weight:700; margin-bottom:3px;}
+  .feature-sub{font-size:13.5px; color:var(--text-muted); line-height:1.5;}
+
+  /* ---------- auth card ---------- */
+  .auth-card{
+    background:var(--surface); border:1px solid var(--border); border-radius:20px;
+    padding:32px; box-shadow:0 30px 60px -24px var(--card-shadow);
+  }
+  .auth-tabs{display:flex; gap:4px; background:var(--surface-2); border-radius:12px; padding:4px; margin-bottom:24px;}
+  .auth-tab{
+    flex:1; text-align:center; padding:9px 0; border-radius:9px; font-size:13.5px; font-weight:600;
+    color:var(--text-muted); cursor:pointer; border:none; background:transparent; font-family:inherit;
+  }
+  .auth-tab.active{background:var(--surface-elevated); color:var(--text); box-shadow:0 1px 0 var(--border);}
+
+  .auth-card h2{font-size:19px; margin:0 0 6px; font-weight:700;}
+  .auth-card .sub{font-size:13.5px; color:var(--text-muted); margin:0 0 22px;}
+
+  .field{margin-bottom:14px;}
+  .field label{display:block; font-size:12.5px; font-weight:600; color:var(--text-muted); margin-bottom:6px;}
+  .field input{
+    width:100%; padding:11px 13px; border-radius:10px; border:1px solid var(--border);
+    background:var(--surface-2); color:var(--text); font-size:14px; font-family:inherit; outline:none;
+  }
+  .field input:focus{border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-dim);}
+
+  .primary-btn{
+    width:100%; padding:12px 0; border-radius:10px; border:none; cursor:pointer;
+    background:var(--accent); color:var(--on-accent); font-weight:700; font-size:14.5px;
+    font-family:inherit; margin-top:6px; transition:background .15s ease;
+  }
+  .primary-btn:hover{background:var(--accent-hover);}
+  .primary-btn:disabled{opacity:.6; cursor:default;}
+
+  .divider{display:flex; align-items:center; gap:10px; margin:20px 0; color:var(--text-muted); font-size:12px;}
+  .divider::before,.divider::after{content:""; flex:1; height:1px; background:var(--border);}
+
+  .google-btn{
+    width:100%; display:flex; align-items:center; justify-content:center; gap:10px;
+    padding:11px 0; border-radius:10px; cursor:pointer; font-weight:600; font-size:14px;
+    background:var(--google-bg); color:var(--google-text); border:1px solid var(--google-border);
+    font-family:inherit;
+  }
+  .google-btn:hover{filter:brightness(0.97);}
+  .google-btn svg{width:18px;height:18px;}
+
+  .form-error{
+    display:none; font-size:13px; color:var(--danger-soft-text); background:var(--danger-soft-bg);
+    border:1px solid var(--danger-soft-border); border-radius:10px; padding:10px 12px; margin-bottom:14px;
+  }
+  .form-error.visible{display:block;}
+
+  .swap-note{font-size:13px; color:var(--text-muted); text-align:center; margin-top:18px;}
+  .swap-note button{background:none; border:none; color:var(--accent); font-weight:600; cursor:pointer; font-family:inherit; font-size:13px; padding:0;}
+
+  .form-panel{display:none;}
+  .form-panel.active{display:block;}
+
+  @media (max-width:880px){
+    .layout{grid-template-columns:1fr; gap:36px; margin-top:24px;}
+    .hero h1{font-size:32px;}
+    .page{padding:20px 18px 40px;}
+  }
+</style>
+</head>
+<body>
+
+<div class="bg-glow"></div>
+
+<div class="page">
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark"><img src="/static/icons/vigzone-icon.svg" alt="" width="22" height="22" /></div>
+      <div class="brand-name">Vigzone AI</div>
+    </div>
+    <button class="theme-btn" id="themeToggleBtn" aria-label="Toggle theme" title="Toggle theme">
+      <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+      <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><line x1="12" y1="2" x2="12" y2="5"></line><line x1="12" y1="19" x2="12" y2="22"></line><line x1="4.22" y1="4.22" x2="6.34" y2="6.34"></line><line x1="17.66" y1="17.66" x2="19.78" y2="19.78"></line><line x1="2" y1="12" x2="5" y2="12"></line><line x1="19" y1="12" x2="22" y2="12"></line><line x1="4.22" y1="19.78" x2="6.34" y2="17.66"></line><line x1="17.66" y1="6.34" x2="19.78" y2="4.22"></line></svg>
+    </button>
+  </div>
+
+  <div class="layout">
+    <div class="hero">
+      <div class="hero-eyebrow">✱ Personal AI assistant</div>
+      <h1>One assistant.<br/><span>Every kind of thinking.</span></h1>
+      <p class="lede">Vigzone AI chats, reads, sees, draws, and remembers — all running through one simple conversation. Sign in to pick up right where you left off.</p>
+
+      <div class="features">
+        <div class="feature">
+          <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><path d="M7 14l4-4 4 3 5-6"></path></svg></div>
+          <div>
+            <div class="feature-title">Identify your structure</div>
+            <div class="feature-sub">Drop in a document or codebase and Vigzone maps it out — what it does, what's missing, what's worth fixing.</div>
+          </div>
+        </div>
+        <div class="feature">
+          <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="M21 15l-5-5L5 21"></path></svg></div>
+          <div>
+            <div class="feature-title">Picture it</div>
+            <div class="feature-sub">Describe any image in plain words and watch Vigzone generate it for you, right inside the chat.</div>
+          </div>
+        </div>
+        <div class="feature">
+          <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3.5 2"></path></svg></div>
+          <div>
+            <div class="feature-title">See what you show it</div>
+            <div class="feature-sub">Attach a photo, screenshot, or scan — vision-enabled chat reads it the way you would.</div>
+          </div>
+        </div>
+        <div class="feature">
+          <div class="feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a5 5 0 0 0-5 5v2a5 5 0 0 0 0 10 5 5 0 0 0 5 3 5 5 0 0 0 5-3 5 5 0 0 0 0-10V7a5 5 0 0 0-5-5z"></path></svg></div>
+          <div>
+            <div class="feature-title">Remembers what matters</div>
+            <div class="feature-sub">Vigzone builds its own local knowledge from your conversations, so it gets sharper the more you use it.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="auth-card">
+      <div class="auth-tabs">
+        <button class="auth-tab active" id="tabLogin">Sign in</button>
+        <button class="auth-tab" id="tabSignup">Create account</button>
+      </div>
+
+      <div class="form-error" id="formError"></div>
+
+      <!-- LOGIN -->
+      <div class="form-panel active" id="panelLogin">
+        <h2>Welcome back</h2>
+        <p class="sub">Sign in to continue your conversation with Vigzone AI.</p>
+        <form id="loginForm">
+          <div class="field">
+            <label for="loginEmail">Email</label>
+            <input id="loginEmail" type="email" autocomplete="email" required />
+          </div>
+          <div class="field">
+            <label for="loginPassword">Password</label>
+            <input id="loginPassword" type="password" autocomplete="current-password" required />
+          </div>
+          <button class="primary-btn" type="submit" id="loginSubmitBtn">Sign in</button>
+        </form>
+        <div class="divider">or</div>
+        <button class="google-btn" id="googleBtnLogin">
+          <svg viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.1H42V20H24v8h11.3C33.6 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l5.7-5.7C34.6 6.1 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.9z"></path><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 16 19 13 24 13c3.1 0 5.8 1.1 8 3l5.7-5.7C34.6 7.1 29.6 5 24 5c-7.7 0-14.3 4.4-17.7 10.8z"></path><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.3C29.2 35.4 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.6 5.1C9.6 39.6 16.2 44 24 44z"></path><path fill="#1976D2" d="M43.6 20.1H42V20H24v8h11.3c-.8 2.4-2.4 4.5-4.4 5.9l6.2 5.3C40.9 35.9 44 30.7 44 24c0-1.3-.1-2.7-.4-3.9z"></path></svg>
+          Continue with Google
+        </button>
+      </div>
+
+      <!-- SIGNUP -->
+      <div class="form-panel" id="panelSignup">
+        <h2>Create your account</h2>
+        <p class="sub">It takes a few seconds — no credit card, nothing to install.</p>
+        <form id="signupForm">
+          <div class="field">
+            <label for="signupName">Name</label>
+            <input id="signupName" type="text" autocomplete="name" required />
+          </div>
+          <div class="field">
+            <label for="signupEmail">Email</label>
+            <input id="signupEmail" type="email" autocomplete="email" required />
+          </div>
+          <div class="field">
+            <label for="signupPassword">Password</label>
+            <input id="signupPassword" type="password" autocomplete="new-password" minlength="8" required />
+          </div>
+          <button class="primary-btn" type="submit" id="signupSubmitBtn">Create account</button>
+        </form>
+        <div class="divider">or</div>
+        <button class="google-btn" id="googleBtnSignup">
+          <svg viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.1H42V20H24v8h11.3C33.6 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l5.7-5.7C34.6 6.1 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.9z"></path><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 16 19 13 24 13c3.1 0 5.8 1.1 8 3l5.7-5.7C34.6 7.1 29.6 5 24 5c-7.7 0-14.3 4.4-17.7 10.8z"></path><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.3C29.2 35.4 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.6 5.1C9.6 39.6 16.2 44 24 44z"></path><path fill="#1976D2" d="M43.6 20.1H42V20H24v8h11.3c-.8 2.4-2.4 4.5-4.4 5.9l6.2 5.3C40.9 35.9 44 30.7 44 24c0-1.3-.1-2.7-.4-3.9z"></path></svg>
+          Continue with Google
+        </button>
+      </div>
+
+      <div class="swap-note" id="swapNoteLogin">New here? <button id="goToSignup">Create an account</button></div>
+      <div class="swap-note" id="swapNoteSignup" style="display:none;">Already have an account? <button id="goToLogin">Sign in</button></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const $ = (s) => document.querySelector(s);
+
+  // ---------- theme ----------
+  function applyTheme(t){
+    document.documentElement.setAttribute('data-theme', t);
+    $('#themeColorMeta').setAttribute('content', t === 'light' ? '#f3f5fb' : '#090a0f');
+  }
+  function getTheme(){ return document.documentElement.getAttribute('data-theme') || 'dark'; }
+  $('#themeToggleBtn').addEventListener('click', () => {
+    const next = getTheme() === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    localStorage.setItem('vigzone_theme', next);
+  });
+
+  // ---------- tabs ----------
+  const tabLogin = $('#tabLogin'), tabSignup = $('#tabSignup');
+  const panelLogin = $('#panelLogin'), panelSignup = $('#panelSignup');
+  const swapNoteLogin = $('#swapNoteLogin'), swapNoteSignup = $('#swapNoteSignup');
+  const formError = $('#formError');
+
+  function showLogin(){
+    tabLogin.classList.add('active'); tabSignup.classList.remove('active');
+    panelLogin.classList.add('active'); panelSignup.classList.remove('active');
+    swapNoteLogin.style.display = 'block'; swapNoteSignup.style.display = 'none';
+    hideError();
+  }
+  function showSignup(){
+    tabSignup.classList.add('active'); tabLogin.classList.remove('active');
+    panelSignup.classList.add('active'); panelLogin.classList.remove('active');
+    swapNoteSignup.style.display = 'block'; swapNoteLogin.style.display = 'none';
+    hideError();
+  }
+  tabLogin.addEventListener('click', showLogin);
+  tabSignup.addEventListener('click', showSignup);
+  $('#goToSignup').addEventListener('click', showSignup);
+  $('#goToLogin').addEventListener('click', showLogin);
+
+  function showError(msg){ formError.textContent = msg; formError.classList.add('visible'); }
+  function hideError(){ formError.classList.remove('visible'); }
+
+  // ---------- google error from redirect ----------
+  const params = new URLSearchParams(window.location.search);
+  const err = params.get('error');
+  if (err === 'google_not_configured') {
+    showError("Google sign-in isn't set up on this server yet — add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to the .env file. You can still sign in with email.");
+  } else if (err === 'google_cancelled') {
+    showError('Google sign-in was cancelled.');
+  } else if (err === 'google_failed') {
+    showError("Google sign-in didn't go through. Please try again.");
+  }
+
+  // ---------- forms ----------
+  async function postJSON(url, body){
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      credentials: 'same-origin',
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || data.error || 'Something went wrong.');
+    return data;
+  }
+
+  $('#loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    hideError();
+    const btn = $('#loginSubmitBtn');
+    btn.disabled = true; btn.textContent = 'Signing in…';
+    try {
+      await postJSON('/api/auth/login', {
+        email: $('#loginEmail').value.trim(),
+        password: $('#loginPassword').value,
+      });
+      window.location.href = '/chat';
+    } catch (err) {
+      showError(err.message);
+      btn.disabled = false; btn.textContent = 'Sign in';
+    }
+  });
+
+  $('#signupForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    hideError();
+    const btn = $('#signupSubmitBtn');
+    btn.disabled = true; btn.textContent = 'Creating account…';
+    try {
+      await postJSON('/api/auth/signup', {
+        name: $('#signupName').value.trim(),
+        email: $('#signupEmail').value.trim(),
+        password: $('#signupPassword').value,
+      });
+      window.location.href = '/chat';
+    } catch (err) {
+      showError(err.message);
+      btn.disabled = false; btn.textContent = 'Create account';
+    }
+  });
+
+  $('#googleBtnLogin').addEventListener('click', () => { window.location.href = '/api/auth/google/login'; });
+  $('#googleBtnSignup').addEventListener('click', () => { window.location.href = '/api/auth/google/login'; });
+</script>
+</body>
+</html>
