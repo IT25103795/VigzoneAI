@@ -501,7 +501,6 @@
       50%{box-shadow:0 0 0 6px transparent;}
     }
     .bubble{
-      max-width:min(640px, 78%);
       padding:12px 16px;
       border-radius:var(--radius);
       font-size:14.5px;
@@ -510,12 +509,15 @@
       word-wrap:break-word;
     }
     .msg.assistant .bubble{
+      flex:1;
+      max-width:100%;
       background:var(--bubble-assistant-bg);
       border:1px solid var(--border-subtle);
       border-top-left-radius:4px;
       backdrop-filter:blur(10px);
     }
     .msg.user .bubble{
+      max-width:min(640px, 78%);
       background:linear-gradient(135deg, var(--accent), var(--accent-hover));
       color:var(--on-accent-muted);
       border-top-right-radius:4px;
@@ -866,7 +868,7 @@
 
     @media (max-width:560px){
       .suggestions{grid-template-columns:1fr;}
-      .bubble{max-width:84%;}
+      .msg.user .bubble{max-width:84%;}
       header{padding:14px 16px;}
     }
   </style>
