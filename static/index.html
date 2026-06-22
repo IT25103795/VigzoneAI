@@ -186,6 +186,7 @@
       overflow:hidden;
       transition:width .18s ease;
       backdrop-filter:blur(14px);
+      box-shadow: 0 1px 3px -1px var(--composer-shadow);
     }
     .sidebar.collapsed{width:0;border-right:none;}
     .sidebar-inner{
@@ -211,9 +212,11 @@
       padding:10px 12px;
       cursor:pointer;
       transition:all .15s ease;
+      box-shadow: 0 1px 2px -1px var(--composer-shadow);
       margin-bottom:14px;
     }
-    .new-chat-btn:hover{border-color:var(--accent);background:var(--accent-dim);color:var(--new-chat-hover-text);}
+    .new-chat-btn:hover{border-color:var(--accent);background:var(--accent-dim);color:var(--new-chat-hover-text);box-shadow: 0 2px 4px -1px var(--composer-shadow);}
+    .new-chat-btn:active{box-shadow: 0 1px 1px -1px var(--composer-shadow);}
     .new-chat-btn svg{width:15px;height:15px;flex-shrink:0;}
     .history-label{
       font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
@@ -237,6 +240,7 @@
       transition:background .12s ease, color .12s ease;
     }
     .history-item:hover{background:var(--surface-2);color:var(--text);}
+    .history-item:focus{background:var(--surface-2);color:var(--text);outline:none;}
     .history-item.active{background:var(--accent-dim);color:var(--text);}
     .history-title{
       flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
@@ -273,6 +277,29 @@
     .sidebar-theme-btn .icon-moon{display:block;}
     [data-theme="light"] .sidebar-theme-btn .icon-sun{display:block;}
     [data-theme="light"] .sidebar-theme-btn .icon-moon{display:none;}
+    .sidebar-teach-btn{
+      flex-shrink:0;
+      background:var(--surface-2);
+      border:1px solid var(--border);
+      color:var(--text-muted);
+      border-radius:8px;
+      width:30px;
+      height:30px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      cursor:pointer;
+      transition:all .15s ease;
+    }
+    .sidebar-teach-btn:hover{
+      color:var(--text);
+      border-color:var(--hover-border);
+      background:var(--surface-2);
+    }
+    .sidebar-teach-btn svg{
+      width:14px;
+      height:14px;
+    }
     .sidebar-user{
       display:flex;align-items:center;gap:8px;min-width:0;
       font-size:13px;color:var(--text-muted);
@@ -331,6 +358,7 @@
       background:var(--header-bg);
       backdrop-filter:blur(16px);
       gap:12px;
+      box-shadow: 0 1px 3px -1px var(--composer-shadow);
     }
     .header-left{display:flex;align-items:center;gap:12px;min-width:0;}
     .sidebar-toggle-btn{
@@ -381,8 +409,10 @@
       cursor:pointer;
       display:flex;align-items:center;gap:6px;
       transition:all .15s ease;
+      box-shadow: 0 1px 2px -1px var(--composer-shadow);
     }
-    .icon-btn:hover{color:var(--text);border-color:var(--hover-border);background:var(--surface-2);}
+    .icon-btn:hover{color:var(--text);border-color:var(--hover-border);background:var(--surface-2);box-shadow: 0 2px 4px -1px var(--composer-shadow);}
+    .icon-btn:active{box-shadow: 0 1px 1px -1px var(--composer-shadow);}
     .theme-toggle-btn{
       width:34px;height:34px;padding:0;justify-content:center;
     }
@@ -467,6 +497,7 @@
       backdrop-filter:blur(10px);
     }
     .suggestion:hover{border-color:var(--accent);background:var(--surface-2);transform:translateY(-1px);box-shadow:0 10px 28px -16px var(--composer-shadow);}
+    .suggestion:focus{border-color:var(--accent);background:var(--surface-2);transform:translateY(-1px);box-shadow:0 10px 28px -16px var(--composer-shadow);outline:none;}
     .suggestion .s-title{font-size:13.5px;font-weight:600;color:var(--text);margin-bottom:2px;}
     .suggestion .s-sub{font-size:12px;color:var(--text-muted);}
 
@@ -515,6 +546,11 @@
       border:1px solid var(--border-subtle);
       border-top-left-radius:4px;
       backdrop-filter:blur(10px);
+      box-shadow: 1px 1px 3px -1px var(--composer-shadow);
+      transition: box-shadow 0.15s ease;
+    }
+    .msg.assistant .bubble:hover{
+      box-shadow: 2px 2px 4px -1px var(--composer-shadow);
     }
     .msg.user .bubble{
       max-width:min(640px, 78%);
@@ -522,6 +558,11 @@
       color:var(--on-accent-muted);
       border-top-right-radius:4px;
       font-weight:500;
+      box-shadow: -1px 1px 3px -1px var(--composer-shadow);
+      transition: box-shadow 0.15s ease;
+    }
+    .msg.user .bubble:hover{
+      box-shadow: -2px 2px 4px -1px var(--composer-shadow);
     }
     .bubble code{
       font-family:'JetBrains Mono', monospace;
@@ -538,6 +579,45 @@
       padding:18px 20px;
       overflow-x:auto;
       margin:8px 0;
+    }
+    .msg-feedback{
+      display:flex;
+      justify-content:flex-end;
+      gap:8px;
+      margin-top:12px;
+      opacity:0.7;
+      transition:opacity 0.15s ease;
+    }
+    .msg:hover .msg-feedback{
+      opacity:1;
+    }
+    .feedback-btn{
+      background:none;
+      border:none;
+      color:var(--text-muted);
+      font-size:14px;
+      cursor:pointer;
+      width:28px;
+      height:28px;
+      border-radius:50%;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      transition:all 0.15s ease;
+    }
+    .feedback-btn:hover{
+      color:var(--text);
+      background:var(--surface-2);
+      transform:scale(1.1);
+    }
+    .feedback-btn:active{
+      transform:scale(0.9);
+    }
+    .feedback-btn.feedback-up:hover{
+      color:var(--accent-2);
+    }
+    .feedback-btn.feedback-down:hover{
+      color:var(--danger);
     }
     .bubble pre code{
       background:none;padding:0;font-size:13.5px;line-height:1.75;color:var(--pre-code-text);
@@ -686,10 +766,12 @@
       border:none;cursor:pointer;
       display:flex;align-items:center;justify-content:center;
       transition:all .15s ease;
+      box-shadow: 0 1px 2px -1px var(--composer-shadow);
       margin-bottom:2px;
       color:var(--on-accent);
     }
-    .send-btn:hover{background:var(--accent-hover);}
+    .send-btn:hover{background:var(--accent-hover);box-shadow: 0 2px 4px -1px var(--composer-shadow);}
+    .send-btn:active{box-shadow: 0 1px 1px -1px var(--composer-shadow);}
     .send-btn:disabled{background:var(--surface-2);cursor:not-allowed;}
     .send-btn svg{width:16px;height:16px;}
     .pause-btn{
@@ -698,10 +780,12 @@
       border:none;cursor:pointer;
       display:none;align-items:center;justify-content:center;
       transition:all .15s ease;
+      box-shadow: 0 1px 2px -1px var(--composer-shadow);
       margin-bottom:2px;
     }
     .pause-btn.active{display:flex;}
-    .pause-btn:hover{background:var(--danger-hover);}
+    .pause-btn:hover{background:var(--danger-hover);box-shadow: 0 2px 4px -1px var(--composer-shadow);}
+    .pause-btn:active{box-shadow: 0 1px 1px -1px var(--composer-shadow);}
     .pause-btn svg{width:16px;height:16px;color:var(--on-accent);}
     .hint{
       text-align:center;font-size:11px;color:var(--text-muted);margin-top:9px;
@@ -717,14 +801,17 @@
       cursor:pointer;
       display:flex;align-items:center;justify-content:center;
       transition:all .15s ease;
+      box-shadow: 0 1px 2px -1px var(--composer-shadow);
       margin-bottom:2px;
     }
-    .attach-btn:hover{color:var(--text);border-color:var(--hover-border);background:var(--surface-2);}
+    .attach-btn:hover{color:var(--text);border-color:var(--hover-border);background:var(--surface-2);box-shadow: 0 2px 4px -1px var(--composer-shadow);}
+    .attach-btn:active{box-shadow: 0 1px 1px -1px var(--composer-shadow);}
     .attach-btn svg{width:17px;height:17px;}
     .attach-btn.active{
       color:var(--on-accent);background:var(--accent-2);border-color:var(--accent-2);
+      box-shadow: 0 1px 2px -1px var(--composer-shadow);
     }
-    .attach-btn.active:hover{background:var(--accent-2-hover);}
+    .attach-btn.active:hover{background:var(--accent-2-hover);box-shadow: 0 2px 4px -1px var(--composer-shadow);}
 
     /* ---------- Attachments bar (pending, above composer) ---------- */
     .attachments-bar{
@@ -863,7 +950,8 @@
       display:none;
       align-items:center;
       justify-content:center;
-      transition:opacity .2s, transform .2s;
+      transition:opacity .2s, transform .2s, box-shadow .15s ease;
+      box-shadow: 0 1px 2px -1px var(--composer-shadow);
       opacity:0;
       transform:translateY(8px);
     }
@@ -876,6 +964,7 @@
       background:var(--accent);
       border-color:var(--accent);
       color:var(--on-accent);
+      box-shadow: 0 2px 4px -1px var(--composer-shadow);
     }
     .scroll-to-bottom svg{
       width:18px;height:18px;
@@ -894,6 +983,7 @@
       align-items: center;
       justify-content: center;
       transition: all .15s ease;
+      box-shadow: 0 1px 2px -1px var(--composer-shadow);
       margin-bottom: 2px;
     }
 
@@ -901,6 +991,10 @@
       background: var(--accent);
       border-color: var(--accent);
       color: var(--on-accent);
+      box-shadow: 0 2px 4px -1px var(--composer-shadow);
+    }
+    .go-to-bottom-btn:active {
+      box-shadow: 0 1px 1px -1px var(--composer-shadow);
     }
 
     .go-to-bottom-btn svg {
@@ -962,6 +1056,12 @@
         </button>
       </div>
     </div>
+      <div class="sidebar-footer-row">
+        <span class="history-label" style="padding:0;margin:0;">Learning</span>
+        <button class="sidebar-teach-btn" id="teachVigzoneBtn" aria-label="Teach Vigzone" title="Teach Vigzone about specific topics">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></svg>
+        </button>
+      </div>
   </div>
 </aside>
 <div class="sidebar-overlay" id="sidebarOverlay"></div>
@@ -985,7 +1085,7 @@
         <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
         <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><line x1="12" y1="2" x2="12" y2="5"></line><line x1="12" y1="19" x2="12" y2="22"></line><line x1="4.22" y1="4.22" x2="6.34" y2="6.34"></line><line x1="17.66" y1="17.66" x2="19.78" y2="19.78"></line><line x1="2" y1="12" x2="5" y2="12"></line><line x1="19" y1="12" x2="22" y2="12"></line><line x1="4.22" y1="19.78" x2="6.34" y2="17.66"></line><line x1="17.66" y1="6.34" x2="19.78" y2="4.22"></line></svg>
       </button>
-      <button class="icon-btn" id="newChatBtn">+ New chat</button>
+      <button class="icon-btn" id="newChatBtn" aria-label="Start new chat">+ New chat</button>
     </div>
   </header>
 
@@ -996,23 +1096,23 @@
         <h1><span class="greeting-mark">✱</span><span id="greetingText">Welcome to Vigzone AI</span></h1>
         <p>Vigzone AI is a real conversational assistant — ask it to explain something, debug code, draft a message, think through a decision, or attach an image or document for it to look at.</p>
         <div class="suggestions">
-          <div class="suggestion" data-prompt="Explain how recursion works using a simple example, then show me a tricky edge case.">
+          <div class="suggestion" data-prompt="Explain how recursion works using a simple example, then show me a tricky edge case." tabindex="0" role="button" aria-label="Explain a concept: Recursion, with a tricky edge case">
             <div class="s-title">Explain a concept</div>
             <div class="s-sub">Recursion, with a tricky edge case</div>
           </div>
-          <div class="suggestion" data-prompt="Here's a bug I'm running into: [describe your bug]. Help me figure out what's wrong.">
+          <div class="suggestion" data-prompt="Here's a bug I'm running into: [describe your bug]. Help me figure out what's wrong." tabindex="0" role="button" aria-label="Debug something: Walk through an error step by step">
             <div class="s-title">Debug something</div>
             <div class="s-sub">Walk through an error step by step</div>
           </div>
-          <div class="suggestion" data-prompt="Help me plan out a small project. Ask me questions if you need more detail.">
+          <div class="suggestion" data-prompt="Help me plan out a small project. Ask me questions if you need more detail." tabindex="0" role="button" aria-label="Plan a project: Break a goal into concrete steps">
             <div class="s-title">Plan a project</div>
             <div class="s-sub">Break a goal into concrete steps</div>
           </div>
-          <div class="suggestion" data-prompt="Help me write a clear, concise message about: [describe the situation].">
+          <div class="suggestion" data-prompt="Help me write a clear, concise message about: [describe the situation]." tabindex="0" role="button" aria-label="Draft a message: Email, report, or write-up">
             <div class="s-title">Draft a message</div>
             <div class="s-sub">Email, report, or write-up</div>
           </div>
-          <div class="suggestion" data-image-prompt="A cozy reading nook by a rainy window, warm lighting, watercolor style">
+          <div class="suggestion" data-image-prompt="A cozy reading nook by a rainy window, warm lighting, watercolor style" tabindex="0" role="button" aria-label="Generate an image: Describe a picture and Vigzone AI will create it">
             <div class="s-title">🎨 Generate an image</div>
             <div class="s-sub">Describe a picture and Vigzone AI will create it</div>
           </div>
@@ -1088,23 +1188,23 @@
       <h1><span class="greeting-mark">\u2731</span><span id="greetingText">Welcome to Vigzone AI</span></h1>
       <p>Vigzone AI is a real conversational assistant — ask it to explain something, debug code, draft a message, think through a decision, or attach an image or document for it to look at.</p>
       <div class="suggestions">
-        <div class="suggestion" data-prompt="Explain how recursion works using a simple example, then show me a tricky edge case.">
+        <div class="suggestion" data-prompt="Explain how recursion works using a simple example, then show me a tricky edge case." tabindex="0" role="button" aria-label="Explain a concept: Recursion, with a tricky edge case">
           <div class="s-title">Explain a concept</div>
           <div class="s-sub">Recursion, with a tricky edge case</div>
         </div>
-        <div class="suggestion" data-prompt="Here's a bug I'm running into: [describe your bug]. Help me figure out what's wrong.">
+        <div class="suggestion" data-prompt="Here's a bug I'm running into: [describe your bug]. Help me figure out what's wrong." tabindex="0" role="button" aria-label="Debug something: Walk through an error step by step">
           <div class="s-title">Debug something</div>
           <div class="s-sub">Walk through an error step by step</div>
         </div>
-        <div class="suggestion" data-prompt="Help me plan out a small project. Ask me questions if you need more detail.">
+        <div class="suggestion" data-prompt="Help me plan out a small project. Ask me questions if you need more detail." tabindex="0" role="button" aria-label="Plan a project: Break a goal into concrete steps">
           <div class="s-title">Plan a project</div>
           <div class="s-sub">Break a goal into concrete steps</div>
         </div>
-        <div class="suggestion" data-prompt="Help me write a clear, concise message about: [describe the situation].">
+        <div class="suggestion" data-prompt="Help me write a clear, concise message about: [describe the situation]." tabindex="0" role="button" aria-label="Draft a message: Email, report, or write-up">
           <div class="s-title">Draft a message</div>
           <div class="s-sub">Email, report, or write-up</div>
         </div>
-        <div class="suggestion" data-image-prompt="A cozy reading nook by a rainy window, warm lighting, watercolor style">
+        <div class="suggestion" data-image-prompt="A cozy reading nook by a rainy window, warm lighting, watercolor style" tabindex="0" role="button" aria-label="Generate an image: Describe a picture and Vigzone AI will create it">
           <div class="s-title">\ud83c\udfa8 Generate an image</div>
           <div class="s-sub">Describe a picture and Vigzone AI will create it</div>
         </div>
@@ -1116,6 +1216,7 @@
     emptyState = document.getElementById('emptyState');
     greetingText = document.getElementById('greetingText');
     updateGreeting();
+    showAllMessages = false;
   }
 
   // ---------- Multi-conversation store (chat history, like a typical AI chat app) ----------
@@ -1194,6 +1295,9 @@
   let activeStreamBubble = null;
   let getActiveStreamReply = null; // () => current fullReply string
   let imageMode = false;
+  // Message display limit for performance - only show last N messages by default
+  let messageDisplayLimit = 50;
+  let showAllMessages = false;
 
   // The message currently staged for a quoted reply (set by clicking the
   // reply icon on a message bubble), or null if nothing is being quoted.
@@ -1484,7 +1588,7 @@
       const c = store.conversations[id];
       const activeClass = id === store.activeId ? ' active' : '';
       return `
-      <div class="history-item${activeClass}" data-id="${id}">
+      <div class="history-item${activeClass}" data-id="${id}" tabindex="0" role="button" aria-label="${escapeHtml(c.title || 'New chat')}">
         <span class="history-title">${escapeHtml(c.title || 'New chat')}</span>
         <button class="history-delete" data-delete="${id}" aria-label="Delete chat" title="Delete chat">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6M14 11v6"></path></svg>
@@ -1500,6 +1604,7 @@
     store.activeId = id;
     messages = c.messages;
     persistStore();
+    showAllMessages = false;
     renderAll();
     renderHistoryList();
     if (isMobile()) setSidebarCollapsed(true);
@@ -1512,6 +1617,7 @@
     if (store.activeId === id) {
       store.activeId = null;
       messages = [];
+      showAllMessages = false;
       renderAll();
     }
     persistStore();
@@ -1530,6 +1636,7 @@
     pendingFiles = [];
     setImageMode(false);
     store.activeId = null;
+    showAllMessages = false;
     renderAll();
     renderAttachmentsBar();
     renderHistoryList();
@@ -1708,6 +1815,15 @@
       bubble.appendChild(textEl);
     }
 
+    // Add feedback buttons
+    const feedbackDiv = document.createElement('div');
+    feedbackDiv.className = 'msg-feedback';
+    feedbackDiv.innerHTML = `
+      <button class="feedback-btn feedback-up" aria-label="Upvote this response">👍</button>
+      <button class="feedback-btn feedback-down" aria-label="Downvote this response">👎</button>
+    `;
+    bubble.appendChild(feedbackDiv);
+
     if (typeof opts.index === 'number') {
       const quoteBtn = document.createElement('button');
       quoteBtn.className = 'msg-quote-btn';
@@ -1739,12 +1855,46 @@
       restoreEmptyState();
       return;
     }
-    messages.forEach((m, idx) => {
+
+    // Determine which messages to render based on display limit
+    let messagesToRender = messages;
+    let startIndex = 0;
+
+    if (!showAllMessages && messages.length > messageDisplayLimit) {
+      // Show only the most recent messages
+      startIndex = messages.length - messageDisplayLimit;
+      messagesToRender = messages.slice(startIndex);
+
+      // Add a placeholder for older messages
+      const olderMessagesPlaceholder = document.createElement('div');
+      olderMessagesPlaceholder.className = 'msg system';
+      olderMessagesPlaceholder.innerHTML = `
+        <div class="bubble" style="text-align: center; padding: 20px; opacity: 0.7; font-style: italic;">
+          Showing the most recent ${messageDisplayLimit} messages.
+          <button id="loadMoreBtn" style="background: var(--surface-2); border: 1px solid var(--border);
+                         color: var(--text); border-radius: 8px; padding: 5px 10px;
+                         margin-left: 10px; cursor: pointer;">Load older messages</button>
+        </div>
+      `;
+      chatInner.appendChild(olderMessagesPlaceholder);
+
+      // Add event listener to the load more button
+      olderMessagesPlaceholder.querySelector('#loadMoreBtn').addEventListener('click', () => {
+        showAllMessages = true;
+        renderAll();
+        // Scroll to bottom after showing more messages
+        requestAnimationFrame(() => {
+          main.scrollTop = main.scrollHeight;
+        });
+      });
+    }
+
+    messagesToRender.forEach((m, idx) => {
       const text = m.displayText !== undefined ? m.displayText : (typeof m.content === 'string' ? m.content : '');
       if (m.imageSrc) {
-        renderMessage(m.role, text, { imageSrc: m.imageSrc, quote: m.quote, index: idx });
+        renderMessage(m.role, text, { imageSrc: m.imageSrc, quote: m.quote, index: startIndex + idx });
       } else {
-        renderMessage(m.role, text, { attachments: m.attachments, quote: m.quote, index: idx });
+        renderMessage(m.role, text, { attachments: m.attachments, quote: m.quote, index: startIndex + idx });
       }
     });
   }
@@ -2219,6 +2369,49 @@
     handleFiles(e.dataTransfer?.files);
   });
 
+  // Handle feedback button clicks
+  chatInner.addEventListener('click', (e) => {
+    const feedbackUpBtn = e.target.closest('.feedback-up');
+    const feedbackDownBtn = e.target.closest('.feedback-down');
+
+    if (feedbackUpBtn || feedbackDownBtn) {
+      e.preventDefault();
+      const msgContainer = e.target.closest('.msg');
+      if (!msgContainer) return;
+
+      const msgIndex = parseInt(msgContainer.dataset.index || '0', 10);
+      const isUpvote = !!feedbackUpBtn;
+
+      // Provide visual feedback
+      if (feedbackUpBtn) {
+        feedbackUpBtn.style.transform = 'scale(1.2)';
+        feedbackUpBtn.style.color = 'var(--accent-2)';
+        setTimeout(() => {
+          feedbackUpBtn.style.transform = '';
+          feedbackUpBtn.style.color = '';
+        }, 300);
+      } else if (feedbackDownBtn) {
+        feedbackDownBtn.style.transform = 'scale(1.2)';
+        feedbackDownBtn.style.color = 'var(--danger)';
+        setTimeout(() => {
+          feedbackDownBtn.style.transform = '';
+          feedbackDownBtn.style.color = '';
+        }, 300);
+      }
+
+      // In a real implementation, this would send feedback to the backend
+      // For now, we'll just log it
+      console.log(`Feedback ${isUpvote ? 'up' : 'down'} for message index ${msgIndex}`);
+
+      // TODO: Send feedback to backend API
+      // await fetch('/api/feedback', {
+      //   method: 'POST',
+      //   headers: { 'Content-Type': 'application/json' },
+      //   body: JSON.stringify({ messageIndex: msgIndex, isUpvote })
+      // });
+    }
+  });
+
   sendBtn.addEventListener('click', () => sendMessage(input.value));
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -2245,6 +2438,34 @@
   newChatBtnSidebar.addEventListener('click', startNewChat);
   document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
   document.getElementById('themeToggleBtnSidebar').addEventListener('click', toggleTheme);
+
+  // Keyboard accessibility for history items and suggestions
+  function setupKeyboardAccessibility() {
+    // Handle history items
+    historyList.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        const item = e.target.closest('.history-item');
+        if (item) {
+          item.click();
+        }
+      }
+    });
+
+    // Handle suggestions in empty state
+    chatInner.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        const suggestion = e.target.closest('.suggestion');
+        if (suggestion) {
+          suggestion.click();
+        }
+      }
+    });
+  }
+
+  // Setup keyboard accessibility after initial render
+  setupKeyboardAccessibility();
   applyTheme(getTheme(), false);
 
   setSidebarCollapsed(isMobile() ? true : (localStorage.getItem(SIDEBAR_KEY) === '1'));
