@@ -454,6 +454,7 @@ async def chat(request: ChatRequest, user: dict = Depends(require_current_user))
                     model=request.model,
                     stream_id=stream_id,
                     user_id=user["id"],
+                    user_name=user.get("name") or "",
                 ):
                     if is_cancelled(stream_id):
                         break
@@ -500,7 +501,7 @@ async def chat_sync(request: ChatRequest, user: dict = Depends(require_current_u
         )
     messages = [{"role": m.role, "content": m.content} for m in request.messages]
     try:
-        reply = await chat_once(messages, model=request.model, user_id=user["id"])
+        reply = await chat_once(messages, model=request.model, user_id=user["id"], user_name=user.get("name") or "")
     except VigzoneAIError as e:
         logger.error("Chat failed: %s", e)
         raise HTTPException(status_code=502, detail=str(e))

@@ -594,8 +594,7 @@
       word-wrap:break-word;
     }
     .msg.assistant .bubble{
-      flex:1;
-      max-width:100%;
+      max-width:min(640px, 90%);
       background:var(--bubble-assistant-bg);
       border:1px solid var(--border-subtle);
       border-top-left-radius:4px;
@@ -1388,7 +1387,7 @@
         <svg class="pause-icon" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
         <svg class="play-icon" viewBox="0 0 24 24" fill="currentColor" style="display: none;"><path d="M8 5v14l11-7z"></path></svg>
       </button>
-      <button class="attach-btn" id="liveVoiceBtn" aria-label="Live voice conversation" title="Start a hands-free voice conversation with Orbit">
+      <button class="attach-btn" id="liveVoiceBtn" aria-label="Live voice conversation" title="Start a hands-free voice conversation with Vigi">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10v4"/><path d="M6 6v12"/><path d="M10 3v18"/><path d="M14 6v12"/><path d="M18 9v6"/><path d="M22 11v2"/></svg>
       </button>
       <div class="mic-wrapper" id="micWrapper">
@@ -2088,11 +2087,11 @@
   })();
 
 
-  // ===== VIGZONE VOICE — "Orbit" (read-aloud) =====
+  // ===== VIGZONE VOICE — "Vigi" (read-aloud) =====
   // Gives Vigzone AI a single, consistent spoken voice using the browser's
   // built-in speech synthesis. We pick one male-sounding voice the first
   // time it's needed and stick with it for the whole session — we call this
-  // persona "Orbit" — so every message is read consistently rather than
+  // persona "Vigi" — so every message is read consistently rather than
   // whatever the OS happens to default to. Voices are cached per detected
   // language (see detectSpeechLang below) so a Sinhala reply gets a Sinhala
   // voice instead of being forced through an English one.
@@ -2122,7 +2121,7 @@
   // voice. Counts characters per Unicode script block and returns the
   // script with the most hits as a BCP-47 tag; returns null for Latin/
   // ambiguous text, since script alone can't tell English from Spanish from
-  // French — callers fall back to the "Orbit" English voice in that case.
+  // French — callers fall back to the "Vigi" English voice in that case.
   const SPEECH_SCRIPT_RANGES = [
     ['si-LK', /[\u0D80-\u0DFF]/g],          // Sinhala
     ['ta-IN', /[\u0B80-\u0BFF]/g],          // Tamil
@@ -2221,7 +2220,7 @@
     if (!btn) return;
     btn.classList.remove('speaking');
     btn.innerHTML = ICON_SPEAKER;
-    btn.setAttribute('aria-label', 'Read aloud in Orbit');
+    btn.setAttribute('aria-label', 'Read aloud in Vigi');
   }
 
   function vigzoneStopSpeaking() {
@@ -2255,14 +2254,14 @@
     if (voice) utter.voice = voice;
     utter.lang = (voice && voice.lang) || langHint || 'en-US';
     utter.rate = 0.97;
-    utter.pitch = 0.85; // smooth, grounded tone — Vigzone's "Orbit" persona
+    utter.pitch = 0.85; // smooth, grounded tone — Vigzone's "Vigi" persona
     utter.volume = 1;
 
     utter.onstart = () => {
       vigzoneSpeakingBtn = btn;
       btn.classList.add('speaking');
       btn.innerHTML = ICON_SPEAKER_STOP;
-      btn.setAttribute('aria-label', 'Stop Orbit');
+      btn.setAttribute('aria-label', 'Stop Vigi');
     };
     utter.onend = () => { resetSpeakerButton(btn); vigzoneSpeakingBtn = null; vigzoneUtterance = null; };
     utter.onerror = () => { resetSpeakerButton(btn); vigzoneSpeakingBtn = null; vigzoneUtterance = null; };
@@ -2281,7 +2280,7 @@
 
     const speakerBtn = document.createElement('button');
     speakerBtn.className = 'speaker-btn';
-    speakerBtn.setAttribute('aria-label', 'Read aloud in Orbit');
+    speakerBtn.setAttribute('aria-label', 'Read aloud in Vigi');
     speakerBtn.innerHTML = ICON_SPEAKER;
     speakerBtn.addEventListener('click', (e) => {
       e.preventDefault();
@@ -3281,7 +3280,7 @@
     overlay.className = 'live-voice-overlay';
     overlay.innerHTML = `
       <div class="live-voice-orb" id="liveVoiceOrb"></div>
-      <div class="live-voice-status" id="liveVoiceStatus">Orbit is listening…</div>
+      <div class="live-voice-status" id="liveVoiceStatus">Vigi is listening…</div>
       <div class="live-voice-caption" id="liveVoiceCaption"></div>
       <button class="live-voice-end" id="liveVoiceEndBtn" aria-label="End conversation">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
@@ -3345,7 +3344,7 @@
     recog.lang = getVoiceInputLang();
     let finalTranscript = '';
 
-    setLiveVoiceState('listening', 'Orbit is listening…');
+    setLiveVoiceState('listening', 'Vigi is listening…');
     liveCaptionEl.textContent = '';
 
     recog.onresult = (event) => {
@@ -3378,7 +3377,7 @@
   }
 
   async function sendLiveVoiceTurn(text) {
-    setLiveVoiceState('thinking', 'Orbit is thinking…');
+    setLiveVoiceState('thinking', 'Vigi is thinking…');
     liveCaptionEl.textContent = text;
 
     renderMessage('user', text, { index: messages.length });
@@ -3449,7 +3448,7 @@
     const clean = stripForSpeech(text);
     if (!clean) { liveListenLoop(); return; }
 
-    setLiveVoiceState('speaking', 'Orbit is speaking…');
+    setLiveVoiceState('speaking', 'Vigi is speaking…');
     const langHint = detectSpeechLang(clean);
     const utter = new SpeechSynthesisUtterance(clean);
     const voice = pickVigzoneVoice(langHint);

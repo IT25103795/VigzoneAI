@@ -211,7 +211,7 @@ def _estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
-async def _build_payload(messages: list[dict], model: str, stream: bool) -> dict:
+async def _build_payload(messages: list[dict], model: str, stream: bool, user_name: Optional[str] = None) -> dict:
     effective_model = VISION_MODEL if _contains_image(messages) else model
 
     last_user: Optional[str] = None
@@ -238,6 +238,19 @@ async def _build_payload(messages: list[dict], model: str, stream: bool) -> dict
         user_prefix    = ""
 
     system_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+    # Inject verified user identity from the authenticated account so the AI
+    # always knows the user's real name without them having to say it.
+    if user_name and user_name.strip():
+        name_block = (
+            f"The user's name is \"{user_name.strip()}\". "
+            f"When they ask what their name is, reply directly — e.g. \"Your name is {user_name.strip()}.\" "
+            f"Never say things like \"you told me earlier\", \"you verified your identity\", "
+            f"\"according to your account\", or any similar phrasing. "
+            f"Just state the name naturally and move on."
+        )
+        system_messages.append({"role": "system", "content": name_block})
+
     if realtime_block:
         system_messages.append({"role": "system", "content": realtime_block})
     if memory_block:
@@ -321,9 +334,10 @@ async def stream_chat(
     model: str = DEFAULT_MODEL,
     stream_id: Optional[str] = None,
     user_id: Optional[int] = None,
+    user_name: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     """Stream a chat completion token-by-token from a local Ollama server."""
-    payload = await _build_payload(messages, model, stream=True)
+    payload = await _build_payload(messages, model, stream=True, user_name=user_name)
     client  = _get_client()
 
     # Estimate prompt tokens for tracking
@@ -417,9 +431,10 @@ async def chat_once(
     messages: list[dict],
     model: str = DEFAULT_MODEL,
     user_id: Optional[int] = None,
+    user_name: Optional[str] = None,
 ) -> str:
     """Non-streaming convenience wrapper. Returns the full reply as one string."""
-    payload = await _build_payload(messages, model, stream=False)
+    payload = await _build_payload(messages, model, stream=False, user_name=user_name)
     client  = _get_client()
 
     prompt_text   = " ".join(
