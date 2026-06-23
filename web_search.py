@@ -110,7 +110,7 @@ def get_datetime_injection(user_message: str) -> str:
             f"You MUST use this exact date and time in your answer. Do NOT say you don't know the date or time.\n"
             f"[END DATETIME INJECTION]\n\n"
         )
-    return f"[Current date: {weekday}, {date_str} | Time: {time_str} | Time zone: {_get_user_timezone_name()}]\n\n"
+    return ""
 
 
 # ── Search trigger detection ──────────────────────────────────────────────────
