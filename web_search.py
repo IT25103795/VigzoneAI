@@ -16,10 +16,14 @@ import os
 import re
 from datetime import datetime, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
 import httpx
 
 # Set WEB_SEARCH_ENABLED=false in .env to disable (default: enabled)
 _WEB_SEARCH_ON = os.getenv("WEB_SEARCH_ENABLED", "true").lower() not in ("false", "0", "no")
+_CONFIGURED_USER_TIMEZONE = os.getenv("USER_TIMEZONE", "").strip()
+_WEATHER_FALLBACK_LOCATION = os.getenv("WEATHER_DEFAULT_LOCATION", "Colombo, Sri Lanka")
 
 logger = logging.getLogger(__name__)
 
@@ -47,10 +51,31 @@ def _get_search_client() -> httpx.AsyncClient:
 
 # ── Date / Time ───────────────────────────────────────────────────────────────
 
+def _get_user_timezone_name() -> str:
+    if _CONFIGURED_USER_TIMEZONE:
+        return _CONFIGURED_USER_TIMEZONE
+    local_tz = datetime.now().astimezone().tzinfo
+    if isinstance(local_tz, ZoneInfo) and getattr(local_tz, "key", None):
+        return local_tz.key
+    return "UTC"
+
+
+
+def _get_user_timezone() -> timezone | ZoneInfo:
+    tz_name = _get_user_timezone_name()
+    try:
+        return ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        logger.warning("Unknown USER_TIMEZONE %r; falling back to system local timezone", tz_name)
+        local_tz = datetime.now().astimezone().tzinfo
+        return local_tz if local_tz is not None else timezone.utc
+
+
 def get_current_datetime() -> str:
-    """Return a human-readable current date and time string (UTC)."""
-    now = datetime.now(timezone.utc)
-    return now.strftime("%-d %B %Y, %H:%M UTC (%A)")
+    """Return a human-readable current date and time string in the configured timezone."""
+    tz = _get_user_timezone()
+    now = datetime.now(tz)
+    return now.strftime("%d %B %Y, %I:%M %p %Z (%A)")
 
 
 def get_datetime_injection(user_message: str) -> str:
@@ -59,18 +84,19 @@ def get_datetime_injection(user_message: str) -> str:
     This forces the local LLM to see the date IMMEDIATELY before the question,
     making it impossible to ignore (local models often ignore system prompts).
     """
-    now = datetime.now(timezone.utc)
-    date_str   = now.strftime("%-d %B %Y")
-    time_str   = now.strftime("%H:%M UTC")
-    weekday    = now.strftime("%A")
-    year       = now.strftime("%Y")
-    month      = now.strftime("%B")
+    tz = _get_user_timezone()
+    now = datetime.now(tz)
+    date_str = now.strftime("%d %B %Y")
+    time_str = now.strftime("%I:%M %p %Z")
+    weekday = now.strftime("%A")
+    year = now.strftime("%Y")
+    month = now.strftime("%B")
 
-    # Detect if this is a date/time question to give extra emphasis
     date_q = re.search(
         r"\b(date|time|day|year|month|today|what.s today|current date|"
-        r"what year|what day|right now|currently)\b",
-        user_message, re.IGNORECASE
+        r"what year|what day|right now|currently|clock|timezone)\b",
+        user_message,
+        re.IGNORECASE,
     )
 
     if date_q:
@@ -80,55 +106,44 @@ def get_datetime_injection(user_message: str) -> str:
             f"CURRENT TIME: {time_str}\n"
             f"CURRENT YEAR: {year}\n"
             f"CURRENT MONTH: {month}\n"
-            f"You MUST use this exact date in your answer. Do NOT say you don't know the date.\n"
+            f"TIME ZONE: {_get_user_timezone_name()}\n"
+            f"You MUST use this exact date and time in your answer. Do NOT say you don't know the date or time.\n"
             f"[END DATETIME INJECTION]\n\n"
         )
-    else:
-        return f"[Current date: {weekday}, {date_str} | Time: {time_str}]\n\n"
+    return f"[Current date: {weekday}, {date_str} | Time: {time_str} | Time zone: {_get_user_timezone_name()}]\n\n"
 
 
 # ── Search trigger detection ──────────────────────────────────────────────────
 
-# Patterns that strongly suggest the user wants live/current information.
 _REALTIME_PATTERNS = re.compile(
     r"("
-    # Date / time questions — very broad to catch all phrasings
     r"what.?s (the )?(current |today.?s )?(date|time|day|year|month)|"
     r"what (is |are )?(the )?(date|time|day|year|today)|"
     r"what (year|day|date|time) is it|"
     r"(current|today.?s) (date|time|day|year)|"
     r"tell me the (date|time|day|year)|"
     r"(date|time) (today|now|currently)|"
-    r"\b(today|tonight|yesterday|right now|currently|current|latest|recent)\b|"
+    r"\b(today|tonight|yesterday|right now|currently|current|latest|recent|now)\b|"
     r"this (week|month|year|morning|evening|afternoon|night)|"
     r"just (happened|announced|released|launched)|"
-    # News / events
     r"\b(news|breaking|update|headlines)\b|"
     r"what.?s happening|what happened|who won|"
     r"\b(score|result|match|game)\b|"
-    # Prices / markets
     r"\b(price|stock|crypto|bitcoin|ethereum)\b|"
     r"exchange rate|how much (is|does|costs?)|"
-    # Weather
-    r"\b(weather|forecast)\b|"
-    # People / positions
+    r"\b(weather|forecast|temperature|rain|humidity|wind|climate)\b|"
     r"who is (the )?(current |new )?(president|prime minister|ceo|head|minister)|"
     r"is .+ still (alive|ceo|president)|"
-    # Sports
     r"\b(ipl|t20|cricket|fifa|nba|nfl)\b|"
     r"world cup|premier league|formula 1|"
     r"\b(standings|ranking|leaderboard)\b|"
-    # Sri Lanka specific
     r"\blkr\b|"
-    r"(sri lanka|colombo).*(price|rate|news|today)|"
-    # General live data
+    r"(sri lanka|colombo).*(price|rate|news|today|weather|forecast)|"
     r"(election|vote|poll) result"
     r")",
     re.IGNORECASE,
 )
 
-# Patterns that are definitely NOT searches (pure knowledge/creative tasks)
-# NOTE: "current" removed so "current date" isn't blocked
 _NO_SEARCH_PATTERNS = re.compile(
     r"\b("
     r"explain|how does .+ work|what is the (theory|concept|definition|meaning|formula)|"
@@ -147,9 +162,30 @@ def should_search(query: str) -> bool:
     Returns True if the user's query likely needs real-time web data.
     Keeps false-positive rate low by also checking no-search patterns.
     """
-    if _NO_SEARCH_PATTERNS.search(query):
+    if _NO_SEARCH_PATTERNS.search(query) and not re.search(r"\b(weather|forecast|date|time|today|now)\b", query, re.IGNORECASE):
         return False
     return bool(_REALTIME_PATTERNS.search(query))
+
+
+def _is_weather_query(query: str) -> bool:
+    return bool(re.search(r"\b(weather|forecast|temperature|rain|humidity|wind|climate)\b", query, re.IGNORECASE))
+
+
+def _has_explicit_location(query: str) -> bool:
+    location_hints = [
+        r"\bin\s+[A-Z][a-z]+",
+        r"\bfor\s+[A-Z][a-z]+",
+        r"\bat\s+[A-Z][a-z]+",
+        r"\b(sri lanka|colombo|kandy|galle|jaffna|london|new york|tokyo|delhi)\b",
+    ]
+    return any(re.search(pattern, query) for pattern in location_hints)
+
+
+def _normalize_search_query(query: str) -> str:
+    query = query.strip()
+    if _is_weather_query(query) and not _has_explicit_location(query):
+        return f"{query} in {_WEATHER_FALLBACK_LOCATION}"
+    return query
 
 
 # ── DuckDuckGo Search ─────────────────────────────────────────────────────────
@@ -175,7 +211,6 @@ async def _ddg_instant_answer(query: str) -> Optional[str]:
         answer = data.get("Answer", "").strip()
         if answer:
             parts.append(f"Direct answer: {answer}")
-        # Related topics (top 3)
         for t in data.get("RelatedTopics", [])[:3]:
             if isinstance(t, dict) and t.get("Text"):
                 parts.append(t["Text"])
@@ -203,20 +238,9 @@ async def _ddg_html_search(query: str, max_results: int = 5) -> list[dict]:
         html = resp.text
         results = []
 
-        # Extract result blocks using regex (avoids heavy HTML parser dependency)
-        # DDG HTML structure: <div class="result__body"> ... </div>
-        # Title: <a class="result__a" href="...">Title</a>
-        # Snippet: <a class="result__snippet">snippet</a>
-
-        title_pattern = re.compile(
-            r'class="result__a"[^>]*>([^<]+)</a>', re.DOTALL
-        )
-        snippet_pattern = re.compile(
-            r'class="result__snippet"[^>]*>(.+?)</a>', re.DOTALL
-        )
-        url_pattern = re.compile(
-            r'class="result__url"[^>]*>([^<]+)<', re.DOTALL
-        )
+        title_pattern = re.compile(r'class="result__a"[^>]*>([^<]+)</a>', re.DOTALL)
+        snippet_pattern = re.compile(r'class="result__snippet"[^>]*>(.+?)</a>', re.DOTALL)
+        url_pattern = re.compile(r'class="result__url"[^>]*>([^<]+)<', re.DOTALL)
 
         titles = title_pattern.findall(html)
         snippets = snippet_pattern.findall(html)
@@ -242,9 +266,10 @@ async def web_search(query: str, max_results: int = 5) -> str:
     then falls back to HTML search results. Returns a formatted string
     ready for injection into the LLM context.
     """
-    # Run both in parallel for speed
-    instant_task = asyncio.create_task(_ddg_instant_answer(query))
-    html_task    = asyncio.create_task(_ddg_html_search(query, max_results))
+    normalized_query = _normalize_search_query(query)
+
+    instant_task = asyncio.create_task(_ddg_instant_answer(normalized_query))
+    html_task = asyncio.create_task(_ddg_html_search(normalized_query, max_results))
 
     instant, html_results = await asyncio.gather(instant_task, html_task, return_exceptions=True)
 
@@ -259,7 +284,7 @@ async def web_search(query: str, max_results: int = 5) -> str:
         parts.append(f"📌 Summary:\n{instant}")
 
     if html_results:
-        lines = [f"🔍 Web results for \"{query}\":"]
+        lines = [f"🔍 Web results for \"{normalized_query}\":"]
         for i, r in enumerate(html_results, 1):
             lines.append(f"{i}. **{r['title']}**")
             if r["snippet"]:
@@ -285,24 +310,26 @@ async def get_realtime_context(user_message: str) -> tuple[str, str]:
                     local LLM sees it immediately before the question and
                     cannot ignore it (local models often skip system prompts)
     """
-    now_str    = get_current_datetime()
+    now_str = get_current_datetime()
     user_prefix = get_datetime_injection(user_message)
+    normalized_query = _normalize_search_query(user_message)
 
     system_lines = [
         f"[REAL-TIME CONTEXT]\n"
         f"Current date and time: {now_str}\n"
-        f"You HAVE real-time internet access. You KNOW the current date and time. "
-        f"NEVER say you don't know what date or time it is."
+        f"Configured user time zone: {_get_user_timezone_name()}\n"
+        f"Real-time web access is available only when WEB_SEARCH_ENABLED is true and the server has internet connectivity. "
+        f"Current date and time are generated server-side in the configured time zone."
     ]
 
     if _WEB_SEARCH_ON and should_search(user_message):
-        logger.info("Web search triggered for: %s", user_message[:80])
+        logger.info("Web search triggered for: %s", normalized_query[:80])
         try:
-            results = await asyncio.wait_for(web_search(user_message), timeout=8.0)
+            results = await asyncio.wait_for(web_search(normalized_query), timeout=8.0)
             if results:
                 system_lines.append(results)
         except asyncio.TimeoutError:
-            logger.warning("Web search timed out for query: %s", user_message[:80])
+            logger.warning("Web search timed out for query: %s", normalized_query[:80])
         except Exception as exc:
             logger.warning("Web search error: %s", exc)
 

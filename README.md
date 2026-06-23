@@ -21,6 +21,7 @@ are pulled.
   text/CSV file and ask about it — images go to a vision model, documents are
   text-extracted server-side and folded into the conversation
 - **Streaming responses**: tokens appear live, like ChatGPT/Claude
+- **Real-time date/time + web search**: server-side time awareness and optional DuckDuckGo-backed live search for current events, weather, prices, and similar queries
 - **Modern chat UI**: dark theme, markdown-lite rendering, mobile responsive,
   drag-and-drop / paste-to-attach files
 - **Stateless REST API**: `POST /api/chat` (streaming) and `/api/chat/sync`
@@ -125,7 +126,8 @@ PNG/JPG/WEBP/GIF images, PDF, DOCX, TXT, MD, CSV. Max 10 MB per file, up to
 5 files at once.
 
 ### Other endpoints
-- `GET /health` — backend status and whether an API key is configured
+- `GET /health` — backend health and mode
+- `GET /api/capabilities` — whether live web search and current-time injection are available, plus configured timezone and accuracy limits
 - `GET /api/model-info` — current text + vision model names
 - `GET /api/stats` — endpoint listing
 
@@ -162,5 +164,8 @@ VigzoneAI/
 | `OLLAMA_BASE_URL` | No | `http://localhost:11434` | Where your local Ollama server is running |
 | `OLLAMA_MODEL` | No | `gemma3` | Which pulled Ollama model to use for text |
 | `OLLAMA_VISION_MODEL` | No | `gemma3` | Model used automatically whenever an image is attached (must be pulled separately) |
+| `WEB_SEARCH_ENABLED` | No | `true` | Enables live DuckDuckGo-backed web search for real-time questions |
+| `USER_TIMEZONE` | No | `Asia/Colombo` | IANA timezone used for server-generated current date/time answers |
+| `WEATHER_DEFAULT_LOCATION` | No | `Colombo, Sri Lanka` | Fallback location for weather questions without an explicit place |
 | `PORT` | No | `8000` | Server port |
 | `CORS_ORIGINS` | No | `*` | Comma-separated allowed origins |
