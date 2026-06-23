@@ -45,15 +45,16 @@ are pulled.
    pip install -r requirements.txt
    ```
 
-3. **Pull the models** (one-time)
+3. **Pull the model** (one-time)
    ```bash
-   ollama pull llama3.2   # text chat
-   ollama pull llava      # vision, for image uploads (optional)
+   ollama pull gemma3   # text + vision in one model, 140+ languages (incl. Sinhala)
    ```
 
-   `.env` is already set up to use these by default — copy `.env.example`
+   `.env` is already set up to use this by default — copy `.env.example`
    to `.env` if you don't have one yet, and adjust `OLLAMA_MODEL` /
-   `OLLAMA_VISION_MODEL` if you'd rather use different models.
+   `OLLAMA_VISION_MODEL` if you'd rather use different models (e.g. the
+   smaller/faster `llama3.2` + `llava` pair, which has more limited language
+   coverage, or `qwen2.5`/`qwen3` for another strong multilingual option).
 
 4. **Run the server**
    ```bash
@@ -118,9 +119,10 @@ Returns one of:
 ```
 The frontend calls this when you attach a file, then folds the result into
 the next chat message: images become an `image_url` content part (handled
-by llava, the local vision model), and document text gets inlined into
-the message with the filename noted. Supported types: PNG/JPG/WEBP/GIF
-images, PDF, DOCX, TXT, MD, CSV. Max 10 MB per file, up to 5 files at once.
+by the vision-capable Ollama model, gemma3 by default), and document text
+gets inlined into the message with the filename noted. Supported types:
+PNG/JPG/WEBP/GIF images, PDF, DOCX, TXT, MD, CSV. Max 10 MB per file, up to
+5 files at once.
 
 ### Other endpoints
 - `GET /health` — backend status and whether an API key is configured
@@ -158,7 +160,7 @@ VigzoneAI/
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `OLLAMA_BASE_URL` | No | `http://localhost:11434` | Where your local Ollama server is running |
-| `OLLAMA_MODEL` | No | `llama3.2` | Which pulled Ollama model to use for text |
-| `OLLAMA_VISION_MODEL` | No | `llava` | Model used automatically whenever an image is attached (must be pulled separately) |
+| `OLLAMA_MODEL` | No | `gemma3` | Which pulled Ollama model to use for text |
+| `OLLAMA_VISION_MODEL` | No | `gemma3` | Model used automatically whenever an image is attached (must be pulled separately) |
 | `PORT` | No | `8000` | Server port |
 | `CORS_ORIGINS` | No | `*` | Comma-separated allowed origins |

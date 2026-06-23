@@ -1,0 +1,31 @@
+# Environment / secrets — NEVER commit these
+.env
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Data files (contain user data)
+data/vigzone.db
+data/knowledge.db
+data/knowledge.json
+data/*.migrated
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

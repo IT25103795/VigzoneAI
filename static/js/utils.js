@@ -17,6 +17,23 @@ function genId(){
     return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+// Grapheme-aware truncation so multi-codepoint emoji (ZWJ sequences,
+// surrogate pairs) and complex-script characters (e.g. Sinhala) never get
+// cut in half — see static/index.html for the full explanation.
+const _graphemeSegmenter = (typeof Intl !== 'undefined' && Intl.Segmenter)
+    ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+    : null;
+
+function truncateText(text, maxLen){
+    text = text || '';
+    if (_graphemeSegmenter){
+        const chars = Array.from(_graphemeSegmenter.segment(text), s => s.segment);
+        return chars.length > maxLen ? chars.slice(0, maxLen).join('') + '…' : text;
+    }
+    const codePoints = Array.from(text);
+    return codePoints.length > maxLen ? codePoints.slice(0, maxLen).join('') + '…' : text;
+}
+
 /**
  * Extract title from messages for conversation history
  * @param {Array} msgs - Array of message objects
@@ -28,7 +45,7 @@ function titleFromMessages(msgs){
     let t = firstUser.displayText !== undefined ? firstUser.displayText : (typeof firstUser.content === 'string' ? firstUser.content : '');
     t = (t || '').replace(/\s+/g, ' ').trim();
     if (!t) return firstUser.imageSrc ? 'Generated image' : 'New chat';
-    return t.length > 48 ? t.slice(0, 48) + '…' : t;
+    return truncateText(t, 48);
 }
 
 /**

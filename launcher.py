@@ -80,14 +80,14 @@ def check_dependencies():
             if models:
                 print(f"  Models available: {', '.join(models)}")
             else:
-                print("  ⚠ No models pulled yet. Run: ollama pull llama3.2")
+                print("  ⚠ No models pulled yet. Run: ollama pull gemma3")
         else:
             print(f"⚠ Ollama responded with status {resp.status_code} at {base_url}")
     except Exception:
         base_url = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434')
         print(f"⚠ Can't reach Ollama at {base_url}.")
         print("  Install it from https://ollama.com/download and make sure it's running")
-        print("  (`ollama serve`), then run: ollama pull llama3.2")
+        print("  (`ollama serve`), then run: ollama pull gemma3")
 
     return True
 

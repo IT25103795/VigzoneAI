@@ -86,6 +86,23 @@ def init_db() -> None:
             )
             """
         )
+        # Token usage table — populated only in production mode.
+        # In testing mode rows are never inserted so this stays empty.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS token_usage (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id           INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                prompt_tokens     INTEGER NOT NULL DEFAULT 0,
+                completion_tokens INTEGER NOT NULL DEFAULT 0,
+                total_tokens      INTEGER NOT NULL DEFAULT 0,
+                ts                INTEGER NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_token_usage_user ON token_usage(user_id)"
+        )
 
 
 # ==========================================
