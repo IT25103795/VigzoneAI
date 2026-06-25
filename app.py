@@ -26,11 +26,13 @@ from pydantic import BaseModel, Field
 
 from file_processing import (
     FileProcessingError,
-    extract_docx_text,
+    process_file,
+    # Legacy single-type helpers kept for any internal callers
     extract_pdf_text,
     extract_plain_text,
     process_image,
 )
+from virus_scanner import scan_bytes as _virus_scan
 from vigzone_ai import (
     DEFAULT_MODEL,
     OLLAMA_BASE_URL,
@@ -376,44 +378,39 @@ async def google_callback(
 # ── Upload endpoint ───────────────────────────────────────────────────────────
 @app.post("/api/upload", tags=["Chat"])
 async def upload_file(file: UploadFile = File(...), user: dict = Depends(require_current_user)):
-    filename     = file.filename or "upload"
-    ext          = os.path.splitext(filename)[1].lower()
-    content_type = (file.content_type or "").lower()
-    contents     = await file.read()
+    filename = file.filename or "upload"
+    contents = await file.read()
 
     if not contents:
         raise HTTPException(400, f'"{filename}" is empty.')
     if len(contents) > MAX_UPLOAD_SIZE:
         raise HTTPException(413, f'"{filename}" is larger than the 10 MB limit.')
 
-    is_image = content_type in IMAGE_CONTENT_TYPES or ext in IMAGE_EXTENSIONS
+    # ── Virus scan (runs before any processing) ────────────────────────────
+    scan = _virus_scan(contents, filename)
+    if not scan.clean:
+        threat_label = scan.threat or "unknown threat"
+        logger.warning("Blocked upload '%s' — virus scan: %s", filename, threat_label)
+        raise HTTPException(
+            422,
+            f'"{filename}" was blocked by the virus scanner: {threat_label}. '
+            "Please ensure your file is safe before uploading.",
+        )
 
+    # ── Universal file processing ──────────────────────────────────────────
     try:
-        if is_image:
-            data_uri, mime = process_image(contents)
-            return JSONResponse({"kind": "image", "name": filename, "mime": mime, "data_uri": data_uri})
-
-        if ext == ".pdf":
-            text, truncated = extract_pdf_text(contents)
-        elif ext == ".docx":
-            text, truncated = extract_docx_text(contents)
-        elif ext in {".txt", ".md", ".csv"}:
-            text, truncated = extract_plain_text(contents)
-        else:
-            raise HTTPException(
-                400,
-                f'Unsupported file type "{ext or content_type or "unknown"}". '
-                "Supported: images (PNG/JPG/WEBP/GIF), PDF, DOCX, TXT, MD, CSV.",
-            )
+        result = process_file(contents, filename)
     except FileProcessingError as e:
         raise HTTPException(422, f'"{filename}": {e}')
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error("Unexpected error processing upload %s: %s", filename, e, exc_info=True)
         raise HTTPException(500, f'Couldn\'t process "{filename}".')
 
-    return JSONResponse({"kind": "document", "name": filename, "text": text, "truncated": truncated})
+    # Attach scan metadata so the frontend can show a "scanned ✓" badge
+    result["scan_clean"] = scan.clean
+    result["scanner_available"] = scan.scanner_available
+
+    return JSONResponse(result)
 
 
 # ── Chat endpoints ────────────────────────────────────────────────────────────

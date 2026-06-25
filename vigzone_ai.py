@@ -103,6 +103,43 @@ Accuracy & Reasoning:
 - Prefer precise language over vague hedging. "This will fail if X" is better \
   than "This might sometimes not work."
 
+Building Websites & Web Apps:
+- When asked to build, design, or code a website, landing page, portfolio, \
+  web app, or any front-end UI, always deliver complete, working, \
+  production-quality code in full — never partial snippets, placeholder \
+  comments like "// add the rest here" or "// repeat for other sections", or \
+  "the rest follows the same pattern" shortcuts. Finish what you start, even \
+  if the answer runs long.
+- Default to a clean, modern, professional look unless asked for something \
+  else: a clear visual hierarchy, generous whitespace, a cohesive color \
+  palette defined once as CSS variables, a readable type pairing (a distinct \
+  heading font plus a clean body font, e.g. from Google Fonts), soft shadows, \
+  rounded corners, and tasteful hover/transition effects. Avoid generic, \
+  dated-looking templates — make it look like something a real design-minded \
+  developer would ship.
+- Make it responsive by default — mobile-first layout, flexbox/CSS grid, and \
+  media queries — so it looks right on phones, tablets, and desktops without \
+  being asked.
+- Use semantic HTML5 (header, nav, main, section, article, footer) and \
+  accessible markup by default — alt text on images, sufficient color \
+  contrast, visible focus states, and a logical heading order — not only when \
+  the user explicitly asks for accessibility.
+- Unless the user names a framework (React, Vue, Tailwind, etc.), default to \
+  a single self-contained HTML file with embedded <style> and <script> tags \
+  so it runs immediately in any browser with no build step or dependencies. \
+  If they do name a stack, follow it exactly and don't substitute your own.
+- Re-check the code in your head before sending it: every tag closed and \
+  matched, valid CSS syntax, no undefined JS variables or functions, no \
+  missing braces or semicolons where they matter. Accuracy matters more than \
+  speed here — code that doesn't run is worse than no answer.
+- After the code, give a short summary of what you built and suggest a couple \
+  of concrete next steps (e.g. "want a dark mode toggle, a contact form, or a \
+  different color scheme?") instead of a generic "let me know if you need \
+  anything else."
+- For multi-page or multi-file builds, clearly label each file (e.g. \
+  "index.html", "styles.css", "script.js") so the user can tell them apart \
+  and knows exactly where each block of code goes.
+
 Learning & Memory:
 - You have access to a local memory of past user interactions that the server \
   retrieves for similar questions. When asked if you can learn, explain briefly \
@@ -194,15 +231,60 @@ _LONG_FORM_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that hint the user wants a website / web app / UI built — these
+# need a much bigger token budget than ordinary long-form text, since a
+# complete, professional single-file HTML+CSS+JS build easily runs well past
+# 2000 tokens once it has real structure, styling, and interactivity.
+_WEBSITE_RE = re.compile(
+    r"\b(web ?site|web ?page|web ?app|webapp|landing page|portfolio (?:site|page)|"
+    r"home ?page|login page|signup page|dashboard ui|single[- ]page app|\bspa\b|"
+    r"html5?|css3?|tailwind|bootstrap|front[- ]?end|web design|ui/?ux|"
+    r"react (?:app|component|site)|vue (?:app|component)|"
+    r"\.html\b|index\.html)\b",
+    re.IGNORECASE,
+)
+
+# Keywords that hint the user wants general code (not necessarily a website) —
+# also benefits from a larger budget and different sampling settings than a
+# normal chat answer, see _is_code_request().
+_CODE_RE = re.compile(
+    r"\b(function|class \w|script|program|algorithm|snippet|api endpoint|"
+    r"refactor|debug|code for|code (?:to|that)|write (?:a|the) code|"
+    r"python|javascript|typescript|java\b|c\+\+|c#|sql query|regex)\b",
+    re.IGNORECASE,
+)
+
+
+def _last_user_text(messages: list[dict]) -> str:
+    for m in reversed(messages):
+        if m.get("role") == "user":
+            text = m.get("content")
+            return text if isinstance(text, str) else ""
+    return ""
+
+
+def _is_website_request(messages: list[dict]) -> bool:
+    return bool(_WEBSITE_RE.search(_last_user_text(messages)))
+
+
+def _is_code_request(messages: list[dict]) -> bool:
+    text = _last_user_text(messages)
+    return bool(_WEBSITE_RE.search(text) or _CODE_RE.search(text))
+
 
 def _adaptive_max_tokens(messages: list[dict]) -> int:
     """Return a token budget based on what the user is asking for."""
-    for m in reversed(messages):
-        if m.get("role") == "user":
-            text = m.get("content") if isinstance(m.get("content"), str) else ""
-            if text and _LONG_FORM_RE.search(text):
-                return 2000
-            break
+    text = _last_user_text(messages)
+    if not text:
+        return 800
+    if _WEBSITE_RE.search(text):
+        # Full website builds (HTML structure + CSS + JS) need real headroom
+        # so the page doesn't get cut off mid-tag or mid-script.
+        return 4096
+    if _CODE_RE.search(text):
+        return 3000
+    if _LONG_FORM_RE.search(text):
+        return 2000
     return 800
 
 
@@ -267,14 +349,23 @@ async def _build_payload(messages: list[dict], model: str, stream: bool, user_na
             patched_last = True
         patched_messages.insert(0, m)
 
+    code_request = _is_code_request(messages)
+
     return {
         "model": effective_model,
         "messages": system_messages + patched_messages,
         "stream": stream,
-        "temperature": 0.7,
+        # Code/website requests get a lower, more deterministic temperature
+        # (accuracy matters more than variety) and frequency/presence
+        # penalties near zero — those penalties are great for prose but they
+        # actively damage code, since code legitimately reuses the same
+        # tokens over and over (closing tags, braces, indentation, repeated
+        # class names) and a penalty pushes the model to avoid that, which is
+        # how you end up with mismatched tags or broken syntax.
+        "temperature": 0.4 if code_request else 0.7,
         "max_tokens": _adaptive_max_tokens(messages),
-        "frequency_penalty": 0.6,
-        "presence_penalty": 0.4,
+        "frequency_penalty": 0.0 if code_request else 0.6,
+        "presence_penalty": 0.0 if code_request else 0.4,
     }
 
 

@@ -157,6 +157,47 @@ VigzoneAI/
 └── launcher.py              # dev/prod launch helper
 ```
 
+## 🌐 Building Websites & Full Code with Vigzone AI
+
+Vigzone AI now recognizes website/web-app/code requests (e.g. "build me a
+landing page", "create a portfolio website", "write a script that...") and
+automatically:
+- Gives the model a much bigger reply budget (up to 4096 tokens instead of
+  the normal 800) so a full, professional HTML+CSS+JS page doesn't get cut
+  off mid-build.
+- Lowers `temperature` and turns `frequency_penalty`/`presence_penalty` down
+  to ~0 for these requests — those penalties are great for natural prose but
+  actively hurt code, since they punish the model for reusing the same
+  tokens that working code legitimately repeats (closing tags, braces,
+  indentation, repeated class names).
+- Follows a dedicated system-prompt section that pushes for modern,
+  responsive, accessible, semantic, complete code with no "...rest omitted"
+  placeholders.
+
+**Important — Ollama's context window:** a bigger reply budget only helps if
+the model is actually allowed to *use* it. Ollama's OpenAI-compatible API has
+no way to raise a model's context window per request — it's fixed per model
+(commonly 4096 tokens by default, sometimes less depending on your
+hardware), and the prompt + the reply both have to fit inside it. If your
+website generations are still getting cut off, give your model more room:
+
+```
+# Modelfile
+FROM gemma3
+PARAMETER num_ctx 8192
+```
+
+```bash
+ollama create gemma3-bigctx -f Modelfile
+```
+
+Then point `.env` at the new model name:
+
+```
+OLLAMA_MODEL=gemma3-bigctx
+OLLAMA_VISION_MODEL=gemma3-bigctx
+```
+
 ## 🔧 Configuration
 
 | Variable | Required | Default | Description |
