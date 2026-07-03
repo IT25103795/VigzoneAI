@@ -44,6 +44,17 @@ import httpx
 from self_learning import get_context_for_prompt, is_degenerate_text, trim_degeneration_tail
 import stream_manager
 from web_search import get_realtime_context
+try:
+    from realworld_data import get_realworld_context as get_realworld_data_context
+    HAS_REALWORLD_DATA = True
+except ImportError:
+    HAS_REALWORLD_DATA = False
+
+try:
+    from website_builder import WebsiteRequest, WebsiteSystemPrompt, get_website_specific_params
+    HAS_WEBSITE_BUILDER = True
+except ImportError:
+    HAS_WEBSITE_BUILDER = False
 
 logger = logging.getLogger(__name__)
 
@@ -278,9 +289,10 @@ def _adaptive_max_tokens(messages: list[dict]) -> int:
     if not text:
         return 800
     if _WEBSITE_RE.search(text):
-        # Full website builds (HTML structure + CSS + JS) need real headroom
-        # so the page doesn't get cut off mid-tag or mid-script.
-        return 4096
+        # Full website builds (HTML structure + CSS + JS) need substantial headroom
+        # so complete, professional pages don't get cut off mid-tag or mid-script.
+        # This budget supports full single-page apps with rich interactivity.
+        return 8192
     if _CODE_RE.search(text):
         return 3000
     if _LONG_FORM_RE.search(text):
@@ -314,8 +326,13 @@ async def _build_payload(messages: list[dict], model: str, stream: bool, user_na
     user_prefix    = ""
     try:
         if last_user:
-            realtime_block, user_prefix = await get_realtime_context(last_user)
-    except Exception:
+            # Try to use enhanced realworld_data module first, fall back to basic web_search
+            if HAS_REALWORLD_DATA:
+                realtime_block, user_prefix = await get_realworld_data_context(last_user)
+            else:
+                realtime_block, user_prefix = await get_realtime_context(last_user)
+    except Exception as exc:
+        logger.debug("Real-time context injection failed: %s", exc)
         realtime_block = ""
         user_prefix    = ""
 
@@ -350,6 +367,13 @@ async def _build_payload(messages: list[dict], model: str, stream: bool, user_na
         patched_messages.insert(0, m)
 
     code_request = _is_code_request(messages)
+    
+    # Add website-specific system prompt if applicable
+    if HAS_WEBSITE_BUILDER and _is_website_request(messages):
+        website_request = WebsiteRequest(_last_user_text(messages))
+        if website_request.is_website_request:
+            website_prompt = WebsiteSystemPrompt.generate_website_prompt(website_request)
+            system_messages.append({"role": "system", "content": website_prompt})
 
     return {
         "model": effective_model,

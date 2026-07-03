@@ -258,6 +258,7 @@ async def get_stats():
             "health": "/health",
             "capabilities": "/api/capabilities",
             "model_info": "/api/model-info",
+            "realworld_data": "GET /api/realworld-data",
             "upload": "POST /api/upload",
             "chat_stream": "POST /api/chat",
             "cancel_stream": "POST /api/cancel-stream",
@@ -270,6 +271,171 @@ async def get_stats():
         },
         "docs": "/docs",
     })
+
+
+# ── Real-World Data endpoints (weather, prices, etc.) ────────────────────────
+
+try:
+    from realworld_data import get_weather, get_price, get_exchange_rate, get_datetime_info
+    HAS_REALWORLD_ENDPOINTS = True
+except ImportError:
+    HAS_REALWORLD_ENDPOINTS = False
+    logger.warning("realworld_data module not available; skipping real-world data endpoints")
+
+
+@app.get("/api/realworld-data/weather", tags=["Real-World Data"])
+async def get_weather_endpoint(location: str = None):
+    """
+    Get current weather for a location.
+    
+    Query parameters:
+      - location: City name or coordinates (optional, uses default if not provided)
+    
+    Returns weather data from OpenWeather API or DuckDuckGo.
+    """
+    if not HAS_REALWORLD_ENDPOINTS:
+        raise HTTPException(
+            status_code=503,
+            detail="Real-world data module is not available. Install realworld_data.py"
+        )
+    
+    try:
+        weather = await get_weather(location)
+        if not weather:
+            return JSONResponse(
+                status_code=404,
+                content={"error": "Weather data not found for the given location"}
+            )
+        return JSONResponse(weather)
+    except Exception as e:
+        logger.error("Weather endpoint error: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to fetch weather data")
+
+
+@app.get("/api/realworld-data/price", tags=["Real-World Data"])
+async def get_price_endpoint(symbol: str, asset_type: str = "auto"):
+    """
+    Get current price for crypto or stock.
+    
+    Query parameters:
+      - symbol: Asset symbol (BTC, ETH, AAPL, etc.)
+      - asset_type: "crypto", "stock", or "auto" (default)
+    
+    Returns price data from CoinGecko or Yahoo Finance.
+    """
+    if not HAS_REALWORLD_ENDPOINTS:
+        raise HTTPException(
+            status_code=503,
+            detail="Real-world data module is not available"
+        )
+    
+    if not symbol or len(symbol) > 10:
+        raise HTTPException(status_code=400, detail="Invalid symbol")
+    
+    try:
+        price = await get_price(symbol, asset_type)
+        if not price:
+            return JSONResponse(
+                status_code=404,
+                content={"error": f"Price data not found for {symbol}"}
+            )
+        return JSONResponse(price)
+    except Exception as e:
+        logger.error("Price endpoint error: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to fetch price data")
+
+
+@app.get("/api/realworld-data/exchange-rate", tags=["Real-World Data"])
+async def get_exchange_rate_endpoint(from_currency: str, to_currency: str):
+    """
+    Get exchange rate between two currencies.
+    
+    Query parameters:
+      - from_currency: Source currency code (USD, EUR, etc.)
+      - to_currency: Target currency code (USD, EUR, etc.)
+    
+    Returns exchange rate from ExchangeRate-API.
+    """
+    if not HAS_REALWORLD_ENDPOINTS:
+        raise HTTPException(
+            status_code=503,
+            detail="Real-world data module is not available"
+        )
+    
+    if not from_currency or not to_currency or len(from_currency) > 3 or len(to_currency) > 3:
+        raise HTTPException(status_code=400, detail="Invalid currency codes")
+    
+    try:
+        rate = await get_exchange_rate(from_currency, to_currency)
+        if not rate:
+            return JSONResponse(
+                status_code=404,
+                content={"error": f"Exchange rate not found for {from_currency}/{to_currency}"}
+            )
+        return JSONResponse(rate)
+    except Exception as e:
+        logger.error("Exchange rate endpoint error: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to fetch exchange rate")
+
+
+@app.get("/api/realworld-data/current-time", tags=["Real-World Data"])
+async def get_current_time_endpoint():
+    """
+    Get current date and time in the configured timezone.
+    
+    Returns structured datetime information.
+    """
+    if not HAS_REALWORLD_ENDPOINTS:
+        raise HTTPException(
+            status_code=503,
+            detail="Real-world data module is not available"
+        )
+    
+    return JSONResponse(get_datetime_info())
+
+
+# ── Fact Verification & Accuracy endpoints ──────────────────────────────────
+
+try:
+    from fact_verification import (
+        verify_factual_claim,
+        score_response_accuracy,
+        ClaimClassifier,
+        AccuracyMetadata,
+    )
+    HAS_FACT_VERIFICATION = True
+except ImportError:
+    HAS_FACT_VERIFICATION = False
+    logger.warning("fact_verification module not available; skipping accuracy endpoints")
+
+
+class VerifyClaimRequest(BaseModel):
+    claim: str = Field(..., max_length=1000)
+
+
+@app.post("/api/verify-claim", tags=["Accuracy"])
+async def verify_claim_endpoint(req: VerifyClaimRequest):
+    """
+    Verify a factual claim and get confidence scoring.
+    
+    Returns:
+      - verified: true/false/null (if unable to verify)
+      - confidence: 0-100% confidence in the claim
+      - sources: List of sources used for verification
+      - reasoning: Explanation of verification result
+    """
+    if not HAS_FACT_VERIFICATION:
+        raise HTTPException(
+            status_code=503,
+            detail="Fact verification module is not available"
+        )
+    
+    try:
+        result = await verify_factual_claim(req.claim)
+        return JSONResponse(result.to_dict())
+    except Exception as e:
+        logger.error("Fact verification error: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to verify claim")
 
 
 # ── Token usage endpoint (production) ─────────────────────────────────────────
