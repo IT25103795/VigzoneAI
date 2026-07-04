@@ -585,6 +585,139 @@
       0%,100%{box-shadow:0 0 0 0 var(--pulse-color);}
       50%{box-shadow:0 0 0 6px transparent;}
     }
+
+    /* "Thinking" glitch treatment on the avatar for complex requests (code,
+       websites, multi-step explanations) — a quick RGB-split / flicker that
+       reads as "working hard", distinct from the gentle pulse used for
+       simple replies. */
+    .avatar.thinking-glitch{
+      position:relative;
+      animation:avatarGlitchShake .34s steps(2,end) infinite, avatarPulse 1.5s ease-in-out infinite;
+    }
+    .avatar.thinking-glitch img{
+      animation:avatarGlitchFlicker 1.3s linear infinite;
+    }
+    .avatar.thinking-glitch::before,
+    .avatar.thinking-glitch::after{
+      content:'';
+      position:absolute; inset:0;
+      border-radius:9px;
+      pointer-events:none;
+      mix-blend-mode:screen;
+      opacity:0;
+    }
+    .avatar.thinking-glitch::before{
+      box-shadow: -2px 0 0 0 rgba(255,60,90,.6);
+      animation:avatarGlitchSliceA 1.9s linear infinite;
+    }
+    .avatar.thinking-glitch::after{
+      box-shadow: 2px 0 0 0 rgba(70,200,255,.6);
+      animation:avatarGlitchSliceB 1.9s linear infinite;
+    }
+    @keyframes avatarGlitchShake{
+      0%{transform:translate(0,0);}
+      25%{transform:translate(-0.6px,0.4px);}
+      50%{transform:translate(0.6px,-0.4px);}
+      75%{transform:translate(-0.4px,-0.6px);}
+      100%{transform:translate(0,0);}
+    }
+    @keyframes avatarGlitchFlicker{
+      0%,88%,100%{opacity:1; filter:none;}
+      90%{opacity:.55; filter:hue-rotate(25deg) saturate(2);}
+      92%{opacity:1; filter:none;}
+      94%{opacity:.6; filter:hue-rotate(-25deg) saturate(2);}
+      96%{opacity:1; filter:none;}
+    }
+    @keyframes avatarGlitchSliceA{
+      0%,88%,100%{opacity:0;}
+      89%,91%{opacity:1;}
+    }
+    @keyframes avatarGlitchSliceB{
+      0%,90%,100%{opacity:0;}
+      91%,93%{opacity:1;}
+    }
+    /* Small "Thinking…" tag shown beside the avatar while the glitch is active */
+    .thinking-tag{
+      display:inline-flex; align-items:center; gap:5px;
+      font-family:'Sora',sans-serif; font-size:10.5px; font-weight:700;
+      letter-spacing:.02em; text-transform:uppercase;
+      color:var(--text-muted);
+      margin-top:4px;
+      animation:thinkingTagFlicker 1.3s linear infinite;
+      text-shadow: -1px 0 rgba(255,60,90,.5), 1px 0 rgba(70,200,255,.5);
+    }
+    .thinking-tag .dot{
+      width:4px;height:4px;border-radius:50%;
+      background:currentColor;
+      animation:thinkingDotBlink 1s ease-in-out infinite;
+    }
+    @keyframes thinkingTagFlicker{
+      0%,88%,100%{opacity:.85; text-shadow:-1px 0 rgba(255,60,90,.5), 1px 0 rgba(70,200,255,.5);}
+      90%{opacity:.4; text-shadow:-2px 0 rgba(255,60,90,.8), 2px 0 rgba(70,200,255,.8);}
+      93%{opacity:.85; text-shadow:-1px 0 rgba(255,60,90,.5), 1px 0 rgba(70,200,255,.5);}
+    }
+    @keyframes thinkingDotBlink{
+      0%,100%{opacity:.3;} 50%{opacity:1;}
+    }
+
+    /* ---------- Downloadable file bundle (heavy code / website builds) ---------- */
+    .file-bundle{
+      margin-top:10px;
+      border:1px solid var(--border-subtle);
+      border-radius:12px;
+      overflow:hidden;
+      background:var(--surface-2);
+    }
+    .file-bundle-item{
+      display:flex; align-items:center; gap:12px;
+      padding:11px 14px;
+      border-bottom:1px solid var(--border-subtle);
+    }
+    .file-bundle-item:last-of-type{ border-bottom:none; }
+    .file-bundle-icon{
+      width:34px;height:34px;flex-shrink:0;
+      border-radius:8px;
+      background:var(--surface-3, rgba(255,255,255,.06));
+      display:flex;align-items:center;justify-content:center;
+      color:var(--text-muted);
+    }
+    .file-bundle-meta{ flex:1; min-width:0; }
+    .file-bundle-name{
+      font-size:13.5px; font-weight:600; color:var(--text);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    .file-bundle-ext{
+      font-size:11px; color:var(--text-muted); text-transform:uppercase;
+      letter-spacing:.03em; margin-top:1px;
+    }
+    .file-bundle-dl{
+      flex-shrink:0;
+      display:flex; align-items:center; gap:6px;
+      padding:7px 13px;
+      border-radius:8px;
+      border:1px solid var(--border);
+      background:var(--surface-1, transparent);
+      color:var(--text);
+      font-size:12.5px; font-weight:600;
+      cursor:pointer;
+      transition:background .15s ease;
+    }
+    .file-bundle-dl:hover{ background:var(--surface-3, rgba(255,255,255,.08)); }
+    .file-bundle-all{
+      display:flex; align-items:center; justify-content:center; gap:7px;
+      width:100%;
+      padding:11px 14px;
+      border:none; border-top:1px solid var(--border-subtle);
+      background:transparent;
+      color:var(--text);
+      font-size:13px; font-weight:600;
+      cursor:pointer;
+      transition:background .15s ease;
+    }
+    .file-bundle-all:hover{ background:var(--surface-3, rgba(255,255,255,.06)); }
+    .file-bundle-caption{
+      font-size:12.5px; color:var(--text-muted); margin:8px 2px 0;
+    }
     .bubble{
       padding:12px 16px;
       border-radius:var(--radius);
@@ -1787,6 +1920,187 @@
     return result;
   }
 
+  // ---------- "Complex request" detection (mirrors the backend's own
+  // website/code/long-form regexes in vigzone_ai.py, so the frontend shows
+  // the glitchy "thinking" treatment for the same kinds of requests that
+  // get a bigger token budget on the server) ----------
+  const COMPLEX_WEBSITE_RE = /\b(web ?site|web ?page|web ?app|webapp|landing page|portfolio (?:site|page)|home ?page|login page|signup page|dashboard ui|single[- ]page app|spa|html5?|css3?|tailwind|bootstrap|front[- ]?end|web design|ui\/?ux|react (?:app|component|site)|vue (?:app|component)|online store|web ?store|web ?shop|menu page|coming soon page|site for my \w+|page for my \w+|\.html\b|index\.html)\b/i;
+  const COMPLEX_CODE_RE = /\b(function|class \w|script|program|algorithm|snippet|api endpoint|refactor|debug|code for|code (?:to|that)|write (?:a|the) code|python|javascript|typescript|java\b|c\+\+|c#|sql query|regex)\b/i;
+  const COMPLEX_LONGFORM_RE = /\b(explain|step[- ]by[- ]step|write a|essay|guide|tutorial|list all|detail|elaborate|summarize|generate|create a|compare|difference between|how does|how do|walk me through)\b/i;
+  const CONTINUATION_RE = /^\s*(continue|keep going|go on|more|next|and then|carry on|finish (?:it|that|this)|what('?s| is) next)[\s.!?]*$/i;
+
+  function isComplexRequest(text, priorAssistantText){
+    if (!text) return false;
+    // A bare "continue" inherits the complexity of what it's continuing,
+    // since it carries no topic keywords of its own.
+    const probe = CONTINUATION_RE.test(text) && priorAssistantText
+      ? text + ' ' + priorAssistantText
+      : text;
+    return COMPLEX_WEBSITE_RE.test(probe) || COMPLEX_CODE_RE.test(probe) || COMPLEX_LONGFORM_RE.test(probe);
+  }
+
+  // ---------- "Thinking" glitch tag shown beside the avatar ----------
+  function showThinkingTag(avatarEl){
+    const tag = document.createElement('div');
+    tag.className = 'thinking-tag';
+    tag.innerHTML = '<span class="dot"></span><span>Thinking</span>';
+    avatarEl.insertAdjacentElement('afterend', tag);
+    return tag;
+  }
+  function clearAvatarThinkingState(avatarEl, tagEl){
+    if (avatarEl) avatarEl.classList.remove('pulsing', 'thinking-glitch');
+    if (tagEl && tagEl.remove) tagEl.remove();
+  }
+
+  // ---------- Extracting fenced code blocks as "files" ----------
+  const FILE_EXT_MAP = {
+    python:'py', javascript:'js', typescript:'ts', jsx:'jsx', tsx:'tsx',
+    java:'java', kotlin:'kt', swift:'swift',
+    c:'c', cpp:'cpp', csharp:'cs',
+    go:'go', rust:'rs', php:'php', ruby:'rb',
+    html:'html', css:'css', scss:'scss',
+    sql:'sql', bash:'sh', shell:'sh', sh:'sh',
+    json:'json', yaml:'yml', yml:'yml', xml:'xml',
+    markdown:'md', md:'md', dockerfile:'dockerfile', plaintext:'txt', text:'txt'
+  };
+
+  // Pull fenced code blocks out of the raw reply text, plus whatever label
+  // (e.g. "**index.html**" or "`UserService.java`") sits right before the
+  // fence, so each block can be offered as a named, downloadable file.
+  function extractCodeFiles(text){
+    if (!text) return [];
+    const files = [];
+    const fenceRe = /```(\w*)\n?([\s\S]*?)```/g;
+    let match, idx = 0;
+    while ((match = fenceRe.exec(text)) !== null) {
+      const lang = (match[1] || '').toLowerCase();
+      const code = match[2].replace(/\n$/, '');
+      if (!code.trim()) continue;
+      idx += 1;
+
+      // Look at the ~120 chars right before the fence for a filename label.
+      const before = text.slice(Math.max(0, match.index - 120), match.index);
+      const labelMatch = before.match(/[`*]{1,2}([\w.\-]+\.[A-Za-z0-9]{1,10})[`*]{0,2}\s*:?\s*$/);
+      let name = labelMatch ? labelMatch[1] : null;
+
+      if (!name) {
+        // Fall back to sniffing an identifier out of the code itself.
+        const classMatch = code.match(/\b(?:public\s+|export\s+)?(?:class|interface)\s+(\w+)/);
+        const ext = FILE_EXT_MAP[lang] || 'txt';
+        if (lang === 'html' || /^\s*<!doctype html/i.test(code)) name = 'index.html';
+        else if (lang === 'css') name = 'style.css';
+        else if ((lang === 'javascript' || lang === 'js') && /<html|<!doctype/i.test(text) === false && idx === 1) name = 'script.js';
+        else if (classMatch) name = `${classMatch[1]}.${ext}`;
+        else name = `file${idx}.${ext}`;
+      }
+      files.push({ name, lang, code, lines: code.split('\n').length });
+    }
+    return files;
+  }
+
+  // Decide whether a reply is "heavy" enough to warrant a downloadable file
+  // bundle instead of (or in addition to) inline code blocks: a website-type
+  // request, several files at once, or one long block.
+  function isHeavyCodeResponse(userText, files){
+    if (!files.length) return false;
+    if (userText && COMPLEX_WEBSITE_RE.test(userText)) return true;
+    if (files.length >= 2) return true;
+    return files.some(f => f.lines > 35);
+  }
+
+  let _jsZipLoadPromise = null;
+  function ensureJSZip(){
+    if (window.JSZip) return Promise.resolve(window.JSZip);
+    if (_jsZipLoadPromise) return _jsZipLoadPromise;
+    _jsZipLoadPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+      s.onload = () => resolve(window.JSZip);
+      s.onerror = () => reject(new Error('Could not load the zip library'));
+      document.head.appendChild(s);
+    });
+    return _jsZipLoadPromise;
+  }
+
+  function downloadTextFile(name, text){
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+  }
+
+  function fileTypeIcon(){
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="17" height="17"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>';
+  }
+
+  // Build the Claude-style "files ready to download" panel and append it to
+  // the message bubble.
+  function buildFileBundlePanel(files){
+    const panel = document.createElement('div');
+    panel.className = 'file-bundle';
+
+    files.forEach(f => {
+      const ext = (f.name.split('.').pop() || 'txt');
+      const row = document.createElement('div');
+      row.className = 'file-bundle-item';
+      row.innerHTML = `
+        <div class="file-bundle-icon">${fileTypeIcon()}</div>
+        <div class="file-bundle-meta">
+          <div class="file-bundle-name">${escapeHtml(f.name.replace(/\.[^.]+$/, ''))}</div>
+          <div class="file-bundle-ext">${escapeHtml(ext)}</div>
+        </div>
+        <button class="file-bundle-dl" type="button">Download</button>
+      `;
+      row.querySelector('.file-bundle-dl').addEventListener('click', () => downloadTextFile(f.name, f.code));
+      panel.appendChild(row);
+    });
+
+    if (files.length > 1) {
+      const allBtn = document.createElement('button');
+      allBtn.className = 'file-bundle-all';
+      allBtn.type = 'button';
+      allBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Download all';
+      allBtn.addEventListener('click', async () => {
+        const original = allBtn.innerHTML;
+        allBtn.textContent = 'Zipping…';
+        try {
+          const JSZip = await ensureJSZip();
+          const zip = new JSZip();
+          files.forEach(f => zip.file(f.name, f.code));
+          const blob = await zip.generateAsync({ type: 'blob' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url; a.download = 'vigzone-files.zip';
+          document.body.appendChild(a); a.click();
+          document.body.removeChild(a); URL.revokeObjectURL(url);
+        } catch (e) {
+          // Fall back to downloading each file individually if the zip lib fails to load.
+          files.forEach(f => downloadTextFile(f.name, f.code));
+        } finally {
+          allBtn.innerHTML = original;
+        }
+      });
+      panel.appendChild(allBtn);
+    }
+    return panel;
+  }
+
+  // Called once a reply has finished streaming: if it looks like a heavy
+  // code/website build, attach a downloadable file bundle under the message.
+  function attachFileBundleIfHeavy(bubbleEl, fullReplyText, userText){
+    const files = extractCodeFiles(fullReplyText);
+    if (!isHeavyCodeResponse(userText, files)) return;
+    const caption = document.createElement('div');
+    caption.className = 'file-bundle-caption';
+    caption.textContent = files.length > 1
+      ? `📦 Implemented ${files.length} files — ready to download individually or as a zip.`
+      : `📦 Implemented ${files[0].name} — ready to download.`;
+    bubbleEl.appendChild(caption);
+    bubbleEl.appendChild(buildFileBundlePanel(files));
+  }
+
   // Enhance code blocks with header, copy, and download buttons
   function enhanceCodeBlocks(container){
     const extMap = {
@@ -2536,7 +2850,10 @@
 
     const assistantBubble = renderMessage('assistant', '', { typing: true, index: messages.length });
     const avatarEl = assistantBubble.parentElement.querySelector('.avatar');
-    avatarEl.classList.add('pulsing');
+    const priorAssistantText = messages.length >= 2 ? (messages[messages.length - 2].displayText || messages[messages.length - 2].content) : '';
+    const requestIsComplex = isComplexRequest(combinedText, typeof priorAssistantText === 'string' ? priorAssistantText : '');
+    avatarEl.classList.add(requestIsComplex ? 'thinking-glitch' : 'pulsing');
+    const thinkingTagEl = requestIsComplex ? showThinkingTag(avatarEl) : null;
     streaming = true;
     updateSendButtonState();
 
@@ -2612,6 +2929,7 @@
       if (!fullReply) throw new Error('No response received.');
       assistantBubble.innerHTML = renderContent(fullReply); // drop the cursor, final text only
       enhanceCodeBlocks(assistantBubble);
+      attachFileBundleIfHeavy(assistantBubble, fullReply, combinedText);
       assistantBubble.appendChild(buildMessageActions(() => fullReply));
       messages.push({ role: 'assistant', content: fullReply, displayText: fullReply });
       saveConversation();
@@ -2620,7 +2938,7 @@
       assistantBubble.classList.add('error-bubble');
       assistantBubble.innerHTML = `⚠ ${escapeHtml(err.message || 'Something went wrong.')}`;
     } finally {
-      avatarEl.classList.remove('pulsing');
+      clearAvatarThinkingState(avatarEl, thinkingTagEl);
       streaming = false;
       currentStreamId = null;
       isPaused = false;
@@ -3244,6 +3562,10 @@
 
     // Show typing indicator
     const assistantBubble = renderMessage('assistant', '', { typing: true, index: messages.length });
+    const avatarEl = assistantBubble.parentElement.querySelector('.avatar');
+    const requestIsComplex = isComplexRequest(userText);
+    avatarEl.classList.add(requestIsComplex ? 'thinking-glitch' : 'pulsing');
+    const thinkingTagEl = requestIsComplex ? showThinkingTag(avatarEl) : null;
     let fullReply = '';
 
     try {
@@ -3292,6 +3614,8 @@
 
       if (!fullReply) throw new Error('No response received.');
 
+      enhanceCodeBlocks(assistantBubble);
+      attachFileBundleIfHeavy(assistantBubble, fullReply, userText);
       assistantBubble.appendChild(buildMessageActions(() => fullReply));
       messages.push({ role: 'assistant', content: fullReply, displayText: fullReply });
       saveConversation();
@@ -3300,6 +3624,7 @@
       assistantBubble.innerHTML = `⚠ ${escapeHtml(err.message || 'Something went wrong getting a reply.')}`;
     }
 
+    clearAvatarThinkingState(avatarEl, thinkingTagEl);
     streaming = false;
     updateSendButtonState();
   }
@@ -3422,6 +3747,10 @@
     saveConversation();
 
     const assistantBubble = renderMessage('assistant', '', { typing: true, index: messages.length });
+    const avatarEl = assistantBubble.parentElement.querySelector('.avatar');
+    const requestIsComplex = isComplexRequest(text);
+    avatarEl.classList.add(requestIsComplex ? 'thinking-glitch' : 'pulsing');
+    const thinkingTagEl = requestIsComplex ? showThinkingTag(avatarEl) : null;
     let fullReply = '';
 
     try {
@@ -3464,14 +3793,18 @@
       }
 
       if (!fullReply) throw new Error('No response received.');
+      enhanceCodeBlocks(assistantBubble);
+      attachFileBundleIfHeavy(assistantBubble, fullReply, text);
       assistantBubble.appendChild(buildMessageActions(() => fullReply));
       messages.push({ role: 'assistant', content: fullReply, displayText: fullReply });
       saveConversation();
+      clearAvatarThinkingState(avatarEl, thinkingTagEl);
 
       if (!liveVoiceActive) return; // overlay was closed while waiting
       liveCaptionEl.textContent = truncateText(fullReply, 220);
       speakLiveReply(fullReply);
     } catch (err) {
+      clearAvatarThinkingState(avatarEl, thinkingTagEl);
       assistantBubble.classList.add('error-bubble');
       assistantBubble.innerHTML = `⚠ ${escapeHtml(err.message || 'Something went wrong.')}`;
       if (!liveVoiceActive) return;

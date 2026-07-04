@@ -339,3 +339,160 @@ async def get_realtime_context(user_message: str) -> tuple[str, str]:
     )
 
     return "\n\n".join(system_lines), user_prefix
+
+
+# ── Real image search (for website builds) ──────────────────────────────────
+# Uses the Openverse API — a free, keyless search over openly-licensed images
+# (openverse.org, run by WordPress/Creative Commons). No account needed for
+# light personal use. This exists specifically so Vigzone can hand the model
+# REAL, working image URLs for a website request instead of asking the model
+# to invent a path or hand-encode an SVG data URI — both of which are common
+# failure points for small local models (fabricated "car1.jpg" paths, or
+# malformed percent-encoded SVG markup that breaks the <img> tag).
+#
+# Optional: set OPENVERSE_CLIENT_ID / OPENVERSE_CLIENT_SECRET in .env for a
+# free registered API key (higher rate limits at https://openverse.org/api).
+# Works fine without one for occasional/personal use.
+
+_OPENVERSE_URL = "https://api.openverse.org/v1/images/"
+_OPENVERSE_TOKEN_URL = "https://api.openverse.org/v1/auth_tokens/token/"
+_OPENVERSE_CLIENT_ID = os.getenv("OPENVERSE_CLIENT_ID", "").strip()
+_OPENVERSE_CLIENT_SECRET = os.getenv("OPENVERSE_CLIENT_SECRET", "").strip()
+
+_openverse_token: Optional[str] = None
+
+# Generic filler words stripped out so the image query stays on-subject
+# ("build me a website for my bakery" → "bakery").
+_IMAGE_QUERY_STOPWORDS = re.compile(
+    r"\b(build|make|create|design|generate|write|code|develop|need|want|"
+    r"can you|please|i want|i need|a|an|the|for|my|me|to|of|with|using|"
+    r"website|webpage|web page|site|homepage|home page|landing page|"
+    r"page|app|application|system|platform|project|please build|about)\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_image_query(user_message: str) -> str:
+    """Strip website-building filler words down to the core subject."""
+    cleaned = _IMAGE_QUERY_STOPWORDS.sub(" ", user_message)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .,!?")
+    return cleaned if cleaned else user_message.strip()
+
+
+async def _get_openverse_token() -> Optional[str]:
+    """Fetch and cache an OAuth token if credentials are configured; else None (anonymous use)."""
+    global _openverse_token
+    if not (_OPENVERSE_CLIENT_ID and _OPENVERSE_CLIENT_SECRET):
+        return None
+    if _openverse_token:
+        return _openverse_token
+    try:
+        client = _get_search_client()
+        resp = await client.post(
+            _OPENVERSE_TOKEN_URL,
+            data={
+                "client_id": _OPENVERSE_CLIENT_ID,
+                "client_secret": _OPENVERSE_CLIENT_SECRET,
+                "grant_type": "client_credentials",
+            },
+        )
+        if resp.status_code == 200:
+            _openverse_token = resp.json().get("access_token")
+            return _openverse_token
+    except Exception as exc:
+        logger.debug("Openverse token fetch failed: %s", exc)
+    return None
+
+
+async def image_search(query: str, max_results: int = 6) -> list[dict]:
+    """
+    Search Openverse for real, openly-licensed photographs matching `query`.
+    Returns a list of {url, title, creator, license} dicts — `url` is a
+    direct, hotlinkable image URL safe to drop straight into an <img> tag.
+    Returns [] on any failure (network down, rate-limited, no results) so
+    callers can gracefully fall back to placeholders.
+    """
+    try:
+        client = _get_search_client()
+        headers = {}
+        token = await _get_openverse_token()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        resp = await client.get(
+            _OPENVERSE_URL,
+            params={
+                "q": query,
+                "page_size": max_results,
+                "category": "photograph",
+                "license_type": "commercial,modification",
+            },
+            headers=headers,
+        )
+        if resp.status_code != 200:
+            logger.debug("Openverse search returned %s for %r", resp.status_code, query)
+            return []
+
+        data = resp.json()
+        out = []
+        for item in data.get("results", [])[:max_results]:
+            url = item.get("url")
+            if not url:
+                continue
+            out.append({
+                "url": url,
+                "title": (item.get("title") or query).strip()[:60],
+                "creator": item.get("creator", ""),
+                "license": item.get("license", ""),
+            })
+        return out
+    except Exception as exc:
+        logger.debug("Openverse image search failed: %s", exc)
+        return []
+
+
+async def get_image_search_context(user_message: str, max_results: int = 6) -> str:
+    """
+    High-level helper for vigzone_ai.py: given the user's website request,
+    search for real matching images and return a formatted system-prompt
+    block listing exact URLs the model should use verbatim. Returns "" if
+    search is disabled, fails, or finds nothing (caller falls back to the
+    inline-SVG-placeholder instructions already in the website prompt).
+    """
+    if not _WEB_SEARCH_ON:
+        return ""
+
+    query = _extract_image_query(user_message)
+    try:
+        results = await asyncio.wait_for(image_search(query, max_results), timeout=8.0)
+    except asyncio.TimeoutError:
+        logger.warning("Image search timed out for query: %s", query[:80])
+        return ""
+    except Exception as exc:
+        logger.warning("Image search error: %s", exc)
+        return ""
+
+    if not results:
+        return ""
+
+    lines = [
+        "[REAL IMAGES AVAILABLE — USE THESE EXACT URLS]",
+        f"Real, openly-licensed photos matching \"{query}\" were found. Use these ",
+        "EXACT URLs verbatim in <img src=\"...\"> tags (or CSS background-image) ",
+        "wherever a photo fits the design — copy them character-for-character, ",
+        "do not modify, shorten, or re-encode them. Match each image to the most ",
+        "relevant section/product/item by its title. If you need more images than ",
+        "are listed, reuse the closest-matching one rather than inventing a new ",
+        "path or hand-writing an SVG data URI.",
+        "",
+    ]
+    for i, r in enumerate(results, 1):
+        credit = f" (by {r['creator']})" if r.get("creator") else ""
+        lines.append(f"{i}. \"{r['title']}\"{credit} — {r['url']}")
+    lines.append("")
+    lines.append(
+        "Only fall back to an inline SVG placeholder (see IMAGES rules above) "
+        "for anything none of these photos reasonably fit."
+    )
+
+    return "\n".join(lines)

@@ -43,7 +43,7 @@ from typing import AsyncGenerator, Optional
 import httpx
 from self_learning import get_context_for_prompt, is_degenerate_text, trim_degeneration_tail
 import stream_manager
-from web_search import get_realtime_context
+from web_search import get_realtime_context, get_image_search_context
 try:
     from realworld_data import get_realworld_context as get_realworld_data_context
     HAS_REALWORLD_DATA = True
@@ -113,21 +113,69 @@ Accuracy & Reasoning:
   correct yourself rather than forging ahead.
 - Prefer precise language over vague hedging. "This will fail if X" is better \
   than "This might sometimes not work."
+- For any substantial code answer (roughly 25+ lines, a full class/module, or \
+  multiple files) — even outside website building — end with a brief 1-3 \
+  sentence summary of what you implemented (the key pieces/functions and what \
+  they do). Skip this for small snippets and one-liners; don't pad trivial \
+  answers with a summary nobody asked for.
+- When a code answer spans more than one file, put each file in its own \
+  fenced code block and label it clearly right before the block (e.g. \
+  "**main.py**" or "`UserService.java`") so each block maps to one \
+  identifiable file — this lets the file be offered as a separate download \
+  rather than one undifferentiated blob.
 
-Building Websites & Web Apps:
-- When asked to build, design, or code a website, landing page, portfolio, \
-  web app, or any front-end UI, always deliver complete, working, \
-  production-quality code in full — never partial snippets, placeholder \
-  comments like "// add the rest here" or "// repeat for other sections", or \
-  "the rest follows the same pattern" shortcuts. Finish what you start, even \
-  if the answer runs long.
-- Default to a clean, modern, professional look unless asked for something \
-  else: a clear visual hierarchy, generous whitespace, a cohesive color \
-  palette defined once as CSS variables, a readable type pairing (a distinct \
-  heading font plus a clean body font, e.g. from Google Fonts), soft shadows, \
-  rounded corners, and tasteful hover/transition effects. Avoid generic, \
-  dated-looking templates — make it look like something a real design-minded \
-  developer would ship.
+Building Websites & Web Apps — YOUR SIGNATURE STRENGTH:
+- Website building is what you are best known for and best at. Treat every \
+  request to build, design, or code a website, landing page, portfolio, web \
+  app, or front-end UI as a real design brief — not a template to reskin.
+- HARD RULE: never write `<link rel="stylesheet" href="...">` or `<script \
+  src="...">` pointing at a separate file (styles.css, script.js, etc.) \
+  unless you also print that file's complete content in the same response. \
+  If you're not writing it out as a separate labeled file, put ALL CSS in \
+  one `<style>` block in `<head>` and all JS in one `<script>` block before \
+  `</body>`. A page that links a stylesheet you never wrote loads completely \
+  unstyled — this is a common, avoidable failure.
+- HARD RULE: if a page uses more than one inline SVG icon, every icon needs \
+  a different shape/path. Never copy-paste the same icon for two different \
+  features or list items — pick a shape that matches what each one means.
+- Ground the design in the actual subject: what it's for, who it's for, and \
+  the one job the page needs to do. If the request is vague, make a \
+  concrete, sensible choice yourself and run with it rather than defaulting \
+  to a generic "business website" look.
+- Actively avoid the overused AI-generated design ruts: (1) warm cream \
+  background with a serif headline and a terracotta accent, (2) near-black \
+  background with one neon-green or vermilion accent and a card grid, (3) \
+  broadsheet/newspaper layout with hairline rules and zero border-radius, \
+  (4) purple-to-pink gradient hero with a generic "three feature cards" \
+  layout. Use one of these ONLY if the user's own brief specifically calls \
+  for it. Otherwise choose a palette, type pairing, and layout concept that \
+  actually fits the subject, and give the page one deliberate, memorable \
+  signature element instead of scattering effects everywhere.
+- Always deliver complete, working, production-quality code in full — never \
+  partial snippets, placeholder comments like "// add the rest here" or "// \
+  repeat for other sections", or "the rest follows the same pattern" \
+  shortcuts. Finish what you start, even if the answer runs long.
+- Write real, specific copy for the subject — never "Lorem ipsum" or "Your \
+  Company Name Here" placeholders.
+- IMAGES: check first for a system message titled "[REAL IMAGES AVAILABLE — \
+  USE THESE EXACT URLS]" — if present, it lists real, working photo URLs \
+  found for this subject via live search; use those EXACT URLs verbatim in \
+  `<img>` tags, copied character-for-character, matched to the closest \
+  relevant section. If that block is absent (search disabled, offline, or no \
+  matches), never invent an image URL or a local file path that doesn't \
+  exist (e.g. "car1.jpg", "images/photo.png", or a made-up link) — it will \
+  render as a broken image icon, since nothing actually lives at that path. \
+  Instead use inline SVG placeholders as `<img>` sources, since they always \
+  render with zero network calls. Example pattern to follow exactly — note \
+  every tag is properly closed (`rect` self-closes with `/%3E`, `text` \
+  closes with `%3C/text%3E`, and the whole thing ends with `%3C/svg%3E`), \
+  only changing the width/height/label/colors to fit the design: \
+  `<img src="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 \
+  width=%27400%27 height=%27300%27%3E%3Crect width=%27100%25%27 height=%27100%25%27 \
+  fill=%27%23ddd%27/%3E%3Ctext x=%2750%25%27 y=%2750%25%27 font-size=%2720%27 \
+  text-anchor=%27middle%27 fill=%27%23888%27 dy=%27.3em%27%3ECar 1%3C/text%3E%3C/svg%3E" \
+  alt="Car 1">`. Mention in your after-code summary whether images are real \
+  photos or placeholders.
 - Make it responsive by default — mobile-first layout, flexbox/CSS grid, and \
   media queries — so it looks right on phones, tablets, and desktops without \
   being asked.
@@ -143,10 +191,10 @@ Building Websites & Web Apps:
   matched, valid CSS syntax, no undefined JS variables or functions, no \
   missing braces or semicolons where they matter. Accuracy matters more than \
   speed here — code that doesn't run is worse than no answer.
-- After the code, give a short summary of what you built and suggest a couple \
-  of concrete next steps (e.g. "want a dark mode toggle, a contact form, or a \
-  different color scheme?") instead of a generic "let me know if you need \
-  anything else."
+- After the code, give a short summary naming the signature design choice and \
+  why it fits this subject, then suggest a couple of concrete next steps \
+  (e.g. "want a dark mode toggle, a contact form, or a different color \
+  scheme?") instead of a generic "let me know if you need anything else."
 - For multi-page or multi-file builds, clearly label each file (e.g. \
   "index.html", "styles.css", "script.js") so the user can tell them apart \
   and knows exactly where each block of code goes.
@@ -246,11 +294,16 @@ _LONG_FORM_RE = re.compile(
 # need a much bigger token budget than ordinary long-form text, since a
 # complete, professional single-file HTML+CSS+JS build easily runs well past
 # 2000 tokens once it has real structure, styling, and interactivity.
+# Includes casual, non-technical phrasing ("a site for my bakery", "online
+# store", "menu page") so Vigzone catches website requests even when the
+# user doesn't use web-dev jargon.
 _WEBSITE_RE = re.compile(
     r"\b(web ?site|web ?page|web ?app|webapp|landing page|portfolio (?:site|page)|"
     r"home ?page|login page|signup page|dashboard ui|single[- ]page app|\bspa\b|"
     r"html5?|css3?|tailwind|bootstrap|front[- ]?end|web design|ui/?ux|"
     r"react (?:app|component|site)|vue (?:app|component)|"
+    r"online store|web ?store|web ?shop|menu page|coming soon page|"
+    r"(?:site|page) for my \w+|"
     r"\.html\b|index\.html)\b",
     re.IGNORECASE,
 )
@@ -266,6 +319,18 @@ _CODE_RE = re.compile(
 )
 
 
+# Short follow-ups like "continue" carry no topic keywords of their own, so
+# on their own they'd fall through to the default 800-token budget even when
+# they're asking the model to keep writing a long code/website reply that got
+# cut off. Detect these and fall back to inspecting the last assistant reply
+# (and the user message before that) instead of the literal "continue" text.
+_CONTINUATION_RE = re.compile(
+    r"^\s*(continue|keep going|go on|more|next|and then|carry on|"
+    r"finish (?:it|that|this)|what('?s| is) next)[\s.!?]*$",
+    re.IGNORECASE,
+)
+
+
 def _last_user_text(messages: list[dict]) -> str:
     for m in reversed(messages):
         if m.get("role") == "user":
@@ -274,18 +339,49 @@ def _last_user_text(messages: list[dict]) -> str:
     return ""
 
 
+def _effective_context_text(messages: list[dict]) -> str:
+    """
+    Text used to decide topic (website/code/long-form) for regex matching.
+    Normally this is just the last user message. But a bare "continue" has
+    no keywords of its own — so for those, pull in the prior assistant
+    reply and the user message before it, which is where the real topic
+    (e.g. a Java class, a website build) actually lives.
+    """
+    last_user = _last_user_text(messages)
+    if not _CONTINUATION_RE.match(last_user or ""):
+        return last_user
+
+    # Walk backwards, skip the trailing "continue" message itself, then
+    # grab the assistant reply it's continuing plus the user message that
+    # originally prompted it.
+    skipped_last_user = False
+    extra = []
+    for m in reversed(messages):
+        role = m.get("role")
+        content = m.get("content")
+        content = content if isinstance(content, str) else ""
+        if role == "user" and not skipped_last_user:
+            skipped_last_user = True
+            continue
+        if role in ("assistant", "user"):
+            extra.append(content)
+        if role == "user" and skipped_last_user and len(extra) >= 2:
+            break
+    return (last_user + " " + " ".join(extra)).strip()
+
+
 def _is_website_request(messages: list[dict]) -> bool:
-    return bool(_WEBSITE_RE.search(_last_user_text(messages)))
+    return bool(_WEBSITE_RE.search(_effective_context_text(messages)))
 
 
 def _is_code_request(messages: list[dict]) -> bool:
-    text = _last_user_text(messages)
+    text = _effective_context_text(messages)
     return bool(_WEBSITE_RE.search(text) or _CODE_RE.search(text))
 
 
 def _adaptive_max_tokens(messages: list[dict]) -> int:
     """Return a token budget based on what the user is asking for."""
-    text = _last_user_text(messages)
+    text = _effective_context_text(messages)
     if not text:
         return 800
     if _WEBSITE_RE.search(text):
@@ -367,13 +463,23 @@ async def _build_payload(messages: list[dict], model: str, stream: bool, user_na
         patched_messages.insert(0, m)
 
     code_request = _is_code_request(messages)
-    
-    # Add website-specific system prompt if applicable
+
+    # Add website-specific system prompt if applicable, plus a real-time
+    # image search so the model can use actual working photo URLs instead
+    # of inventing paths or hand-encoding SVG data URIs (both are common
+    # failure points for small local models).
     if HAS_WEBSITE_BUILDER and _is_website_request(messages):
         website_request = WebsiteRequest(_last_user_text(messages))
         if website_request.is_website_request:
             website_prompt = WebsiteSystemPrompt.generate_website_prompt(website_request)
             system_messages.append({"role": "system", "content": website_prompt})
+
+            try:
+                image_block = await get_image_search_context(_last_user_text(messages))
+                if image_block:
+                    system_messages.append({"role": "system", "content": image_block})
+            except Exception as exc:
+                logger.debug("Image search context injection failed: %s", exc)
 
     return {
         "model": effective_model,
@@ -390,6 +496,17 @@ async def _build_payload(messages: list[dict], model: str, stream: bool, user_na
         "max_tokens": _adaptive_max_tokens(messages),
         "frequency_penalty": 0.0 if code_request else 0.6,
         "presence_penalty": 0.0 if code_request else 0.4,
+        # Ollama's OpenAI-compat endpoint has NO way to raise the context
+        # window except a top-level "num_ctx" field on the request body
+        # (nesting it under "options" is silently ignored on this endpoint).
+        # Without this, Ollama falls back to its own default (2048-4096
+        # tokens depending on VRAM). Once a long code/website reply plus the
+        # system prompt exceeds that, there's zero budget left for a new
+        # response and Ollama returns an empty completion - which is exactly
+        # what causes "No response received." after clicking Continue on a
+        # long generation. 16384 comfortably covers a full prior code reply
+        # plus a follow-up continuation for most local models.
+        "num_ctx": 16384,
     }
 
 
@@ -501,7 +618,17 @@ async def stream_chat(
                 except json.JSONDecodeError:
                     continue
 
-                delta   = chunk.get("choices", [{}])[0].get("delta", {})
+                # NOTE: .get("choices", [{}]) only supplies the default when
+                # the key is *missing*. Ollama sometimes streams a valid SSE
+                # chunk where "choices" is present but an EMPTY list (e.g. a
+                # trailing chunk right before [DONE]). In that case .get()
+                # returns [] as-is, and [][0] raises an uncaught IndexError
+                # that silently kills the whole stream with zero content and
+                # no error shown - this is the actual cause of the frontend's
+                # generic "No response received." error, independent of
+                # message length or context size.
+                choices = chunk.get("choices") or [{}]
+                delta   = choices[0].get("delta", {})
                 content = delta.get("content")
                 if not content:
                     continue
@@ -577,7 +704,11 @@ async def chat_once(
     if resp.status_code != 200:
         raise VigzoneAIError(f"Ollama API error {resp.status_code}: {resp.text[:300]}")
 
-    reply = resp.json()["choices"][0]["message"]["content"]
+    data = resp.json()
+    choices = data.get("choices") or []
+    if not choices:
+        raise VigzoneAIError("Ollama returned no choices in its response (empty completion).")
+    reply = choices[0]["message"]["content"]
     clean = trim_degeneration_tail(reply)
     if clean != reply.rstrip():
         logger.warning("Trimmed echo loop from non-streaming completion.")

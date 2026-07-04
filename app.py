@@ -641,6 +641,16 @@ async def chat(request: ChatRequest, user: dict = Depends(require_current_user))
                 logger.error("Chat stream failed: %s", e)
                 err = str(e).replace('"', "'")
                 yield f'data: {{"error": "{err}"}}\n\n'
+            except Exception as e:
+                # Safety net: any *unexpected* exception (e.g. a malformed
+                # Ollama chunk) used to propagate out of this generator
+                # uncaught, which silently kills the SSE stream with zero
+                # content and zero error - the frontend then just shows a
+                # generic "No response received." with no clue why. Surface
+                # it as a real error instead so it's actually debuggable.
+                logger.exception("Unexpected error in chat stream")
+                err = str(e).replace('"', "'") or e.__class__.__name__
+                yield f'data: {{"error": "Unexpected server error: {err}"}}\n\n'
         finally:
             unregister_stream(stream_id)
 

@@ -141,7 +141,7 @@ class TestWebsiteSystemPrompt:
         """Test that prompt emphasizes design principles."""
         req = WebsiteRequest("Build a portfolio")
         prompt = WebsiteSystemPrompt.generate_website_prompt(req)
-        assert "DESIGN EXCELLENCE" in prompt
+        assert "DESIGN EXECUTION" in prompt
         assert "responsive" in prompt.lower()
         assert "accessible" in prompt.lower()
 
@@ -149,7 +149,7 @@ class TestWebsiteSystemPrompt:
         """Test landing page-specific guidance."""
         req = WebsiteRequest("Build a landing page")
         prompt = WebsiteSystemPrompt.generate_website_prompt(req)
-        assert "hero section" in prompt.lower()
+        assert "hero" in prompt.lower()
         assert "CTA" in prompt
 
     def test_prompt_includes_portfolio_guidance(self):
@@ -173,22 +173,19 @@ class TestWebsiteSystemPrompt:
         assert "React" in prompt
         assert "exactly" in prompt.lower()
 
-    def test_color_schemes_available(self):
-        """Test that color schemes are defined."""
-        schemes = WebsiteSystemPrompt.COLOR_SCHEMES
-        assert "modern" in schemes
-        assert "professional" in schemes
-        assert "minimal" in schemes
-        assert "creative" in schemes
+    def test_avoids_generic_ai_looks(self):
+        """Test that the prompt explicitly warns against overused AI-generated looks."""
+        req = WebsiteRequest("Build a website for my bakery")
+        prompt = WebsiteSystemPrompt.generate_website_prompt(req)
+        assert "avoid" in prompt.lower()
+        assert "terracotta" in prompt.lower()  # the most common AI design cliché
 
-    def test_font_pairings_available(self):
-        """Test that font pairings are defined."""
-        fonts = WebsiteSystemPrompt.FONT_PAIRINGS
-        assert "elegant" in fonts
-        assert "modern" in fonts
-        assert "professional" in fonts
-        assert all("heading" in fonts[k] for k in fonts)
-        assert all("body" in fonts[k] for k in fonts)
+    def test_prompt_pushes_subject_specific_design(self):
+        """Test that the prompt asks the model to ground design in the subject."""
+        req = WebsiteRequest("Build a website")
+        prompt = WebsiteSystemPrompt.generate_website_prompt(req)
+        assert "signature" in prompt.lower()
+        assert "subject" in prompt.lower()
 
 
 class TestWebsiteParams:

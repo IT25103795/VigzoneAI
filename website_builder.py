@@ -2,7 +2,10 @@
 Vigzone AI - Website Builder Module
 ====================================
 Specialized tools for creating production-quality websites and web apps.
-Vigzone AI's strength: Complete, responsive, professional websites.
+Vigzone AI's strength: complete, responsive, and — above all — DISTINCTIVE
+websites. Every build is treated as a one-off visual identity for whatever
+the user is actually making, not a reskin of the same "modern SaaS" template
+with the colors swapped.
 """
 
 import re
@@ -10,12 +13,14 @@ from typing import Optional, Tuple, List
 
 # ── Website Detection Patterns ────────────────────────────────────────────────
 
-# Enhanced website detection (better matching)
+# Enhanced website detection (better matching). Includes casual, non-technical
+# phrasing ("a site for my bakery", "online store", "menu page") so Vigzone
+# recognizes website requests even when the user doesn't use web-dev jargon.
 WEBSITE_PATTERNS = {
-    "landing_page": r"\b(landing page|landing site|sales page|squeeze page)\b",
-    "portfolio": r"\b(portfolio|portfolio (?:site|page|website)|showcase)\b",
-    "business": r"\b(business site|company (?:site|website)|corporate site)\b",
-    "ecommerce": r"\b(e?commerce|store|shop|product (?:site|page)|catalog)\b",
+    "landing_page": r"\b(landing page|landing site|sales page|squeeze page|coming soon page)\b",
+    "portfolio": r"\b(portfolio|portfolio (?:site|page|website)|showcase|personal (?:site|website))\b",
+    "business": r"\b(business site|company (?:site|website)|corporate site|(?:site|website|page) for my \w+)\b",
+    "ecommerce": r"\b(e?commerce|online store|web ?store|web ?shop|shop(?:ping)? (?:site|page|cart)|product (?:site|page)|catalog|menu page)\b",
     "blog": r"\b(blog|blog site|blogging platform)\b",
     "dashboard": r"\b(dashboard|admin (?:panel|dashboard)|control panel)\b",
     "spa": r"\b(single[- ]page app|spa|(?:react|vue|angular) (?:app|website))\b",
@@ -116,80 +121,102 @@ class WebsiteRequest:
 
 
 class WebsiteSystemPrompt:
-    """Generates specialized system prompts for website creation."""
+    """Generates specialized system prompts for website creation.
 
-    # Color scheme templates for professional websites
-    COLOR_SCHEMES = {
-        "modern": {
-            "primary": "#0066CC",
-            "secondary": "#00D9FF",
-            "accent": "#FF6B35",
-            "background": "#F5F7FA",
-            "text": "#1A202C",
-            "border": "#E2E8F0",
-        },
-        "professional": {
-            "primary": "#003366",
-            "secondary": "#0099CC",
-            "accent": "#FF9933",
-            "background": "#F9FAFB",
-            "text": "#2D3748",
-            "border": "#E8ECEF",
-        },
-        "minimal": {
-            "primary": "#000000",
-            "secondary": "#666666",
-            "accent": "#FF0000",
-            "background": "#FFFFFF",
-            "text": "#333333",
-            "border": "#CCCCCC",
-        },
-        "creative": {
-            "primary": "#7C3AED",
-            "secondary": "#EC4899",
-            "accent": "#F59E0B",
-            "background": "#F8FAFC",
-            "text": "#1E293B",
-            "border": "#E2E8F0",
-        },
-    }
+    Philosophy: Vigzone's edge isn't "clean and professional" — every AI
+    website builder claims that, and it's exactly why so many AI-built sites
+    look interchangeable (the same cream-and-terracotta hero, or the same
+    dark-mode-with-one-neon-accent card grid, no matter what the business
+    actually is). Vigzone's edge is treating each build as a real design
+    brief: ground the palette, type, and layout in the specific thing the
+    user is building, take one deliberate creative risk per site, and
+    otherwise execute with restraint and polish.
+    """
 
-    # Font pairings for professional websites
-    FONT_PAIRINGS = {
-        "elegant": {
-            "heading": "'Playfair Display', serif",
-            "body": "'Lato', sans-serif",
-        },
-        "modern": {
-            "heading": "'Poppins', sans-serif",
-            "body": "'Inter', sans-serif",
-        },
-        "professional": {
-            "heading": "'Open Sans', sans-serif",
-            "body": "'Open Sans', sans-serif",
-        },
-        "creative": {
-            "heading": "'Space Grotesk', sans-serif",
-            "body": "'Outfit', sans-serif",
-        },
-        "minimal": {
-            "heading": "'IBM Plex Sans', sans-serif",
-            "body": "'IBM Plex Sans', sans-serif",
-        },
-    }
+    # Common AI-generated design ruts to actively steer away from unless the
+    # user's brief specifically calls for one of these looks.
+    GENERIC_LOOKS_TO_AVOID = [
+        "Warm cream/off-white background (#F4F1EA-ish) + high-contrast serif "
+        "headline + a terracotta/warm-clay accent — the single most overused "
+        "AI-generated look right now.",
+        "Near-black background with one bright acid-green or vermilion accent "
+        "and a card grid — the 'dark SaaS dashboard' default.",
+        "Broadsheet/newspaper layout with hairline rules, zero border-radius, "
+        "dense columns — striking once, generic the second time you see it.",
+        "Purple-to-pink gradient hero with a rounded sans headline and three "
+        "feature cards — the 'generic startup landing page' default.",
+    ]
 
     @staticmethod
     def generate_website_prompt(request: WebsiteRequest) -> str:
         """
         Generate a specialized system prompt section for website creation.
-        Emphasizes best practices, completeness, and professional design.
+        Emphasizes genuine visual distinctiveness (not a fixed template
+        picker), completeness, and professional execution.
         """
         prompt_lines = [
-            "WEBSITE CREATION MODE — EXPERT WEB DESIGN",
+            "WEBSITE CREATION MODE — VIGZONE'S SIGNATURE STRENGTH",
             "=" * 70,
             "",
-            "You are an expert web designer and front-end developer. When building "
-            "websites, follow these principles religiously:",
+            "HARD RULES — violating any of these breaks the page. Check every one",
+            "before you finish, no matter how long the rest of this prompt gets:",
+            "  1. NEVER write `<link rel=\"stylesheet\" href=\"...\">` or",
+            "     `<script src=\"...\">` pointing at a file (styles.css, script.js,",
+            "     etc.) that you have not also printed in full in this same",
+            "     response. If you're not writing a separate CSS/JS file out",
+            "     completely, put ALL styling in one `<style>` block in `<head>`",
+            "     and all scripting in one `<script>` block before `</body>`.",
+            "  2. If you use more than one inline SVG icon, EVERY icon must have",
+            "     a different `<path>`/shape. Never copy-paste the same icon for",
+            "     different features, services, or list items — pick a shape",
+            "     that actually matches each label (e.g. a clock for speed, a",
+            "     shield for safety — not the same glyph three times).",
+            "  3. Never point an `<img>` at a file path or URL you didn't confirm",
+            "     is real. Check for a '[REAL IMAGES AVAILABLE]' system message",
+            "     first and use those exact URLs verbatim if present. With no real",
+            "     image available, use an inline SVG data-URI placeholder (see",
+            "     IMAGES section below) instead — and make sure it's valid,",
+            "     properly-closed SVG markup, not a hand-guessed encoding.",
+            "  4. Ship every section the user's request implies — no cut corners,",
+            "     no `<!-- more sections here -->`, no stopping halfway.",
+            "",
+            "Website building is what Vigzone AI is best known for. Approach this "
+            "like the design lead at a small studio whose reputation rests on "
+            "never handing two clients the same visual identity. The bar isn't "
+            "'looks nice' — it's 'could not be mistaken for a template with the "
+            "logo swapped.'",
+            "",
+            "STEP 1 — GROUND IT IN THE SUBJECT (do this before writing any code):",
+            "  • Pin down concretely what this site is for, who it's for, and the",
+            "    one job the page needs to do. If the user's request is vague,",
+            "    make a sensible, specific choice yourself and run with it.",
+            "  • Distinctive design comes from the subject's own world — its",
+            "    materials, colors, textures, vocabulary — not from a generic",
+            "    'business website' or 'startup landing page' template.",
+            "  • If you know things about this user's own projects, business, or",
+            "    stated preferences from earlier in the conversation, let that",
+            "    inform real choices (industry, tone, name, existing branding).",
+            "",
+            "STEP 2 — PLAN A SMALL DESIGN SYSTEM (briefly, before coding):",
+            "  • Color: 4-6 named hex values chosen for THIS subject, not a",
+            "    generic 'primary/secondary/accent' triad picked from habit.",
+            "  • Type: a characterful display/heading face used with restraint,",
+            "    paired with a clean body face — a pairing that fits the subject,",
+            "    not whatever you'd default to on any other project.",
+            "  • Layout: one clear structural concept for how content flows —",
+            "    not just 'hero, three cards, footer' by default.",
+            "  • Signature: pick ONE memorable element (a distinctive hero",
+            "    treatment, an unusual layout choice, a bit of orchestrated",
+            "    motion, an illustration motif) that this specific site will be",
+            "    remembered by. Spend your creative boldness there, and keep",
+            "    everything else disciplined and quiet around it.",
+            "",
+            "AVOID THESE OVERUSED AI-GENERATED LOOKS unless the user's brief",
+            "specifically asks for one of them:",
+        ]
+        for cliche in WebsiteSystemPrompt.GENERIC_LOOKS_TO_AVOID:
+            prompt_lines.append(f"  • {cliche}")
+        prompt_lines.extend([
             "",
             "CODE COMPLETENESS & QUALITY:",
             "  • Deliver COMPLETE, production-ready code — no shortcuts or placeholders",
@@ -199,14 +226,42 @@ class WebsiteSystemPrompt:
             "  • Include inline comments for clarity (not excessive, just key sections)",
             "  • Default to single-file HTML+CSS+JS unless the user requests otherwise",
             "",
-            "DESIGN EXCELLENCE:",
-            "  • Modern, professional aesthetic by default (not generic templates)",
+            "DESIGN EXECUTION:",
             "  • Clear visual hierarchy: proper font sizes, weights, and spacing",
-            "  • Generous whitespace (breathing room, not cramped layouts)",
-            "  • Cohesive color palette: define colors as CSS variables for consistency",
-            "  • Professional font pairings from Google Fonts (not system fonts alone)",
-            "  • Subtle shadows, rounded corners, smooth transitions",
+            "  • Generous, intentional whitespace (breathing room, not cramped layouts)",
+            "  • Define the planned palette as CSS variables for consistency",
+            "  • Real Google Fonts for the type pairing (not system fonts alone)",
+            "  • Motion used deliberately where it serves the subject (a page-load",
+            "    moment, a scroll reveal, hover micro-interactions) — not scattered",
+            "    effects everywhere, which reads as AI-generated rather than designed",
             "  • Consistent spacing using a modular scale (8px, 16px, 24px, 32px...)",
+            "  • Real, specific copy tailored to the subject — never generic",
+            "    placeholder text like 'Lorem ipsum' or 'Your Company Name Here'",
+            "",
+            "IMAGES — CRITICAL, READ CAREFULLY:",
+            "  • Check FIRST for a system message titled '[REAL IMAGES AVAILABLE —",
+            "    USE THESE EXACT URLS]' above. If present, it lists real, working",
+            "    photo URLs found for this subject — use those EXACT URLs verbatim",
+            "    in your <img> tags, copied character-for-character. Do not modify,",
+            "    shorten, guess at, or re-encode them.",
+            "  • NEVER invent an image URL or local file path that doesn't exist",
+            "    (e.g. 'car1.jpg', 'images/photo.png', or a made-up link). It will",
+            "    render as a broken image icon because nothing lives at that path.",
+            "  • If NO real-images block is present (search unavailable, disabled,",
+            "    or no matches for this subject), use inline SVG data-URI",
+            "    placeholders for every <img> instead — they always render, with",
+            "    zero network calls. Follow this exact pattern character-for-",
+            "    character, only changing width/height/label/fill colors to fit —",
+            "    note every tag is properly closed (rect self-closes with `/%3E`,",
+            "    text closes with `%3C/text%3E`, and the svg itself closes with",
+            "    `%3C/svg%3E` at the very end):",
+            "    <img src=\"data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27",
+            "     width=%27400%27 height=%27300%27%3E%3Crect width=%27100%25%27 height=%27100%25%27",
+            "     fill=%27%23ddd%27/%3E%3Ctext x=%2750%25%27 y=%2750%25%27 font-size=%2720%27",
+            "     text-anchor=%27middle%27 fill=%27%23888%27 dy=%27.3em%27%3ECar 1%3C/text%3E%3C/svg%3E\"",
+            "     alt=\"Car 1\">",
+            "  • Note in your after-code summary whether images are real photos or",
+            "    placeholders, so the user knows whether they need to swap anything.",
             "",
             "RESPONSIVE & ACCESSIBLE:",
             "  • Mobile-first design: design for small screens first, scale up",
@@ -216,6 +271,7 @@ class WebsiteSystemPrompt:
             "  • WCAG 2.1 AA compliance: sufficient color contrast, alt text on images",
             "  • Keyboard navigation: visible focus states, logical tab order",
             "  • Screen reader friendly: proper heading hierarchy (h1→h2→h3)",
+            "  • Respect prefers-reduced-motion for any animation",
             "",
             "USER EXPERIENCE:",
             "  • Fast loading: optimize images, minimize CSS/JS bloat",
@@ -225,21 +281,23 @@ class WebsiteSystemPrompt:
             "  • Form validation: real-time feedback where appropriate",
             "  • Intuitive navigation: clear menu structure, breadcrumbs if needed",
             "",
-            "BEFORE SENDING CODE:",
-            "  1. Mentally review the entire site as a user would experience it",
-            "  2. Check responsiveness at common breakpoints (320px, 768px, 1024px)",
-            "  3. Verify all links and buttons work as intended",
-            "  4. Ensure text is readable on all screen sizes",
-            "  5. Test form inputs and interactive elements",
+            "BEFORE SENDING CODE — SELF-CRITIQUE:",
+            "  1. Does this look like it was built for THIS subject, or could it be",
+            "     reskinned for any other business with a find-and-replace? If the",
+            "     latter, revise the weak part before sending.",
+            "  2. Mentally review the entire site as a user would experience it",
+            "  3. Check responsiveness at common breakpoints (320px, 768px, 1024px)",
+            "  4. Verify all links and buttons work as intended",
+            "  5. Ensure text is readable on all screen sizes",
+            "  6. Test form inputs and interactive elements",
             "",
             "AFTER THE CODE:",
-            "  • Provide a 2-3 sentence summary of what you built",
+            "  • Provide a 2-3 sentence summary of what you built, naming the",
+            "    signature element and why you chose it for this subject",
             "  • Suggest concrete next steps (e.g., 'Add a dark mode toggle?',",
             "    'Want to integrate a CMS?', 'Need email form submission?')",
-            "  • If it's a special type (landing page, portfolio, etc.), note key",
-            "    sections and why they're designed that way",
             "",
-        ]
+        ])
 
         if request.website_type:
             prompt_lines.append(f"WEBSITE TYPE: {request.website_type.upper()}")
@@ -247,52 +305,61 @@ class WebsiteSystemPrompt:
 
             type_guidance = {
                 "landing_page": [
-                    "This is a landing page. Key sections:",
-                    "  • Hero section (compelling headline, CTA)",
+                    "This is a landing page. Key sections to cover (adapt the labels",
+                    "and order to fit the actual product/offer, don't just fill slots):",
+                    "  • Hero (compelling headline, CTA)",
                     "  • Problem/Solution (what does it do?)",
                     "  • Features or Benefits (why should they care?)",
                     "  • Social proof (testimonials, metrics, logos)",
                     "  • CTA section (call-to-action, email signup, or purchase)",
                     "  • Footer (contact info, links, legal)",
-                    "Design: Strong visual hierarchy, single focus, persuasive copy.",
+                    "Single clear focus, persuasive copy specific to this offer — not",
+                    "boilerplate SaaS phrasing ('Streamline your workflow').",
                     "",
                 ],
                 "portfolio": [
-                    "This is a portfolio site. Key sections:",
-                    "  • Hero (your name/title, brief intro)",
-                    "  • About (who you are, what you do)",
-                    "  • Projects/Work (showcase 3-6 best projects)",
+                    "This is a portfolio site. Key sections to cover:",
+                    "  • Hero (name/title, brief intro — let the work's own field",
+                    "    suggest the tone, e.g. a photographer's hero reads differently",
+                    "    from a backend engineer's)",
+                    "  • About (who they are, what they do)",
+                    "  • Projects/Work (showcase 3-6 best projects with real specifics)",
                     "  • Skills (technical skills, tools, expertise)",
                     "  • Contact (email, social links, contact form)",
-                    "Design: Clean, minimal, let your work shine. Dark or light theme.",
+                    "Let the work itself be the star; the chrome around it should be",
+                    "confident but quiet.",
                     "",
                 ],
                 "ecommerce": [
-                    "This is an e-commerce site. Key sections:",
+                    "This is an e-commerce site. Key sections to cover:",
                     "  • Product grid or list with images, prices, ratings",
                     "  • Product detail pages (images, description, variations, price)",
                     "  • Shopping cart (review items, update quantities)",
                     "  • Checkout (address, payment summary, order button)",
                     "  • Trust signals (reviews, secure badge, shipping info)",
-                    "Design: Professional, scannable product info, trust-building elements.",
+                    "Scannable product info and trust-building elements matter more",
+                    "than decoration here — but the palette and type should still",
+                    "reflect what's actually being sold.",
                     "",
                 ],
                 "blog": [
-                    "This is a blog. Key sections:",
+                    "This is a blog. Key sections to cover:",
                     "  • Blog grid or list (post title, excerpt, date, author, category)",
                     "  • Post detail (full article, metadata, comments section)",
                     "  • Sidebar (search, categories, recent posts, newsletter)",
                     "  • About author/site",
-                    "Design: Content-forward, readable typography, easy scanning.",
+                    "Content-forward, readable typography, easy scanning — the type",
+                    "pairing carries most of this design's personality.",
                     "",
                 ],
                 "dashboard": [
-                    "This is a dashboard. Key sections:",
+                    "This is a dashboard. Key sections to cover:",
                     "  • Top navigation bar (logo, user menu, notifications)",
                     "  • Left sidebar (main navigation, collapsible)",
                     "  • Main content area (cards with metrics, charts, tables)",
                     "  • Responsive: mobile should stack sidebar, hide on small screens",
-                    "Design: Professional, data-focused, good use of white space.",
+                    "Data-focused and legible above all, but avoid the reflexive",
+                    "near-black/neon-accent dashboard look unless it fits the brand.",
                     "",
                 ],
             }
@@ -309,7 +376,7 @@ class WebsiteSystemPrompt:
             prompt_lines.append("")
 
         prompt_lines.extend([
-            "GO BUILD SOMETHING AMAZING! 🚀",
+            "This is what Vigzone AI is uniquely good at — make this one count. 🚀",
             "",
         ])
 
