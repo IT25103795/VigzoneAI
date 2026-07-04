@@ -1,10 +1,9 @@
 """
 Vigzone AI - Chat Engine
 =========================
-Conversational AI backend powered by a locally-running Ollama server
-(http://localhost:11434), using Ollama's OpenAI-compatible REST endpoint.
-Runs entirely on your own machine — no API key, no internet connection
-needed once models are pulled.
+Conversational AI backend powered by Groq's hosted, OpenAI-compatible chat
+completions API (https://api.groq.com/openai/v1). Runs from any server with
+internet access — no local GPU, no Ollama install, no model to pull.
 
 Modes:
   - TESTING mode  (APP_MODE=testing, default): unlimited messages, no token
@@ -13,15 +12,13 @@ Modes:
     in SQLite, ready for billing/quota enforcement when you go worldwide.
 
 Setup (one-time):
-    ollama pull gemma3          # text + vision model — 140+ languages, incl. Sinhala
-                                # (swap for any other Ollama model via the env vars below)
-    ollama serve               # if not already running as a background service
+    1. Get a free API key at https://console.groq.com/keys
+    2. Set GROQ_API_KEY in .env
+    3. (Optional) override GROQ_MODEL / GROQ_VISION_MODEL — see
+       https://console.groq.com/docs/models for the current list.
 
-Model choice matters for language coverage: Gemma 3 is the default here because
-it's trained on far more languages than Llama 3.2 (which officially covers only
-~8), so it's a much better fit for Sinhala and other less-common languages and
-scripts. Override OLLAMA_MODEL / OLLAMA_VISION_MODEL in .env to use a different
-pulled model — e.g. qwen2.5 or qwen3 are also strong multilingual alternatives.
+This module still supports the old local-Ollama backend for anyone who wants
+it — set AI_PROVIDER=ollama in .env to switch back.
 
 Performance notes (v3):
   - Single shared httpx.AsyncClient eliminates TCP handshake per message.
@@ -59,10 +56,26 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # ── Config ───────────────────────────────────────────────────────────────────
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
-OLLAMA_API_URL  = f"{OLLAMA_BASE_URL}/v1/chat/completions"
-DEFAULT_MODEL   = os.getenv("OLLAMA_MODEL", "gemma3")
-VISION_MODEL    = os.getenv("OLLAMA_VISION_MODEL", "gemma3")
+# AI_PROVIDER selects the chat backend:
+#   "groq"   (default) → Groq's hosted OpenAI-compatible API, needs GROQ_API_KEY
+#   "ollama"           → local Ollama server, no API key needed
+AI_PROVIDER = os.getenv("AI_PROVIDER", "groq").lower()
+
+if AI_PROVIDER == "ollama":
+    OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+    OLLAMA_API_URL  = f"{OLLAMA_BASE_URL}/v1/chat/completions"
+    DEFAULT_MODEL   = os.getenv("OLLAMA_MODEL", "gemma3")
+    VISION_MODEL    = os.getenv("OLLAMA_VISION_MODEL", "gemma3")
+    API_KEY         = ""
+else:
+    # Groq — https://console.groq.com/docs/models for current model names.
+    OLLAMA_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1").rstrip("/")
+    OLLAMA_API_URL  = f"{OLLAMA_BASE_URL}/chat/completions"
+    DEFAULT_MODEL   = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    VISION_MODEL    = os.getenv("GROQ_VISION_MODEL", "llama-3.2-11b-vision-preview")
+    API_KEY         = os.getenv("GROQ_API_KEY", "")
+
+_AUTH_HEADERS = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
 
 # APP_MODE controls rate-limiting & token tracking.
 #   "testing"    → unlimited, no tracking (default for local dev)
@@ -261,11 +274,19 @@ async def is_configured() -> bool:
     now = time.monotonic()
     if _configured_cache is not None and (now - _configured_cache_ts) < _CONFIGURED_CACHE_TTL:
         return _configured_cache
-    try:
-        resp = await _get_client().get(f"{OLLAMA_BASE_URL}/api/tags")
-        result = resp.status_code == 200
-    except httpx.RequestError:
-        result = False
+
+    if AI_PROVIDER == "ollama":
+        try:
+            resp = await _get_client().get(f"{OLLAMA_BASE_URL}/api/tags")
+            result = resp.status_code == 200
+        except httpx.RequestError:
+            result = False
+    else:
+        # Groq has no unauthenticated health endpoint to ping cheaply, so
+        # just confirm an API key is present — the actual chat call will
+        # surface any auth/network problem with a clear error.
+        result = bool(API_KEY)
+
     _configured_cache = result
     _configured_cache_ts = now
     return result
@@ -481,7 +502,7 @@ async def _build_payload(messages: list[dict], model: str, stream: bool, user_na
             except Exception as exc:
                 logger.debug("Image search context injection failed: %s", exc)
 
-    return {
+    payload = {
         "model": effective_model,
         "messages": system_messages + patched_messages,
         "stream": stream,
@@ -496,18 +517,19 @@ async def _build_payload(messages: list[dict], model: str, stream: bool, user_na
         "max_tokens": _adaptive_max_tokens(messages),
         "frequency_penalty": 0.0 if code_request else 0.6,
         "presence_penalty": 0.0 if code_request else 0.4,
+    }
+
+    if AI_PROVIDER == "ollama":
         # Ollama's OpenAI-compat endpoint has NO way to raise the context
         # window except a top-level "num_ctx" field on the request body
         # (nesting it under "options" is silently ignored on this endpoint).
         # Without this, Ollama falls back to its own default (2048-4096
-        # tokens depending on VRAM). Once a long code/website reply plus the
-        # system prompt exceeds that, there's zero budget left for a new
-        # response and Ollama returns an empty completion - which is exactly
-        # what causes "No response received." after clicking Continue on a
-        # long generation. 16384 comfortably covers a full prior code reply
-        # plus a follow-up continuation for most local models.
-        "num_ctx": 16384,
-    }
+        # tokens depending on VRAM). Groq's hosted models already run with a
+        # large context window and reject unrecognized fields, so this is
+        # Ollama-only.
+        payload["num_ctx"] = 16384
+
+    return payload
 
 
 # ── Token tracking (production mode only) ────────────────────────────────────
@@ -581,18 +603,31 @@ async def stream_chat(
 
     try:
         async with client.stream("POST", OLLAMA_API_URL, json=payload,
-                                  headers={"Content-Type": "application/json"}) as resp:
+                                  headers={"Content-Type": "application/json", **_AUTH_HEADERS}) as resp:
             if resp.status_code == 404:
                 body = await resp.aread()
+                if AI_PROVIDER == "ollama":
+                    raise VigzoneAIError(
+                        f"Model \"{payload['model']}\" isn't pulled yet. "
+                        f"Run `ollama pull {payload['model']}` then try again. "
+                        f"(Error: {body.decode(errors='ignore')[:200]})"
+                    )
                 raise VigzoneAIError(
-                    f"Model \"{payload['model']}\" isn't pulled yet. "
-                    f"Run `ollama pull {payload['model']}` then try again. "
+                    f"Model \"{payload['model']}\" not found on Groq. "
+                    f"Check GROQ_MODEL against https://console.groq.com/docs/models. "
+                    f"(Error: {body.decode(errors='ignore')[:200]})"
+                )
+            if resp.status_code == 401:
+                body = await resp.aread()
+                raise VigzoneAIError(
+                    f"Groq rejected the API key. Check GROQ_API_KEY in .env. "
                     f"(Error: {body.decode(errors='ignore')[:200]})"
                 )
             if resp.status_code != 200:
                 body = await resp.aread()
                 raise VigzoneAIError(
-                    f"Ollama API error {resp.status_code}: {body.decode(errors='ignore')[:300]}"
+                    f"{'Ollama' if AI_PROVIDER == 'ollama' else 'Groq'} API error "
+                    f"{resp.status_code}: {body.decode(errors='ignore')[:300]}"
                 )
 
             full_text   = ""
@@ -662,9 +697,14 @@ async def stream_chat(
                 track_token_usage(user_id, prompt_tokens, completion_tokens)
 
     except httpx.RequestError as e:
+        if AI_PROVIDER == "ollama":
+            raise VigzoneAIError(
+                f"Could not reach Ollama at {OLLAMA_BASE_URL}. "
+                f"Make sure Ollama is running (`ollama serve`) — ({e})"
+            ) from e
         raise VigzoneAIError(
-            f"Could not reach Ollama at {OLLAMA_BASE_URL}. "
-            f"Make sure Ollama is running (`ollama serve`) — ({e})"
+            f"Could not reach Groq at {OLLAMA_BASE_URL}. Check the server's "
+            f"internet connection and GROQ_API_KEY — ({e})"
         ) from e
 
 
@@ -688,21 +728,36 @@ async def chat_once(
     try:
         resp = await client.post(
             OLLAMA_API_URL, json=payload,
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", **_AUTH_HEADERS},
         )
     except httpx.RequestError as e:
+        if AI_PROVIDER == "ollama":
+            raise VigzoneAIError(
+                f"Could not reach Ollama at {OLLAMA_BASE_URL}. "
+                f"Make sure Ollama is running (`ollama serve`) — ({e})"
+            ) from e
         raise VigzoneAIError(
-            f"Could not reach Ollama at {OLLAMA_BASE_URL}. "
-            f"Make sure Ollama is running (`ollama serve`) — ({e})"
+            f"Could not reach Groq at {OLLAMA_BASE_URL}. Check the server's "
+            f"internet connection and GROQ_API_KEY — ({e})"
         ) from e
 
     if resp.status_code == 404:
+        if AI_PROVIDER == "ollama":
+            raise VigzoneAIError(
+                f"Model \"{payload['model']}\" isn't pulled yet. "
+                f"Run `ollama pull {payload['model']}` then try again."
+            )
         raise VigzoneAIError(
-            f"Model \"{payload['model']}\" isn't pulled yet. "
-            f"Run `ollama pull {payload['model']}` then try again."
+            f"Model \"{payload['model']}\" not found on Groq. "
+            f"Check GROQ_MODEL against https://console.groq.com/docs/models."
         )
+    if resp.status_code == 401:
+        raise VigzoneAIError("Groq rejected the API key. Check GROQ_API_KEY in .env.")
     if resp.status_code != 200:
-        raise VigzoneAIError(f"Ollama API error {resp.status_code}: {resp.text[:300]}")
+        raise VigzoneAIError(
+            f"{'Ollama' if AI_PROVIDER == 'ollama' else 'Groq'} API error "
+            f"{resp.status_code}: {resp.text[:300]}"
+        )
 
     data = resp.json()
     choices = data.get("choices") or []

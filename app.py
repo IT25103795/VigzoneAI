@@ -2,7 +2,8 @@
 Vigzone AI - Web Server
 ========================
 FastAPI backend serving the Vigzone AI chat interface.
-Chat backend: local Ollama (http://localhost:11434).
+Chat backend: Groq's hosted API (https://api.groq.com) by default;
+set AI_PROVIDER=ollama in .env to use a local Ollama server instead.
 
 Modes (set APP_MODE in .env):
   testing    → unlimited messages, no rate limits (default)
@@ -34,6 +35,7 @@ from file_processing import (
 )
 from virus_scanner import scan_bytes as _virus_scan
 from vigzone_ai import (
+    AI_PROVIDER,
     DEFAULT_MODEL,
     OLLAMA_BASE_URL,
     VISION_MODEL,
@@ -83,7 +85,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Vigzone AI API",
-    description="A real conversational AI assistant — powered by Ollama.",
+    description="A real conversational AI assistant — powered by Groq.",
     version="3.0.0",
     lifespan=lifespan,
 )
@@ -241,8 +243,8 @@ async def get_model_info():
         version="3.0.0",
         model=DEFAULT_MODEL,
         vision_model=VISION_MODEL,
-        backend="Ollama (local)",
-        status="ready" if await is_configured() else "ollama_unreachable",
+        backend="Ollama (local)" if AI_PROVIDER == "ollama" else "Groq (hosted)",
+        status="ready" if await is_configured() else ("ollama_unreachable" if AI_PROVIDER == "ollama" else "groq_not_configured"),
         mode="testing" if IS_TESTING else "production",
     )
 
@@ -253,7 +255,7 @@ async def get_stats():
         "name": "Vigzone AI",
         "version": "3.0.0",
         "mode": "testing" if IS_TESTING else "production",
-        "description": "A real conversational AI assistant — powered by Ollama",
+        "description": "A real conversational AI assistant — powered by Groq",
         "endpoints": {
             "health": "/health",
             "capabilities": "/api/capabilities",
@@ -593,6 +595,9 @@ async def chat(request: ChatRequest, user: dict = Depends(require_current_user))
                 f"Can't reach Ollama at {OLLAMA_BASE_URL}. "
                 "Make sure Ollama is installed and running (`ollama serve`), "
                 "and that you've pulled a model (`ollama pull gemma3`)."
+            ) if AI_PROVIDER == "ollama" else (
+                "Groq isn't configured — set GROQ_API_KEY in .env "
+                "(get a free key at https://console.groq.com/keys)."
             ),
         )
 
@@ -670,6 +675,9 @@ async def chat_sync(request: ChatRequest, user: dict = Depends(require_current_u
             detail=(
                 f"Can't reach Ollama at {OLLAMA_BASE_URL}. "
                 "Make sure Ollama is running (`ollama serve`)."
+            ) if AI_PROVIDER == "ollama" else (
+                "Groq isn't configured — set GROQ_API_KEY in .env "
+                "(get a free key at https://console.groq.com/keys)."
             ),
         )
     messages = [{"role": m.role, "content": m.content} for m in request.messages]
