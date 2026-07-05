@@ -809,6 +809,18 @@
   }
 
   @media (max-width:640px){
+    /* Disable heavy animations on mobile for better performance */
+    .ambient::before,
+    .ambient::after{animation:none !important;}
+    .status-dot{animation:none !important;}
+    .hero h1 span{animation:none !important;}
+    .signal-stage::before{animation:none !important;}
+    .signal-core{animation:none !important;}
+    .signal-core::before,
+    .signal-core::after{animation:none !important;}
+    .node{animation:none !important;}
+    .intel-card{animation:none !important;}
+    .intel-bars span{animation:none !important;}
     .page{width:min(100% - 28px, 1200px); padding:18px 0 28px;}
     .status-pill{display:none;}
     .layout{padding-top:28px;}
