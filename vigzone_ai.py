@@ -55,6 +55,38 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+
+def _friendly_groq_error(status_code: int, body_text: str) -> str:
+    """Turn a raw Groq error body into a short, user-facing message.
+
+    Groq's error bodies are raw JSON meant for developers (e.g. the full
+    429 rate-limit payload with org IDs and tier upsell links). Dumping that
+    straight into the chat is confusing for end users, so we parse out just
+    the useful bits: which limit was hit and how long until it resets.
+    """
+    try:
+        parsed = json.loads(body_text)
+        inner_message = parsed.get("error", {}).get("message", "")
+    except (json.JSONDecodeError, AttributeError):
+        inner_message = body_text
+
+    if status_code == 429:
+        # Groq's message includes a "Please try again in 17m22.848s" segment.
+        wait_match = re.search(r"try again in ([\d.]+m[\d.]+s|[\d.]+s)", inner_message)
+        wait_str = wait_match.group(1) if wait_match else None
+        if "tokens per day" in inner_message.lower() or "TPD" in inner_message:
+            base = "Vigzone AI has hit Groq's daily free-tier token limit for this model."
+        elif "tokens per minute" in inner_message.lower() or "TPM" in inner_message:
+            base = "Vigzone AI is sending messages a bit too fast for Groq's free tier."
+        else:
+            base = "Vigzone AI has hit Groq's rate limit."
+        if wait_str:
+            return f"{base} Please try again in about {wait_str}."
+        return f"{base} Please wait a bit and try again."
+
+    return f"Groq API error {status_code}: {inner_message[:300] or body_text[:300]}"
+
+
 # ── Config ───────────────────────────────────────────────────────────────────
 # AI_PROVIDER selects the chat backend:
 #   "groq"   (default) → Groq's hosted OpenAI-compatible API, needs GROQ_API_KEY
@@ -76,6 +108,13 @@ else:
     API_KEY         = os.getenv("GROQ_API_KEY", "")
 
 _AUTH_HEADERS = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
+
+# The Groq (or other hosted) API key is SHARED across every user of this
+# deployment — it is not a per-user quota. DAILY_TOKEN_LIMIT should match
+# whatever your provider's daily token cap actually is (Groq's free tier is
+# 100,000 tokens/day per model as of writing; check console.groq.com/settings/limits
+# for your current plan) so the usage table can show remaining headroom.
+DAILY_TOKEN_LIMIT = int(os.getenv("DAILY_TOKEN_LIMIT", "100000"))
 
 # APP_MODE controls rate-limiting & token tracking.
 #   "testing"    → unlimited, no tracking (default for local dev)
@@ -556,6 +595,79 @@ def track_token_usage(user_id: int, prompt_tokens: int, completion_tokens: int) 
         logger.warning("token_usage write failed: %s", exc)
 
 
+def get_shared_daily_usage() -> dict:
+    """
+    Return today's token usage broken down per user, plus the shared total.
+
+    This exists because the underlying API key (Groq or whatever
+    AI_PROVIDER points at) is ONE key for the entire deployment — every
+    signed-in user draws from the same daily token pool. There's no way to
+    give each person their own separate quota without each of them having
+    their own API key, so this surfaces the shared usage transparently
+    instead of letting people get confused by a mysterious 429 caused by
+    someone else's chatting.
+
+    "Today" resets at Sri Lanka local midnight (UTC+5:30) by default — set
+    the USAGE_TZ_OFFSET_MINUTES env var to change this (e.g. 0 for UTC,
+    -300 for US Eastern standard time). `ts` in the DB is stored as UTC
+    epoch seconds either way, so this just shifts which epoch second counts
+    as "midnight" before comparing against it.
+    """
+    try:
+        import sqlite3, os as _os
+        from datetime import datetime, timezone, timedelta
+
+        db_path = _os.getenv("VIGZONE_DB_PATH", _os.path.join("data", "vigzone.db"))
+        tz_offset_minutes = int(_os.getenv("USAGE_TZ_OFFSET_MINUTES", "330"))  # +5:30 = Sri Lanka
+        local_tz = timezone(timedelta(minutes=tz_offset_minutes))
+        day_start = int(
+            datetime.now(local_tz).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+        )
+
+        with sqlite3.connect(db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT u.name,
+                       u.email,
+                       COALESCE(SUM(t.total_tokens), 0) AS used
+                FROM users u
+                LEFT JOIN token_usage t
+                    ON t.user_id = u.id AND t.ts >= ?
+                GROUP BY u.id
+                ORDER BY used DESC
+                """,
+                (day_start,),
+            ).fetchall()
+
+        people = [{"name": r[0] or r[1], "tokens_used_today": r[2]} for r in rows]
+        total_used = sum(p["tokens_used_today"] for p in people)
+
+        return {
+            "people": people,
+            "total_used_today": total_used,
+            "daily_limit": DAILY_TOKEN_LIMIT,
+            "remaining_today": max(DAILY_TOKEN_LIMIT - total_used, 0),
+            "shared_key_note": (
+                "Vigzone AI runs on one shared API key for everyone, not a "
+                "separate quota per person. Everyone's messages draw from the "
+                "same daily token pool below, so heavy use by one person "
+                "reduces what's left for everyone else until it resets."
+            ),
+        }
+    except Exception as exc:
+        logger.warning("get_shared_daily_usage failed: %s", exc)
+        return {
+            "people": [],
+            "total_used_today": 0,
+            "daily_limit": DAILY_TOKEN_LIMIT,
+            "remaining_today": DAILY_TOKEN_LIMIT,
+            "shared_key_note": (
+                "Vigzone AI runs on one shared API key for everyone, not a "
+                "separate quota per person."
+            ),
+        }
+
+
 def get_user_token_stats(user_id: int) -> dict:
     """Return lifetime token stats for a user (production mode)."""
     try:
@@ -626,8 +738,9 @@ async def stream_chat(
             if resp.status_code != 200:
                 body = await resp.aread()
                 raise VigzoneAIError(
-                    f"{'Ollama' if AI_PROVIDER == 'ollama' else 'Groq'} API error "
-                    f"{resp.status_code}: {body.decode(errors='ignore')[:300]}"
+                    _friendly_groq_error(resp.status_code, body.decode(errors="ignore"))
+                    if AI_PROVIDER != "ollama" else
+                    f"Ollama API error {resp.status_code}: {body.decode(errors='ignore')[:300]}"
                 )
 
             full_text   = ""
@@ -755,8 +868,9 @@ async def chat_once(
         raise VigzoneAIError("Groq rejected the API key. Check GROQ_API_KEY in .env.")
     if resp.status_code != 200:
         raise VigzoneAIError(
-            f"{'Ollama' if AI_PROVIDER == 'ollama' else 'Groq'} API error "
-            f"{resp.status_code}: {resp.text[:300]}"
+            _friendly_groq_error(resp.status_code, resp.text)
+            if AI_PROVIDER != "ollama" else
+            f"Ollama API error {resp.status_code}: {resp.text[:300]}"
         )
 
     data = resp.json()
