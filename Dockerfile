@@ -22,6 +22,7 @@ COPY image_generation.py .
 COPY web_search.py .
 COPY stream_manager.py .
 COPY virus_scanner.py .
+COPY start.py .
 # Optional modules — imported inside try/except in vigzone_ai.py. They do
 # exist in this project, so copy them directly (if you ever delete them,
 # switch these two lines to a wildcard COPY or remove them).
@@ -41,8 +42,9 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 EXPOSE 8000
 
-# Shell form (no brackets) so $PORT is actually substituted at container
-# start — the previous exec-form CMD hardcoded --port 8000 and silently
-# ignored whatever PORT the host assigned.
-CMD python -m uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}
+# start.py reads PORT itself in Python — no reliance on the host actually
+# running this command through a shell that expands $PORT (some platforms'
+# "custom start command" features run commands without a shell, which left
+# a literal "$PORT" string being passed to uvicorn instead of a number).
+CMD ["python", "start.py"]
 
