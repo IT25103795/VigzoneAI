@@ -23,11 +23,12 @@ COPY web_search.py .
 COPY stream_manager.py .
 COPY virus_scanner.py .
 COPY start.py .
-# Optional modules — imported inside try/except in vigzone_ai.py. They do
+# Optional modules — imported inside try/except in app.py. They do
 # exist in this project, so copy them directly (if you ever delete them,
 # switch these two lines to a wildcard COPY or remove them).
 COPY realworld_data.py .
 COPY website_builder.py .
+COPY fact_verification.py .
 COPY static/ static/
 
 ENV PYTHONUNBUFFERED=1 \
