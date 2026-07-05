@@ -3372,6 +3372,7 @@
   let micTooltipTimer = null;
   let micSpeechRecognition = null;
   let micSpeechTranscript = '';
+  let micSpeechInterimTranscript = '';
   // Resolves with the next isFinal transcript, or rejects with the recognizer's
   // error code (e.g. 'no-speech', 'audio-capture') so we can surface a useful
   // message instead of silently sending a placeholder to the chat backend.
@@ -3404,6 +3405,7 @@
     hideMicTooltip();
     micAudioChunks = [];
     micSpeechTranscript = '';
+    micSpeechInterimTranscript = '';
     const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg';
     micMediaRecorder = new MediaRecorder(micStream, { mimeType });
     micMediaRecorder.ondataavailable = e => { if (e.data.size > 0) micAudioChunks.push(e.data); };
@@ -3425,13 +3427,17 @@
       micSpeechRecognition.lang = getVoiceInputLang();
       micSpeechRecognition.onresult = (event) => {
         let finalText = '';
+        let interimText = '';
         let hasFinal = false;
         for (let i = 0; i < event.results.length; i++) {
           if (event.results[i].isFinal) {
             finalText += event.results[i][0].transcript;
             hasFinal = true;
+          } else {
+            interimText += event.results[i][0].transcript;
           }
         }
+        if (interimText.trim()) micSpeechInterimTranscript = interimText.trim();
         if (hasFinal) {
           micSpeechTranscript = finalText.trim();
           if (micSpeechFinalPromise) {
@@ -3443,21 +3449,30 @@
       micSpeechRecognition.onerror = (event) => {
         // Common reasons: 'no-speech' (silence), 'audio-capture' (mic busy),
         // 'not-allowed' (permission), 'network' (Chrome's online recognizer).
-        // We surface this so the user knows why nothing was transcribed.
         const code = (event && event.error) || 'unknown';
         console.warn('Vigzone AI: speech recognition error:', code);
+        // 'aborted' fires in virtually every browser whenever
+        // recognition.stop() is called manually -- and stopRecording() does
+        // exactly that on every mic release. It does NOT mean transcription
+        // failed, it just means we ended the session ourselves. Don't reject
+        // here; let onend run its fallback logic (final or interim
+        // transcript) instead of surfacing a false "couldn't transcribe"
+        // error for perfectly good recordings.
+        if (code === 'aborted') return;
         if (micSpeechFinalPromise) {
           micSpeechFinalPromise.reject(new Error(code));
           micSpeechFinalPromise = null;
         }
       };
       micSpeechRecognition.onend = () => {
-        // If we stopped without ever firing onresult/isFinal (e.g. the user
-        // released the button before saying anything), unblock the awaiter
-        // so the UI doesn't hang waiting for a transcript.
+        // If we stopped without ever firing a final result (e.g. the mic
+        // was released before recognition finished finalizing, which is the
+        // common case with 'aborted'), fall back to the last interim
+        // transcript we captured rather than discarding it.
         if (micSpeechFinalPromise) {
-          if (micSpeechTranscript) {
-            micSpeechFinalPromise.resolve(micSpeechTranscript);
+          const fallback = (micSpeechTranscript || micSpeechInterimTranscript || '').trim();
+          if (fallback) {
+            micSpeechFinalPromise.resolve(fallback);
           } else {
             micSpeechFinalPromise.reject(new Error('no-speech'));
           }
