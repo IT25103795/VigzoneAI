@@ -112,14 +112,14 @@ def init_db() -> None:
             conn.execute("ALTER TABLE users ADD COLUMN use_own_key INTEGER NOT NULL DEFAULT 0")
         existing_usage_cols = {row[1] for row in conn.execute("PRAGMA table_info(token_usage)")}
         if "provider" not in existing_usage_cols:
-            conn.execute("ALTER TABLE token_usage ADD COLUMN provider TEXT NOT NULL DEFAULT 'ollama'")
+            conn.execute("ALTER TABLE token_usage ADD COLUMN provider TEXT NOT NULL DEFAULT 'groq'")
 
 
 # ==========================================
 # PER-USER GROQ API KEY (encrypted at rest)
 # ==========================================
 # Each user can optionally bring their own Groq API key instead of using the
-# app's default (free, local Ollama) mode. The key is encrypted before it
+# app's default Groq key. The key is encrypted before it
 # touches disk using a key derived from ENCRYPTION_SECRET (set this in your
 # environment — if it's ever missing we fall back to a random one generated
 # at startup, which works fine but means previously-saved keys become
@@ -192,7 +192,7 @@ def set_use_own_key(user_id: int, enabled: bool) -> None:
 
 
 def clear_user_groq_key(user_id: int) -> None:
-    """Forget the user's stored key entirely and revert them to free/Ollama mode."""
+    """Forget the user's stored key entirely and revert them to the default Groq key."""
     with _connect() as conn:
         conn.execute(
             "UPDATE users SET own_groq_key_enc = NULL, use_own_key = 0 WHERE id = ?",

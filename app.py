@@ -2,8 +2,7 @@
 Vigzone AI - Web Server
 ========================
 FastAPI backend serving the Vigzone AI chat interface.
-Chat backend: Groq's hosted API (https://api.groq.com) by default;
-set AI_PROVIDER=ollama in .env to use a local Ollama server instead.
+Chat backend: Groq's hosted API (https://api.groq.com). This build is Groq-only; Ollama/free-local mode is disabled.
 
 Modes (set APP_MODE in .env):
   testing    → unlimited messages, no rate limits (default)
@@ -218,15 +217,10 @@ def _set_session_cookie(response: JSONResponse, token: str) -> None:
 
 # ── System endpoints ──────────────────────────────────────────────────────────
 def _backend_label() -> str:
-    return "Ollama (local)" if AI_PROVIDER == "ollama" else "Groq (hosted)"
+    return "Groq (hosted)"
 
 
 def _setup_message() -> str:
-    if AI_PROVIDER == "ollama":
-        return (
-            f"Can't reach Ollama at {OLLAMA_BASE_URL}. Make sure Ollama is running "
-            "(`ollama serve`) and that you've pulled a model (`ollama pull gemma3`)."
-        )
     return (
         "Groq isn't configured. Add a valid GROQ_API_KEY in your deployment "
         "environment variables, then redeploy/restart the app."
@@ -268,7 +262,7 @@ async def get_model_info():
         model=DEFAULT_MODEL,
         vision_model=VISION_MODEL,
         backend=_backend_label(),
-        status="ready" if await is_configured() else ("ollama_unreachable" if AI_PROVIDER == "ollama" else "groq_not_configured"),
+        status="ready" if await is_configured() else "groq_not_configured",
         mode="testing" if IS_TESTING else "production",
     )
 
@@ -492,9 +486,9 @@ async def my_token_usage(user: dict = Depends(require_current_user)):
 @app.get("/api/me/usage", tags=["Account"])
 async def my_usage_today(user: dict = Depends(require_current_user)):
     """
-    Returns today's usage for the SIGNED-IN user only — individual plans,
-    not a shared family pool. If they haven't activated their own Groq key,
-    they're on free/unlimited local Ollama and there's no quota to report.
+    Returns today's usage for the SIGNED-IN user only.
+    No free/Ollama mode: users without their own key use the deployment's
+    default Groq key, and users with an activated key use their own Groq quota.
     """
     key_status = authmod.get_user_key_status(user["id"])
     if IS_TESTING:
@@ -538,9 +532,9 @@ async def activate_my_groq_key(request: GroqKeyRequest, user: dict = Depends(req
 
 @app.post("/api/me/groq-key/deactivate", tags=["Account"])
 async def deactivate_my_groq_key(user: dict = Depends(require_current_user)):
-    """Switch the user back to free/unlimited local Ollama. Forgets the stored key entirely."""
+    """Forget the stored key and switch the user back to Vigzone's default Groq key."""
     authmod.clear_user_groq_key(user["id"])
-    return JSONResponse({"activated": False, "message": "Switched back to the free, unlimited local AI."})
+    return JSONResponse({"activated": False, "message": "Switched back to Vigzone's default Groq plan."})
 
 
 # ── Auth endpoints ────────────────────────────────────────────────────────────
@@ -668,8 +662,7 @@ def _resolve_provider_for_user(user: dict) -> tuple[Optional[dict], Optional[str
     """
     Decide which AI backend a given user's message should use.
     Returns (provider_override, override_model):
-      - (None, None)               → use the deployment default (Ollama/Groq
-                                      as configured in AI_PROVIDER)
+      - (None, None)               → use the deployment default Groq key
       - ({"api_url":..,"api_key":..}, GROQ_BYOK_MODEL) → this user has
         activated their own personal Groq key, so their chats bypass the
         shared default entirely and run on their own quota.
@@ -696,12 +689,8 @@ async def chat(request: ChatRequest, user: dict = Depends(require_current_user))
         raise HTTPException(
             status_code=503,
             detail=(
-                f"Can't reach Ollama at {OLLAMA_BASE_URL}. "
-                "Make sure Ollama is installed and running (`ollama serve`), "
-                "and that you've pulled a model (`ollama pull gemma3`)."
-            ) if AI_PROVIDER == "ollama" else (
                 "Groq isn't configured — set GROQ_API_KEY in .env "
-                "(get a free key at https://console.groq.com/keys)."
+                "or in your deployment Variables (get a free key at https://console.groq.com/keys)."
             ),
         )
 
@@ -780,11 +769,8 @@ async def chat_sync(request: ChatRequest, user: dict = Depends(require_current_u
         raise HTTPException(
             status_code=503,
             detail=(
-                f"Can't reach Ollama at {OLLAMA_BASE_URL}. "
-                "Make sure Ollama is running (`ollama serve`)."
-            ) if AI_PROVIDER == "ollama" else (
                 "Groq isn't configured — set GROQ_API_KEY in .env "
-                "(get a free key at https://console.groq.com/keys)."
+                "or in your deployment Variables (get a free key at https://console.groq.com/keys)."
             ),
         )
     messages = [{"role": m.role, "content": m.content} for m in request.messages]

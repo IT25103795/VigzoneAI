@@ -1521,7 +1521,7 @@
       <div class="api-key-box" id="apiKeyBox">
         <div class="api-key-box-label">
           <span>Your AI</span>
-          <span class="api-key-mode-badge" id="apiKeyModeBadge">Free (local)</span>
+          <span class="api-key-mode-badge" id="apiKeyModeBadge">Groq (default)</span>
         </div>
 
         <div id="apiKeyInputSection">
@@ -1546,7 +1546,7 @@
 
         <div class="api-key-active-row" id="apiKeyActiveSection" style="display:none;">
           <span>Using your own Groq key ⚡</span>
-          <button class="api-key-switch-back-btn" id="groqKeyDeactivateBtn">Switch to free</button>
+          <button class="api-key-switch-back-btn" id="groqKeyDeactivateBtn">Use default Groq</button>
         </div>
       </div>
 
@@ -2488,7 +2488,7 @@
   sidebarToggleBtn.addEventListener('click', () => setSidebarCollapsed(!sidebar.classList.contains('collapsed')));
   sidebarOverlay.addEventListener('click', () => setSidebarCollapsed(true));
 
-  // ---------- My usage today (individual plan — own key or free Ollama) ----------
+  // ---------- My usage today (Groq default plan or own key) ----------
   function formatDuration(totalSeconds){
     totalSeconds = Math.max(0, totalSeconds | 0);
     const h = Math.floor(totalSeconds / 3600);
@@ -2511,29 +2511,21 @@
         return;
       }
 
-      if (data.mode === 'free_ollama') {
-        usageModalBody.innerHTML = `
-          <div class="usage-modal-empty">
-            ✅ You're on the free, unlimited local AI — no API key, no daily cap.
-            <br><br>
-            Want higher-quality replies? You can activate your own Groq API key from the
-            box above your account name in the sidebar.
-          </div>
-        `;
-        return;
-      }
-
-      // mode === 'own_key'
+      // mode === 'default_groq' or 'own_key'
       const limit = data.daily_limit || 0;
       const used = data.used_today || 0;
+      const remaining = data.remaining_today || Math.max(limit - used, 0);
       const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
       const barClass = pct >= 90 ? 'danger' : (pct >= 65 ? 'warn' : '');
       const resetIn = data.seconds_until_reset ? `Resets in ${formatDuration(data.seconds_until_reset)}` : '';
+      const ownKey = data.mode === 'own_key' || data.using_own_key;
+      const planText = ownKey
+        ? `Powered by your own Groq API key ⚡ — this uses your personal Groq quota. ${resetIn}`
+        : `Powered by Vigzone's default Groq API key ⚡ — default daily limit with countdown. ${resetIn}`;
 
       usageModalBody.innerHTML = `
         <div class="usage-modal-note">
-          Powered by your own Groq API key ⚡ — this is your personal quota, separate from
-          everyone else's. ${resetIn}
+          ${planText}
         </div>
         <div class="usage-modal-bar-track">
           <div class="usage-modal-bar-fill ${barClass}" style="width:${pct}%"></div>
@@ -2541,6 +2533,10 @@
         <div class="usage-modal-total-row">
           <span>${used.toLocaleString()} used today</span>
           <span>${limit ? limit.toLocaleString() + ' daily limit' : ''}</span>
+        </div>
+        <div class="usage-modal-total-row">
+          <span>${remaining.toLocaleString()} remaining today</span>
+          <span>${resetIn}</span>
         </div>
         <div class="usage-modal-disclaimer">${escapeHtml(data.disclaimer || '')}</div>
       `;
@@ -2568,7 +2564,7 @@
 
   function setApiKeyBoxMode(usingOwnKey){
     if (apiKeyModeBadge) {
-      apiKeyModeBadge.textContent = usingOwnKey ? 'Groq (your key)' : 'Free (local)';
+      apiKeyModeBadge.textContent = usingOwnKey ? 'Groq (your key)' : 'Groq (default)';
       apiKeyModeBadge.classList.toggle('own-key', !!usingOwnKey);
     }
     if (apiKeyInputSection) apiKeyInputSection.style.display = usingOwnKey ? 'none' : '';

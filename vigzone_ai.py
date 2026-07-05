@@ -17,8 +17,9 @@ Setup (one-time):
     3. (Optional) override GROQ_MODEL / GROQ_VISION_MODEL — see
        https://console.groq.com/docs/models for the current list.
 
-This module still supports the old local-Ollama backend for anyone who wants
-it — set AI_PROVIDER=ollama in .env to switch back.
+This build is Groq-only for hosted deployment. Ollama/free-local mode has
+been removed so every chat uses either the default GROQ_API_KEY or the user's
+own activated Groq API key.
 
 Performance notes (v3):
   - Single shared httpx.AsyncClient eliminates TCP handshake per message.
@@ -119,45 +120,27 @@ async def validate_groq_api_key(api_key: str) -> dict:
 
 
 # ── Config ───────────────────────────────────────────────────────────────────
-# AI_PROVIDER selects the chat backend:
-#   "groq"   (default) → Groq's hosted OpenAI-compatible API, needs GROQ_API_KEY
-#   "ollama"           → local Ollama server, no API key needed
+# Groq-only hosted backend.
 #
-# Deployment safety fix:
-# Some hosts keep old environment variables even after code is updated. If the
-# host still has AI_PROVIDER=ollama but a GROQ_API_KEY is also configured, the
-# deployed app used to keep trying an unreachable Ollama URL and show
-# "Can't reach Ollama". For hosted deployments, prefer Groq whenever a Groq key
-# exists. Set FORCE_OLLAMA=true only when you intentionally want Ollama.
+# IMPORTANT: This build intentionally ignores any old AI_PROVIDER=ollama or
+# OLLAMA_* variables that may still exist in your host's Variables panel. The
+# default chat backend is always Groq, using the deployment's GROQ_API_KEY.
+# A signed-in user can optionally activate their own Groq key to use their own
+# quota instead of the deployment default.
 _REQUESTED_AI_PROVIDER = os.getenv("AI_PROVIDER", "groq").strip().lower()
+if _REQUESTED_AI_PROVIDER != "groq":
+    logger.warning("Ignoring AI_PROVIDER=%r; this build is Groq-only.", _REQUESTED_AI_PROVIDER)
+AI_PROVIDER = "groq"
+
 _GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
-_FORCE_OLLAMA = os.getenv("FORCE_OLLAMA", "false").strip().lower() in ("1", "true", "yes", "on")
 
-if _REQUESTED_AI_PROVIDER not in ("groq", "ollama"):
-    logger.warning("Unknown AI_PROVIDER=%r; falling back to Groq", _REQUESTED_AI_PROVIDER)
-    AI_PROVIDER = "groq"
-elif _REQUESTED_AI_PROVIDER == "ollama" and _GROQ_API_KEY and not _FORCE_OLLAMA:
-    logger.warning(
-        "AI_PROVIDER=ollama but GROQ_API_KEY is configured; using Groq. "
-        "Set FORCE_OLLAMA=true to force the local Ollama backend."
-    )
-    AI_PROVIDER = "groq"
-else:
-    AI_PROVIDER = _REQUESTED_AI_PROVIDER
-
-if AI_PROVIDER == "ollama":
-    OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
-    OLLAMA_API_URL  = f"{OLLAMA_BASE_URL}/v1/chat/completions"
-    DEFAULT_MODEL   = os.getenv("OLLAMA_MODEL", "gemma3")
-    VISION_MODEL    = os.getenv("OLLAMA_VISION_MODEL", "gemma3")
-    API_KEY         = ""
-else:
-    # Groq — https://console.groq.com/docs/models for current model names.
-    OLLAMA_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1").rstrip("/")
-    OLLAMA_API_URL  = f"{OLLAMA_BASE_URL}/chat/completions"
-    DEFAULT_MODEL   = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-    VISION_MODEL    = os.getenv("GROQ_VISION_MODEL", "llama-3.2-11b-vision-preview")
-    API_KEY         = _GROQ_API_KEY
+# Variable names are kept for backward compatibility with the rest of the code,
+# but these now point to Groq's OpenAI-compatible endpoint, not Ollama.
+OLLAMA_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1").rstrip("/")
+OLLAMA_API_URL  = f"{OLLAMA_BASE_URL}/chat/completions"
+DEFAULT_MODEL   = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+VISION_MODEL    = os.getenv("GROQ_VISION_MODEL", "llama-3.2-11b-vision-preview")
+API_KEY         = _GROQ_API_KEY
 
 _AUTH_HEADERS = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
 
@@ -373,17 +356,10 @@ async def is_configured() -> bool:
     if _configured_cache is not None and (now - _configured_cache_ts) < _CONFIGURED_CACHE_TTL:
         return _configured_cache
 
-    if AI_PROVIDER == "ollama":
-        try:
-            resp = await _get_client().get(f"{OLLAMA_BASE_URL}/api/tags")
-            result = resp.status_code == 200
-        except httpx.RequestError:
-            result = False
-    else:
-        # Groq has no unauthenticated health endpoint to ping cheaply, so
-        # just confirm an API key is present — the actual chat call will
-        # surface any auth/network problem with a clear error.
-        result = bool(API_KEY)
+    # Groq has no unauthenticated health endpoint to ping cheaply, so just
+    # confirm an API key is present. The actual chat call will surface any
+    # auth/network problem with a clear user-facing error.
+    result = bool(API_KEY)
 
     _configured_cache = result
     _configured_cache_ts = now
@@ -617,26 +593,16 @@ async def _build_payload(messages: list[dict], model: str, stream: bool, user_na
         "presence_penalty": 0.0 if code_request else 0.4,
     }
 
-    if AI_PROVIDER == "ollama":
-        # Ollama's OpenAI-compat endpoint has NO way to raise the context
-        # window except a top-level "num_ctx" field on the request body
-        # (nesting it under "options" is silently ignored on this endpoint).
-        # Without this, Ollama falls back to its own default (2048-4096
-        # tokens depending on VRAM). Groq's hosted models already run with a
-        # large context window and reject unrecognized fields, so this is
-        # Ollama-only.
-        payload["num_ctx"] = 16384
-
     return payload
 
 
 # ── Token tracking (production mode only) ────────────────────────────────────
-def track_token_usage(user_id: int, prompt_tokens: int, completion_tokens: int, provider: str = "ollama") -> None:
+def track_token_usage(user_id: int, prompt_tokens: int, completion_tokens: int, provider: str = "groq") -> None:
     """
     Persist token usage to SQLite. Only called in production mode.
     The token_usage table is created by auth.init_db() — see auth.py.
-    `provider` is 'ollama' (free, unlimited — recorded for visibility only)
-    or 'groq' (counts against that user's own Groq daily quota).
+    `provider` is 'groq' for both the default deployment key and a user's
+    own activated Groq key.
     """
     if IS_TESTING:
         return
@@ -658,29 +624,23 @@ def track_token_usage(user_id: int, prompt_tokens: int, completion_tokens: int, 
 
 def get_user_daily_usage(user_id: int, has_own_key: bool) -> dict:
     """
-    Return today's Groq usage for ONE user (their own personal key, their
-    own quota — no more shared family pool).
+    Return today's Groq usage for ONE signed-in user.
 
-    If the user isn't using their own key, there's no quota to report:
-    they're on free, unlimited local Ollama, so we return that mode instead.
+    No Ollama/free-local mode in this build. If the user has not activated
+    their own key, chats use the deployment's default GROQ_API_KEY. If they
+    have activated a key, chats use their own Groq quota. The usage numbers are
+    Vigzone's estimates from messages it sends; Groq's own rate-limit response
+    is still the final authority.
 
     "Today" resets at Sri Lanka local midnight (UTC+5:30) by default — set
-    the USAGE_TZ_OFFSET_MINUTES env var to change this. `ts` in the DB is
-    UTC epoch seconds either way; this just shifts which second counts as
-    "midnight" before comparing against it.
+    the USAGE_TZ_OFFSET_MINUTES env var to change this.
     """
-    if not has_own_key:
-        return {
-            "mode": "free_ollama",
-            "message": "You're using the free, unlimited local AI — no API key needed.",
-        }
-
     try:
         import sqlite3, os as _os
         from datetime import datetime, timezone, timedelta
 
         db_path = _os.getenv("VIGZONE_DB_PATH", _os.path.join("data", "vigzone.db"))
-        tz_offset_minutes = int(_os.getenv("USAGE_TZ_OFFSET_MINUTES", "330"))  # +5:30 = Sri Lanka
+        tz_offset_minutes = int(_os.getenv("USAGE_TZ_OFFSET_MINUTES", "330"))
         local_tz = timezone(timedelta(minutes=tz_offset_minutes))
         now_local = datetime.now(local_tz)
         day_start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -700,7 +660,9 @@ def get_user_daily_usage(user_id: int, has_own_key: bool) -> dict:
         used_today = row[0] if row else 0
         limit = DAILY_TOKEN_LIMIT
         return {
-            "mode": "own_key",
+            "mode": "own_key" if has_own_key else "default_groq",
+            "provider": "groq",
+            "using_own_key": bool(has_own_key),
             "used_today": used_today,
             "daily_limit": limit,
             "remaining_today": max(limit - used_today, 0),
@@ -713,8 +675,16 @@ def get_user_daily_usage(user_id: int, has_own_key: bool) -> dict:
         }
     except Exception as exc:
         logger.warning("get_user_daily_usage failed: %s", exc)
-        return {"mode": "own_key", "used_today": 0, "daily_limit": DAILY_TOKEN_LIMIT,
-                "remaining_today": DAILY_TOKEN_LIMIT, "seconds_until_reset": 0, "disclaimer": ""}
+        return {
+            "mode": "own_key" if has_own_key else "default_groq",
+            "provider": "groq",
+            "using_own_key": bool(has_own_key),
+            "used_today": 0,
+            "daily_limit": DAILY_TOKEN_LIMIT,
+            "remaining_today": DAILY_TOKEN_LIMIT,
+            "seconds_until_reset": 0,
+            "disclaimer": "",
+        }
 
 
 def get_user_token_stats(user_id: int) -> dict:
@@ -766,8 +736,8 @@ async def stream_chat(
     effective_headers = (
         {"Authorization": f"Bearer {provider_override['api_key']}"} if using_override else _AUTH_HEADERS
     )
-    effective_provider_label = "groq" if using_override else ("ollama" if AI_PROVIDER == "ollama" else "groq")
-    is_ollama_call = (not using_override) and AI_PROVIDER == "ollama"
+    effective_provider_label = "groq"
+    is_ollama_call = False
 
     payload = await _build_payload(messages, model, stream=True, user_name=user_name)
     client  = _get_client()
@@ -904,8 +874,8 @@ async def chat_once(
     effective_headers = (
         {"Authorization": f"Bearer {provider_override['api_key']}"} if using_override else _AUTH_HEADERS
     )
-    effective_provider_label = "groq" if using_override else ("ollama" if AI_PROVIDER == "ollama" else "groq")
-    is_ollama_call = (not using_override) and AI_PROVIDER == "ollama"
+    effective_provider_label = "groq"
+    is_ollama_call = False
 
     payload = await _build_payload(messages, model, stream=False, user_name=user_name)
     client  = _get_client()
@@ -958,7 +928,7 @@ async def chat_once(
     data = resp.json()
     choices = data.get("choices") or []
     if not choices:
-        raise VigzoneAIError("Ollama returned no choices in its response (empty completion).")
+        raise VigzoneAIError("Groq returned no choices in its response (empty completion).")
     reply = choices[0]["message"]["content"]
     clean = trim_degeneration_tail(reply)
     if clean != reply.rstrip():
