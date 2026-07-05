@@ -28,6 +28,12 @@ DB_DIR  = os.path.join(os.path.dirname(__file__), "data")
 KB_DB   = os.path.join(DB_DIR, "knowledge.db")   # new FTS database
 KB_JSON = os.path.join(DB_DIR, "knowledge.json")  # legacy, migrated on first run
 
+# Backward-compatible names kept for older helper scripts/tests. The runtime
+# now uses SQLite (KB_DB), but these aliases avoid import-time breakage in
+# legacy tooling that still expects the old JSON-based API.
+KB_DIR  = DB_DIR
+KB_PATH = KB_JSON
+
 MAX_ENTRIES             = 5000   # hard cap; oldest entries pruned beyond this
 MAX_ASSISTANT_CHARS     = 4000
 MAX_MEMORY_ASSISTANT_CHARS = 500
@@ -220,11 +226,6 @@ def _migrate_json_if_present() -> None:
         logger.warning("knowledge.json migration failed: %s", exc)
 
 
-# Initialise on import
-_ensure_schema()
-_migrate_json_if_present()
-
-
 def add_interaction(user_text: str, assistant_text: str, feedback: Optional[str] = None) -> None:
     if not isinstance(user_text, str) or not isinstance(assistant_text, str):
         return
@@ -246,6 +247,31 @@ def add_interaction(user_text: str, assistant_text: str, feedback: Optional[str]
                 "(SELECT id FROM interactions ORDER BY ts ASC LIMIT ?)",
                 (count - MAX_ENTRIES,),
             )
+
+
+def _ensure_kb() -> None:
+    """Backward-compatible wrapper for legacy JSON KB tests/tools."""
+    _ensure_schema()
+
+
+def _load_kb() -> List[Dict]:
+    """Return KB rows in the legacy JSON shape used by older tests/tools."""
+    try:
+        with _db() as conn:
+            rows = conn.execute(
+                "SELECT user_q, assistant, feedback, ts FROM interactions ORDER BY ts ASC, id ASC"
+            ).fetchall()
+        return [
+            {
+                "user": row["user_q"],
+                "assistant": row["assistant"],
+                "feedback": row["feedback"],
+                "ts": row["ts"],
+            }
+            for row in rows
+        ]
+    except Exception:
+        return []
 
 
 def find_similar(query: str, top_k: int = 3) -> List[Dict]:
@@ -316,3 +342,8 @@ def prune_kb() -> int:
     except Exception as exc:
         logger.warning("prune_kb error: %s", exc)
     return removed
+
+
+# Initialise on import after functions used by migration are defined.
+_ensure_schema()
+_migrate_json_if_present()

@@ -124,6 +124,8 @@ class HealthCheckResponse(BaseModel):
     status: str
     backend_configured: bool
     mode: str
+    backend: str
+    setup_message: str
 
 
 class CapabilitiesResponse(BaseModel):
@@ -215,6 +217,22 @@ def _set_session_cookie(response: JSONResponse, token: str) -> None:
 
 
 # ── System endpoints ──────────────────────────────────────────────────────────
+def _backend_label() -> str:
+    return "Ollama (local)" if AI_PROVIDER == "ollama" else "Groq (hosted)"
+
+
+def _setup_message() -> str:
+    if AI_PROVIDER == "ollama":
+        return (
+            f"Can't reach Ollama at {OLLAMA_BASE_URL}. Make sure Ollama is running "
+            "(`ollama serve`) and that you've pulled a model (`ollama pull gemma3`)."
+        )
+    return (
+        "Groq isn't configured. Add a valid GROQ_API_KEY in your deployment "
+        "environment variables, then redeploy/restart the app."
+    )
+
+
 @app.get("/health", response_model=HealthCheckResponse, tags=["System"])
 async def health_check():
     configured = await is_configured()
@@ -222,6 +240,8 @@ async def health_check():
         status="healthy" if configured else "needs_setup",
         backend_configured=configured,
         mode="testing" if IS_TESTING else "production",
+        backend=_backend_label(),
+        setup_message="" if configured else _setup_message(),
     )
 
 
@@ -247,7 +267,7 @@ async def get_model_info():
         version="3.0.0",
         model=DEFAULT_MODEL,
         vision_model=VISION_MODEL,
-        backend="Ollama (local)" if AI_PROVIDER == "ollama" else "Groq (hosted)",
+        backend=_backend_label(),
         status="ready" if await is_configured() else ("ollama_unreachable" if AI_PROVIDER == "ollama" else "groq_not_configured"),
         mode="testing" if IS_TESTING else "production",
     )

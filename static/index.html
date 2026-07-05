@@ -3152,7 +3152,8 @@
       } else {
         statusDot.className = 'dot offline';
         statusText.textContent = 'Setup needed';
-        $('#setupBannerSlot').innerHTML = `<div class="setup-banner">⚠ Can't reach Ollama. Install it from <code>ollama.com</code>, make sure it's running, then run <code>ollama pull llama3.2</code> in a terminal and restart this app.</div>`;
+        const msg = data.setup_message || 'AI backend is not configured. Check your deployment environment variables, then redeploy/restart this app.';
+        $('#setupBannerSlot').innerHTML = `<div class="setup-banner">⚠ ${escapeHtml(msg)}</div>`;
       }
     }catch(e){
       statusDot.className = 'dot offline';

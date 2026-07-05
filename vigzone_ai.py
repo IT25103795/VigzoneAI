@@ -122,7 +122,28 @@ async def validate_groq_api_key(api_key: str) -> dict:
 # AI_PROVIDER selects the chat backend:
 #   "groq"   (default) → Groq's hosted OpenAI-compatible API, needs GROQ_API_KEY
 #   "ollama"           → local Ollama server, no API key needed
-AI_PROVIDER = os.getenv("AI_PROVIDER", "groq").lower()
+#
+# Deployment safety fix:
+# Some hosts keep old environment variables even after code is updated. If the
+# host still has AI_PROVIDER=ollama but a GROQ_API_KEY is also configured, the
+# deployed app used to keep trying an unreachable Ollama URL and show
+# "Can't reach Ollama". For hosted deployments, prefer Groq whenever a Groq key
+# exists. Set FORCE_OLLAMA=true only when you intentionally want Ollama.
+_REQUESTED_AI_PROVIDER = os.getenv("AI_PROVIDER", "groq").strip().lower()
+_GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
+_FORCE_OLLAMA = os.getenv("FORCE_OLLAMA", "false").strip().lower() in ("1", "true", "yes", "on")
+
+if _REQUESTED_AI_PROVIDER not in ("groq", "ollama"):
+    logger.warning("Unknown AI_PROVIDER=%r; falling back to Groq", _REQUESTED_AI_PROVIDER)
+    AI_PROVIDER = "groq"
+elif _REQUESTED_AI_PROVIDER == "ollama" and _GROQ_API_KEY and not _FORCE_OLLAMA:
+    logger.warning(
+        "AI_PROVIDER=ollama but GROQ_API_KEY is configured; using Groq. "
+        "Set FORCE_OLLAMA=true to force the local Ollama backend."
+    )
+    AI_PROVIDER = "groq"
+else:
+    AI_PROVIDER = _REQUESTED_AI_PROVIDER
 
 if AI_PROVIDER == "ollama":
     OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
@@ -136,7 +157,7 @@ else:
     OLLAMA_API_URL  = f"{OLLAMA_BASE_URL}/chat/completions"
     DEFAULT_MODEL   = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
     VISION_MODEL    = os.getenv("GROQ_VISION_MODEL", "llama-3.2-11b-vision-preview")
-    API_KEY         = os.getenv("GROQ_API_KEY", "")
+    API_KEY         = _GROQ_API_KEY
 
 _AUTH_HEADERS = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
 
