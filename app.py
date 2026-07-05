@@ -43,6 +43,7 @@ from vigzone_ai import (
     VigzoneAIError,
     chat_once,
     get_user_token_stats,
+    get_shared_daily_usage,
     is_configured,
     stream_chat,
 )
@@ -270,6 +271,7 @@ async def get_stats():
             "generate_image": "POST /api/generate-image",
             "edit_image": "POST /api/edit-image",
             "token_usage": "GET /api/me/tokens",
+            "shared_usage_today": "GET /api/usage/today",
         },
         "docs": "/docs",
     })
@@ -459,6 +461,31 @@ async def my_token_usage(user: dict = Depends(require_current_user)):
         })
     stats = get_user_token_stats(user["id"])
     return JSONResponse({"mode": "production", **stats})
+
+
+@app.get("/api/usage/today", tags=["Account"])
+async def shared_usage_today(user: dict = Depends(require_current_user)):
+    """
+    Returns today's token usage for every signed-in user, plus the shared
+    daily total. Any signed-in user can see this (not just admins) since
+    it's meant to be a transparent notice: this app runs on ONE shared API
+    key, not a per-person quota, so everyone's usage affects everyone else.
+    """
+    if IS_TESTING:
+        return JSONResponse({
+            "mode": "testing",
+            "note": "Usage tracking is disabled in testing mode.",
+            "people": [],
+            "total_used_today": 0,
+            "daily_limit": 0,
+            "remaining_today": 0,
+            "shared_key_note": (
+                "Vigzone AI runs on one shared API key for everyone, not a "
+                "separate quota per person."
+            ),
+        })
+    usage = get_shared_daily_usage()
+    return JSONResponse({"mode": "production", **usage})
 
 
 # ── Auth endpoints ────────────────────────────────────────────────────────────
