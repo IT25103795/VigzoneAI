@@ -620,9 +620,11 @@ def get_shared_daily_usage() -> dict:
         db_path = _os.getenv("VIGZONE_DB_PATH", _os.path.join("data", "vigzone.db"))
         tz_offset_minutes = int(_os.getenv("USAGE_TZ_OFFSET_MINUTES", "330"))  # +5:30 = Sri Lanka
         local_tz = timezone(timedelta(minutes=tz_offset_minutes))
+        now_local = datetime.now(local_tz)
         day_start = int(
-            datetime.now(local_tz).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+            now_local.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
         )
+        day_end = day_start + 86400  # Next midnight (86400 seconds = 24 hours)
 
         with sqlite3.connect(db_path) as conn:
             rows = conn.execute(
@@ -647,6 +649,7 @@ def get_shared_daily_usage() -> dict:
             "total_used_today": total_used,
             "daily_limit": DAILY_TOKEN_LIMIT,
             "remaining_today": max(DAILY_TOKEN_LIMIT - total_used, 0),
+            "reset_at_timestamp": day_end,
             "shared_key_note": (
                 "Vigzone AI runs on one shared API key for everyone, not a "
                 "separate quota per person. Everyone's messages draw from the "
@@ -656,11 +659,17 @@ def get_shared_daily_usage() -> dict:
         }
     except Exception as exc:
         logger.warning("get_shared_daily_usage failed: %s", exc)
+        import time
+        # Fallback: return next midnight in case of error
+        now = int(time.time())
+        tz_offset_seconds = int(_os.getenv("USAGE_TZ_OFFSET_MINUTES", "330")) * 60
+        next_midnight = ((now + tz_offset_seconds) // 86400 + 1) * 86400 - tz_offset_seconds
         return {
             "people": [],
             "total_used_today": 0,
             "daily_limit": DAILY_TOKEN_LIMIT,
             "remaining_today": DAILY_TOKEN_LIMIT,
+            "reset_at_timestamp": next_midnight,
             "shared_key_note": (
                 "Vigzone AI runs on one shared API key for everyone, not a "
                 "separate quota per person."

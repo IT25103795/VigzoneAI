@@ -1495,6 +1495,7 @@
       Vigzone AI runs on one shared API key for everyone — not a separate quota per person.
       Everyone's messages draw from the same daily token pool below, so heavy use by one
       person reduces what's left for everyone else until it resets.
+      <div id="resetCountdownContainer" style="margin-top: 8px; font-weight: 600; color: var(--text); font-size: 13px;"></div>
     </div>
     <div id="usageModalBody">
       <div class="usage-modal-loading">Loading usage…</div>
@@ -2391,15 +2392,46 @@
   sidebarOverlay.addEventListener('click', () => setSidebarCollapsed(true));
 
   // ---------- Shared daily usage (one API key, shared across everyone) ----------
+  let countdownInterval = null;
+  let countdownData = null;
+
+  function formatCountdown(seconds) {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    return `${hours}h ${minutes}m ${secs}s`;
+  }
+
+  function updateCountdownDisplay() {
+    if (!countdownData || !countdownData.reset_at_timestamp) return;
+    
+    const resetCountdownContainer = $('#resetCountdownContainer');
+    if (!resetCountdownContainer) return;
+    
+    const now = Math.floor(Date.now() / 1000);
+    const secondsRemaining = countdownData.reset_at_timestamp - now;
+    
+    if (secondsRemaining <= 0) {
+      resetCountdownContainer.innerHTML = '<span style="color: var(--accent-2);">🔄 Limit resets now</span>';
+      if (countdownInterval) clearInterval(countdownInterval);
+      return;
+    }
+    
+    resetCountdownContainer.innerHTML = `<span style="color: var(--accent-2);">⏱️ Resets in ${formatCountdown(secondsRemaining)}</span>`;
+  }
+
   async function loadUsageToday(){
     usageModalBody.innerHTML = '<div class="usage-modal-loading">Loading usage…</div>';
     try {
       const res = await fetch('/api/usage/today', { credentials: 'include' });
       if (!res.ok) throw new Error('request failed');
       const data = await res.json();
+      countdownData = data;
 
       if (data.mode === 'testing') {
         usageModalBody.innerHTML = '<div class="usage-modal-empty">Usage tracking is off in testing mode.</div>';
+        $('#resetCountdownContainer').innerHTML = '';
+        if (countdownInterval) clearInterval(countdownInterval);
         return;
       }
 
@@ -2434,8 +2466,15 @@
           the real, final word on remaining quota, even if this shows plenty of room.
         </div>
       `;
+
+      // Update countdown display and start interval
+      updateCountdownDisplay();
+      if (countdownInterval) clearInterval(countdownInterval);
+      countdownInterval = setInterval(updateCountdownDisplay, 1000);
     } catch (e) {
       usageModalBody.innerHTML = '<div class="usage-modal-empty">Couldn\'t load usage right now.</div>';
+      $('#resetCountdownContainer').innerHTML = '';
+      if (countdownInterval) clearInterval(countdownInterval);
     }
   }
 
@@ -2445,6 +2484,7 @@
   }
   function closeUsageModal(){
     usageModalOverlay.classList.remove('visible');
+    if (countdownInterval) clearInterval(countdownInterval);
   }
 
   if (usageTodayBtn) usageTodayBtn.addEventListener('click', openUsageModal);
