@@ -218,12 +218,20 @@ def _verify_password(password: str, stored: str) -> bool:
     return hmac.compare_digest(digest.hex(), hex_digest)
 
 
+def is_admin_email(email: str) -> bool:
+    """Admin users are configured with ADMIN_EMAILS=one@example.com,two@example.com."""
+    admins = {e.strip().lower() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()}
+    return (email or "").strip().lower() in admins
+
+
 def _public_user(row: sqlite3.Row) -> dict:
+    email = row["email"]
     return {
         "id": row["id"],
-        "email": row["email"],
+        "email": email,
         "name": row["name"],
         "auth_provider": row["auth_provider"],
+        "is_admin": is_admin_email(email),
     }
 
 

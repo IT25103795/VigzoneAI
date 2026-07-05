@@ -2,7 +2,7 @@
 Vigzone AI - Web Server
 ========================
 FastAPI backend serving the Vigzone AI chat interface.
-Chat backend: Groq's hosted API (https://api.groq.com). This build is Groq-only; Ollama/free-local mode is disabled.
+Chat backend: Groq's hosted API (https://api.groq.com). This build is Groq-only; local-model mode is disabled.
 
 Modes (set APP_MODE in .env):
   testing    → unlimited messages, no rate limits (default)
@@ -11,6 +11,8 @@ Modes (set APP_MODE in .env):
 
 import logging
 import os
+import time
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from typing import List, Literal, Optional, Union
 
@@ -42,9 +44,12 @@ from vigzone_ai import (
     VISION_MODEL,
     IS_TESTING,
     VigzoneAIError,
+    UsageLimitError,
     chat_once,
     get_user_token_stats,
     get_user_daily_usage,
+    assert_user_can_chat,
+    estimate_messages_tokens,
     is_configured,
     stream_chat,
     validate_groq_api_key,
@@ -204,11 +209,45 @@ def require_current_user(
     return user
 
 
+# ── Production safety helpers ────────────────────────────────────────────────
+_CHAT_RATE_LIMIT_PER_MINUTE = int(os.getenv("CHAT_RATE_LIMIT_PER_MINUTE", "20"))
+_rate_windows: dict[str, deque[float]] = defaultdict(deque)
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",", 1)[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _check_chat_rate_limit(request: Request, user: dict) -> None:
+    """Simple in-memory guard against spam. Works per process/deployment."""
+    if IS_TESTING or _CHAT_RATE_LIMIT_PER_MINUTE <= 0:
+        return
+    now = time.monotonic()
+    key = f"user:{user.get('id')}|ip:{_client_ip(request)}"
+    bucket = _rate_windows[key]
+    while bucket and now - bucket[0] > 60:
+        bucket.popleft()
+    if len(bucket) >= _CHAT_RATE_LIMIT_PER_MINUTE:
+        raise HTTPException(status_code=429, detail="Too many messages too quickly. Please wait a minute and try again.")
+    bucket.append(now)
+
+
+def require_admin(user: dict = Depends(require_current_user)) -> dict:
+    if not authmod.is_admin_email(user.get("email", "")):
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    return user
+
+
 def _set_session_cookie(response: JSONResponse, token: str) -> None:
+    cookie_secure = os.getenv("COOKIE_SECURE", "true" if os.getenv("APP_MODE", "testing").lower() == "production" else "false").lower() in ("1", "true", "yes", "on")
     response.set_cookie(
         key=authmod.SESSION_COOKIE_NAME,
         value=token,
         httponly=True,
+        secure=cookie_secure,
         samesite="lax",
         max_age=authmod.SESSION_TTL_DAYS * 24 * 60 * 60,
         path="/",
@@ -487,7 +526,7 @@ async def my_token_usage(user: dict = Depends(require_current_user)):
 async def my_usage_today(user: dict = Depends(require_current_user)):
     """
     Returns today's usage for the SIGNED-IN user only.
-    No free/Ollama mode: users without their own key use the deployment's
+    No free local mode: users without their own key use the deployment's
     default Groq key, and users with an activated key use their own Groq quota.
     """
     key_status = authmod.get_user_key_status(user["id"])
@@ -657,6 +696,96 @@ async def upload_file(file: UploadFile = File(...), user: dict = Depends(require
     return JSONResponse(result)
 
 
+# ── Admin endpoints ───────────────────────────────────────────────────────────
+def _admin_today_start_ts() -> int:
+    from datetime import datetime, timezone, timedelta
+
+    tz_offset_minutes = int(os.getenv("USAGE_TZ_OFFSET_MINUTES", "330"))
+    local_tz = timezone(timedelta(minutes=tz_offset_minutes))
+    now_local = datetime.now(local_tz)
+    return int(now_local.replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+
+
+@app.get("/api/admin/overview", tags=["Admin"])
+async def admin_overview(admin: dict = Depends(require_admin)):
+    """Small production dashboard: users, today's tokens, top users."""
+    import sqlite3
+
+    db_path = os.getenv("VIGZONE_DB_PATH", os.path.join("data", "vigzone.db"))
+    start_ts = _admin_today_start_ts()
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        total_users = conn.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"]
+        active_today = conn.execute(
+            "SELECT COUNT(DISTINCT user_id) AS c FROM token_usage WHERE ts >= ?",
+            (start_ts,),
+        ).fetchone()["c"]
+        totals = conn.execute(
+            """
+            SELECT COALESCE(SUM(prompt_tokens),0) AS prompt,
+                   COALESCE(SUM(completion_tokens),0) AS completion,
+                   COALESCE(SUM(total_tokens),0) AS total,
+                   COUNT(*) AS requests
+            FROM token_usage WHERE ts >= ?
+            """,
+            (start_ts,),
+        ).fetchone()
+        own_key_users = conn.execute(
+            "SELECT COUNT(*) AS c FROM users WHERE use_own_key = 1 AND own_groq_key_enc IS NOT NULL"
+        ).fetchone()["c"]
+        top_rows = conn.execute(
+            """
+            SELECT u.id, u.name, u.email,
+                   COALESCE(SUM(t.total_tokens),0) AS total_tokens,
+                   COUNT(t.id) AS requests,
+                   u.use_own_key AS using_own_key
+            FROM users u
+            LEFT JOIN token_usage t ON t.user_id = u.id AND t.ts >= ?
+            GROUP BY u.id
+            ORDER BY total_tokens DESC, requests DESC
+            LIMIT 10
+            """,
+            (start_ts,),
+        ).fetchall()
+
+    return JSONResponse({
+        "total_users": total_users,
+        "active_today": active_today,
+        "own_key_users": own_key_users,
+        "default_plan_users": max(total_users - own_key_users, 0),
+        "today": {
+            "prompt_tokens": totals["prompt"],
+            "completion_tokens": totals["completion"],
+            "total_tokens": totals["total"],
+            "requests": totals["requests"],
+        },
+        "top_users": [
+            {
+                "id": r["id"],
+                "name": r["name"],
+                "email": r["email"],
+                "total_tokens": r["total_tokens"],
+                "requests": r["requests"],
+                "using_own_key": bool(r["using_own_key"]),
+            }
+            for r in top_rows
+        ],
+    })
+
+
+@app.post("/api/admin/users/{user_id}/usage/reset", tags=["Admin"])
+async def admin_reset_user_usage(user_id: int, admin: dict = Depends(require_admin)):
+    """Delete today's tracked usage rows for a user. Groq-side usage is not reset."""
+    import sqlite3
+
+    db_path = os.getenv("VIGZONE_DB_PATH", os.path.join("data", "vigzone.db"))
+    start_ts = _admin_today_start_ts()
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.execute("DELETE FROM token_usage WHERE user_id = ? AND ts >= ?", (user_id, start_ts))
+        conn.commit()
+    return JSONResponse({"ok": True, "deleted_rows": cur.rowcount})
+
+
 # ── Chat endpoints ────────────────────────────────────────────────────────────
 def _resolve_provider_for_user(user: dict) -> tuple[Optional[dict], Optional[str]]:
     """
@@ -676,7 +805,7 @@ def _resolve_provider_for_user(user: dict) -> tuple[Optional[dict], Optional[str
 
 
 @app.post("/api/chat", tags=["Chat"])
-async def chat(request: ChatRequest, user: dict = Depends(require_current_user)):
+async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends(require_current_user)):
     """
     Stream a chat response as Server-Sent Events.
     No message limits in testing mode. Token usage tracked in production mode.
@@ -684,6 +813,16 @@ async def chat(request: ChatRequest, user: dict = Depends(require_current_user))
     entirely and run on their own personal quota.
     """
     provider_override, override_model = _resolve_provider_for_user(user)
+    _check_chat_rate_limit(request, user)
+
+    # Real backend quota guard: do not start a Groq call when this user's
+    # Vigzone daily plan is exhausted or too close to exhausted.
+    key_status = authmod.get_user_key_status(user["id"])
+    estimated_request_tokens = estimate_messages_tokens([{"role": m.role, "content": m.content} for m in chat_request.messages])
+    try:
+        assert_user_can_chat(user["id"], has_own_key=key_status["active"], estimated_request_tokens=estimated_request_tokens)
+    except UsageLimitError as e:
+        raise HTTPException(status_code=429, detail=str(e))
 
     if provider_override is None and not await is_configured():
         raise HTTPException(
@@ -694,7 +833,7 @@ async def chat(request: ChatRequest, user: dict = Depends(require_current_user))
             ),
         )
 
-    messages  = [{"role": m.role, "content": m.content} for m in request.messages]
+    messages  = [{"role": m.role, "content": m.content} for m in chat_request.messages]
     stream_id = create_stream_id()
     register_stream(stream_id)
 
@@ -712,7 +851,7 @@ async def chat(request: ChatRequest, user: dict = Depends(require_current_user))
             try:
                 async for chunk in stream_chat(
                     messages,
-                    model=override_model or request.model,
+                    model=override_model or chat_request.model,
                     stream_id=stream_id,
                     user_id=user["id"],
                     user_name=user.get("name") or "",
@@ -742,7 +881,7 @@ async def chat(request: ChatRequest, user: dict = Depends(require_current_user))
                 yield f'data: {{"error": "{err}"}}\n\n'
             except Exception as e:
                 # Safety net: any *unexpected* exception (e.g. a malformed
-                # Ollama chunk) used to propagate out of this generator
+                # streaming API chunk) used to propagate out of this generator
                 # uncaught, which silently kills the SSE stream with zero
                 # content and zero error - the frontend then just shows a
                 # generic "No response received." with no clue why. Surface
@@ -761,9 +900,17 @@ async def chat(request: ChatRequest, user: dict = Depends(require_current_user))
 
 
 @app.post("/api/chat/sync", tags=["Chat"])
-async def chat_sync(request: ChatRequest, user: dict = Depends(require_current_user)):
+async def chat_sync(request: Request, chat_request: ChatRequest, user: dict = Depends(require_current_user)):
     """Non-streaming variant — returns the full reply in one JSON response."""
     provider_override, override_model = _resolve_provider_for_user(user)
+    _check_chat_rate_limit(request, user)
+
+    key_status = authmod.get_user_key_status(user["id"])
+    estimated_request_tokens = estimate_messages_tokens([{"role": m.role, "content": m.content} for m in chat_request.messages])
+    try:
+        assert_user_can_chat(user["id"], has_own_key=key_status["active"], estimated_request_tokens=estimated_request_tokens)
+    except UsageLimitError as e:
+        raise HTTPException(status_code=429, detail=str(e))
 
     if provider_override is None and not await is_configured():
         raise HTTPException(
@@ -773,11 +920,11 @@ async def chat_sync(request: ChatRequest, user: dict = Depends(require_current_u
                 "or in your deployment Variables (get a free key at https://console.groq.com/keys)."
             ),
         )
-    messages = [{"role": m.role, "content": m.content} for m in request.messages]
+    messages = [{"role": m.role, "content": m.content} for m in chat_request.messages]
     try:
         reply = await chat_once(
             messages,
-            model=override_model or request.model,
+            model=override_model or chat_request.model,
             user_id=user["id"],
             user_name=user.get("name") or "",
             provider_override=provider_override,

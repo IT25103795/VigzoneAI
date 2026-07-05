@@ -305,7 +305,7 @@
       height:14px;
     }
 
-    /* Shared usage modal */
+    /* Usage/admin modals */
     .usage-modal-overlay{
       position:fixed;inset:0;background:var(--overlay-bg);
       display:none;align-items:center;justify-content:center;
@@ -366,6 +366,17 @@
       margin-top:14px;padding-top:12px;border-top:1px solid var(--border-subtle);
       line-height:1.5;
     }
+
+    .admin-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0;}
+    .admin-card{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px;}
+    .admin-card-label{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;}
+    .admin-card-value{font-size:20px;color:var(--text);font-weight:700;margin-top:4px;}
+    .admin-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:12px;}
+    .admin-table th{text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;padding:7px 6px;border-bottom:1px solid var(--border);}
+    .admin-table td{padding:7px 6px;border-bottom:1px solid var(--border-subtle);color:var(--text);vertical-align:top;}
+    .admin-table th:last-child,.admin-table td:last-child{text-align:right;}
+    .admin-reset-btn{border:1px solid var(--border);background:var(--surface-2);color:var(--text-muted);border-radius:7px;padding:4px 7px;font-size:11px;cursor:pointer;}
+    .admin-reset-btn:hover{color:var(--text);border-color:var(--hover-border);}
 
     /* Bring-your-own Groq API key box */
     .api-key-box{
@@ -1576,6 +1587,12 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"></line><line x1="18" y1="20" x2="18" y2="4"></line><line x1="6" y1="20" x2="6" y2="16"></line></svg>
         </button>
       </div>
+      <div class="sidebar-footer-row" id="adminPanelRow" style="display:none;">
+        <span class="history-label" style="padding:0;margin:0;">Admin</span>
+        <button class="sidebar-teach-btn" id="adminPanelBtn" aria-label="Open admin dashboard" title="Open admin dashboard">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7l8-4z"></path><path d="M9 12l2 2 4-5"></path></svg>
+        </button>
+      </div>
     </div>
     </div>
 </aside>
@@ -1589,6 +1606,18 @@
     </div>
     <div id="usageModalBody">
       <div class="usage-modal-loading">Loading usage…</div>
+    </div>
+  </div>
+</div>
+
+<div class="usage-modal-overlay" id="adminModalOverlay">
+  <div class="usage-modal">
+    <div class="usage-modal-head">
+      <h3>Admin dashboard</h3>
+      <button class="usage-modal-close" id="adminModalCloseBtn" aria-label="Close">&times;</button>
+    </div>
+    <div id="adminModalBody">
+      <div class="usage-modal-loading">Loading admin data…</div>
     </div>
   </div>
 </div>
@@ -1767,6 +1796,11 @@
   const usageModalOverlay = $('#usageModalOverlay');
   const usageModalCloseBtn = $('#usageModalCloseBtn');
   const usageModalBody = $('#usageModalBody');
+  const adminPanelRow = $('#adminPanelRow');
+  const adminPanelBtn = $('#adminPanelBtn');
+  const adminModalOverlay = $('#adminModalOverlay');
+  const adminModalCloseBtn = $('#adminModalCloseBtn');
+  const adminModalBody = $('#adminModalBody');
   const apiKeyModeBadge = $('#apiKeyModeBadge');
   const apiKeyInputSection = $('#apiKeyInputSection');
   const apiKeyActiveSection = $('#apiKeyActiveSection');
@@ -2514,18 +2548,23 @@
       // mode === 'default_groq' or 'own_key'
       const limit = data.daily_limit || 0;
       const used = data.used_today || 0;
-      const remaining = data.remaining_today || Math.max(limit - used, 0);
+      const remaining = data.remaining_today ?? Math.max(limit - used, 0);
       const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
       const barClass = pct >= 90 ? 'danger' : (pct >= 65 ? 'warn' : '');
       const resetIn = data.seconds_until_reset ? `Resets in ${formatDuration(data.seconds_until_reset)}` : '';
       const ownKey = data.mode === 'own_key' || data.using_own_key;
-      const planText = ownKey
-        ? `Powered by your own Groq API key ⚡ — this uses your personal Groq quota. ${resetIn}`
-        : `Powered by Vigzone's default Groq API key ⚡ — default daily limit with countdown. ${resetIn}`;
+      const planName = data.plan_label || (ownKey ? 'Personal Groq key' : 'Vigzone default Groq plan');
+      const locked = !!data.is_limited;
+      const enforcedText = data.limit_enforced ? 'Limit enforced by Vigzone.' : 'Tracking only — no Vigzone block.';
+      const planText = locked
+        ? `${planName} is out of tokens for today. ${resetIn}`
+        : ownKey
+          ? `${planName} ⚡ — using your personal Groq quota. ${enforcedText} ${resetIn}`
+          : `${planName} ⚡ — using Vigzone's default Groq key with an individual daily cap. ${resetIn}`;
 
       usageModalBody.innerHTML = `
         <div class="usage-modal-note">
-          ${planText}
+          ${escapeHtml(planText)}
         </div>
         <div class="usage-modal-bar-track">
           <div class="usage-modal-bar-fill ${barClass}" style="width:${pct}%"></div>
@@ -2537,6 +2576,10 @@
         <div class="usage-modal-total-row">
           <span>${remaining.toLocaleString()} remaining today</span>
           <span>${resetIn}</span>
+        </div>
+        <div class="usage-modal-total-row">
+          <span>${(data.request_count_today || 0).toLocaleString()} requests today</span>
+          <span>${escapeHtml(data.timezone_label || '')}</span>
         </div>
         <div class="usage-modal-disclaimer">${escapeHtml(data.disclaimer || '')}</div>
       `;
@@ -2557,6 +2600,61 @@
   if (usageModalCloseBtn) usageModalCloseBtn.addEventListener('click', closeUsageModal);
   if (usageModalOverlay) usageModalOverlay.addEventListener('click', (e) => {
     if (e.target === usageModalOverlay) closeUsageModal();
+  });
+
+  // ---------- Admin dashboard ----------
+  async function loadAdminDashboard(){
+    if (!adminModalBody) return;
+    adminModalBody.innerHTML = '<div class="usage-modal-loading">Loading admin data…</div>';
+    try {
+      const res = await fetch('/api/admin/overview', { credentials: 'include' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Could not load admin data.');
+      const topRows = (data.top_users || []).map(u => `
+        <tr>
+          <td>${escapeHtml(u.name || u.email || ('User ' + u.id))}<br><span style="color:var(--text-muted);font-size:10px;">${escapeHtml(u.using_own_key ? 'own key' : 'default Groq')}</span></td>
+          <td>${(u.total_tokens || 0).toLocaleString()}</td>
+          <td>${(u.requests || 0).toLocaleString()}</td>
+          <td><button class="admin-reset-btn" data-reset-user="${u.id}">Reset</button></td>
+        </tr>
+      `).join('');
+      adminModalBody.innerHTML = `
+        <div class="admin-grid">
+          <div class="admin-card"><div class="admin-card-label">Total users</div><div class="admin-card-value">${(data.total_users || 0).toLocaleString()}</div></div>
+          <div class="admin-card"><div class="admin-card-label">Active today</div><div class="admin-card-value">${(data.active_today || 0).toLocaleString()}</div></div>
+          <div class="admin-card"><div class="admin-card-label">Tokens today</div><div class="admin-card-value">${((data.today && data.today.total_tokens) || 0).toLocaleString()}</div></div>
+          <div class="admin-card"><div class="admin-card-label">Requests today</div><div class="admin-card-value">${((data.today && data.today.requests) || 0).toLocaleString()}</div></div>
+        </div>
+        <div class="usage-modal-note">Default-plan users: ${(data.default_plan_users || 0).toLocaleString()} · Own-key users: ${(data.own_key_users || 0).toLocaleString()}</div>
+        <table class="admin-table">
+          <thead><tr><th>User</th><th>Tokens</th><th>Req</th><th>Action</th></tr></thead>
+          <tbody>${topRows || '<tr><td colspan="4">No usage yet today.</td></tr>'}</tbody>
+        </table>
+      `;
+      adminModalBody.querySelectorAll('[data-reset-user]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.getAttribute('data-reset-user');
+          btn.disabled = true;
+          btn.textContent = 'Resetting…';
+          try {
+            await fetch(`/api/admin/users/${id}/usage/reset`, { method: 'POST', credentials: 'include' });
+            await loadAdminDashboard();
+          } catch (e) {
+            btn.textContent = 'Failed';
+            btn.disabled = false;
+          }
+        });
+      });
+    } catch (e) {
+      adminModalBody.innerHTML = `<div class="usage-modal-empty">${escapeHtml(e.message || 'Could not load admin data.')}</div>`;
+    }
+  }
+  function openAdminModal(){ adminModalOverlay?.classList.add('visible'); loadAdminDashboard(); }
+  function closeAdminModal(){ adminModalOverlay?.classList.remove('visible'); }
+  if (adminPanelBtn) adminPanelBtn.addEventListener('click', openAdminModal);
+  if (adminModalCloseBtn) adminModalCloseBtn.addEventListener('click', closeAdminModal);
+  if (adminModalOverlay) adminModalOverlay.addEventListener('click', (e) => {
+    if (e.target === adminModalOverlay) closeAdminModal();
   });
 
   // ---------- Bring-your-own Groq API key box ----------
@@ -2708,6 +2806,7 @@
       }
       const data = await res.json();
       userName = (data.user && data.user.name) || (data.user && data.user.email) || '';
+      if (adminPanelRow && data.user && data.user.is_admin) adminPanelRow.style.display = '';
       updateGreeting();
       refreshApiKeyBox();
     } catch(e) {

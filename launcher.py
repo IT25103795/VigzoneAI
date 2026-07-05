@@ -70,24 +70,15 @@ def check_dependencies():
 
     print("✓ All dependencies installed!")
 
-    try:
-        import httpx
-        base_url = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434')
-        resp = httpx.get(f"{base_url}/api/tags", timeout=3.0)
-        if resp.status_code == 200:
-            models = [m.get('name', '?') for m in resp.json().get('models', [])]
-            print(f"✓ Ollama is running at {base_url}")
-            if models:
-                print(f"  Models available: {', '.join(models)}")
-            else:
-                print("  ⚠ No models pulled yet. Run: ollama pull gemma3")
-        else:
-            print(f"⚠ Ollama responded with status {resp.status_code} at {base_url}")
-    except Exception:
-        base_url = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434')
-        print(f"⚠ Can't reach Ollama at {base_url}.")
-        print("  Install it from https://ollama.com/download and make sure it's running")
-        print("  (`ollama serve`), then run: ollama pull gemma3")
+    if os.getenv('GROQ_API_KEY'):
+        print("✓ GROQ_API_KEY is set (Groq chat can be configured).")
+    else:
+        print("⚠ GROQ_API_KEY is not set. Add it before production deploy.")
+
+    if os.getenv('ENCRYPTION_SECRET'):
+        print("✓ ENCRYPTION_SECRET is set (user Groq keys can be encrypted).")
+    else:
+        print("⚠ ENCRYPTION_SECRET is not set. Saved user keys may not survive restarts.")
 
     return True
 

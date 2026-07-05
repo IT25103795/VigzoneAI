@@ -68,7 +68,7 @@ def get_current_datetime() -> str:
 def get_datetime_injection(user_message: str) -> str:
     """
     Returns a strong prefix prepended DIRECTLY into the user message.
-    Local LLMs (Ollama/gemma3) often ignore system prompts — putting the
+    Some smaller models may ignore system prompts — putting the
     date inside the user turn forces them to read and use it.
     """
     now     = datetime.now(timezone.utc)
