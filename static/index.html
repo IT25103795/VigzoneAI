@@ -304,6 +304,68 @@
       width:14px;
       height:14px;
     }
+
+    /* Shared usage modal */
+    .usage-modal-overlay{
+      position:fixed;inset:0;background:var(--overlay-bg);
+      display:none;align-items:center;justify-content:center;
+      z-index:200;padding:20px;
+    }
+    .usage-modal-overlay.visible{display:flex;}
+    .usage-modal{
+      background:var(--surface);border:1px solid var(--border);
+      border-radius:14px;max-width:420px;width:100%;
+      max-height:82vh;overflow-y:auto;
+      padding:20px;box-shadow:0 24px 60px -12px var(--sidebar-shadow);
+    }
+    .usage-modal-head{
+      display:flex;align-items:center;justify-content:space-between;
+      margin-bottom:6px;
+    }
+    .usage-modal-head h3{margin:0;font-size:15px;color:var(--text);}
+    .usage-modal-close{
+      background:none;border:none;color:var(--text-muted);
+      cursor:pointer;font-size:18px;line-height:1;padding:4px;
+    }
+    .usage-modal-close:hover{color:var(--text);}
+    .usage-modal-note{
+      font-size:12px;line-height:1.5;color:var(--text-muted);
+      background:var(--accent-dim);border:1px solid var(--border);
+      border-radius:8px;padding:10px 12px;margin:10px 0 14px;
+    }
+    .usage-modal-bar-track{
+      height:8px;border-radius:99px;background:var(--surface-2);
+      overflow:hidden;margin-bottom:6px;
+    }
+    .usage-modal-bar-fill{
+      height:100%;border-radius:99px;
+      background:var(--accent);transition:width .3s ease;
+    }
+    .usage-modal-bar-fill.warn{background:#ffb84d;}
+    .usage-modal-bar-fill.danger{background:var(--danger);}
+    .usage-modal-total-row{
+      display:flex;justify-content:space-between;
+      font-size:12px;color:var(--text-muted);margin-bottom:16px;
+    }
+    .usage-table{width:100%;border-collapse:collapse;font-size:13px;}
+    .usage-table th{
+      text-align:left;font-weight:600;color:var(--text-muted);
+      font-size:11px;text-transform:uppercase;letter-spacing:.03em;
+      padding:6px 8px;border-bottom:1px solid var(--border);
+    }
+    .usage-table th:last-child, .usage-table td:last-child{text-align:right;}
+    .usage-table td{
+      padding:8px;border-bottom:1px solid var(--border-subtle);color:var(--text);
+    }
+    .usage-table tr:last-child td{border-bottom:none;}
+    .usage-modal-empty, .usage-modal-loading{
+      font-size:13px;color:var(--text-muted);padding:12px 0;text-align:center;
+    }
+    .usage-modal-disclaimer{
+      font-size:11px;color:var(--text-muted);opacity:.75;
+      margin-top:14px;padding-top:12px;border-top:1px solid var(--border-subtle);
+      line-height:1.5;
+    }
     .sidebar-user{
       display:flex;align-items:center;gap:8px;min-width:0;
       font-size:13px;color:var(--text-muted);
@@ -1412,10 +1474,33 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></svg>
         </button>
       </div>
+      <div class="sidebar-footer-row">
+        <span class="history-label" style="padding:0;margin:0;">Shared usage</span>
+        <button class="sidebar-teach-btn" id="usageTodayBtn" aria-label="View today's shared usage" title="Everyone shares one API key — see today's usage">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"></line><line x1="18" y1="20" x2="18" y2="4"></line><line x1="6" y1="20" x2="6" y2="16"></line></svg>
+        </button>
+      </div>
     </div>
     </div>
 </aside>
 <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+<div class="usage-modal-overlay" id="usageModalOverlay">
+  <div class="usage-modal">
+    <div class="usage-modal-head">
+      <h3>Today's shared usage</h3>
+      <button class="usage-modal-close" id="usageModalCloseBtn" aria-label="Close">&times;</button>
+    </div>
+    <div class="usage-modal-note">
+      Vigzone AI runs on one shared API key for everyone — not a separate quota per person.
+      Everyone's messages draw from the same daily token pool below, so heavy use by one
+      person reduces what's left for everyone else until it resets.
+    </div>
+    <div id="usageModalBody">
+      <div class="usage-modal-loading">Loading usage…</div>
+    </div>
+  </div>
+</div>
 
 <div class="main-col">
   <header>
@@ -1587,6 +1672,10 @@
   const signOutBtn = $('#signOutBtn');
   const sidebarUserName = $('#sidebarUserName');
   const sidebarUserDot = $('#sidebarUserDot');
+  const usageTodayBtn = $('#usageTodayBtn');
+  const usageModalOverlay = $('#usageModalOverlay');
+  const usageModalCloseBtn = $('#usageModalCloseBtn');
+  const usageModalBody = $('#usageModalBody');
   let greetingText = $('#greetingText');
 
   const EMPTY_STATE_HTML = `
@@ -2300,6 +2389,69 @@
 
   sidebarToggleBtn.addEventListener('click', () => setSidebarCollapsed(!sidebar.classList.contains('collapsed')));
   sidebarOverlay.addEventListener('click', () => setSidebarCollapsed(true));
+
+  // ---------- Shared daily usage (one API key, shared across everyone) ----------
+  async function loadUsageToday(){
+    usageModalBody.innerHTML = '<div class="usage-modal-loading">Loading usage…</div>';
+    try {
+      const res = await fetch('/api/usage/today', { credentials: 'include' });
+      if (!res.ok) throw new Error('request failed');
+      const data = await res.json();
+
+      if (data.mode === 'testing') {
+        usageModalBody.innerHTML = '<div class="usage-modal-empty">Usage tracking is off in testing mode.</div>';
+        return;
+      }
+
+      const limit = data.daily_limit || 0;
+      const used = data.total_used_today || 0;
+      const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
+      const barClass = pct >= 90 ? 'danger' : (pct >= 65 ? 'warn' : '');
+
+      const rows = (data.people || [])
+        .filter(p => p.tokens_used_today > 0 || (data.people.length <= 8))
+        .map(p => `<tr><td>${escapeHtml(p.name)}</td><td>${p.tokens_used_today.toLocaleString()}</td></tr>`)
+        .join('');
+
+      usageModalBody.innerHTML = `
+        <div class="usage-modal-bar-track">
+          <div class="usage-modal-bar-fill ${barClass}" style="width:${pct}%"></div>
+        </div>
+        <div class="usage-modal-total-row">
+          <span>${used.toLocaleString()} used today</span>
+          <span>${limit ? limit.toLocaleString() + ' shared limit' : ''}</span>
+        </div>
+        ${rows ? `
+          <table class="usage-table">
+            <thead><tr><th>Person</th><th>Tokens today</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        ` : '<div class="usage-modal-empty">No usage yet today.</div>'}
+        <div class="usage-modal-disclaimer">
+          This is Vigzone's own count of what it has sent, not a live reading from Groq's
+          servers. If Vigzone's database gets reset (e.g. by a redeploy) this can read lower
+          than what's actually left on Groq's side — a "rate limit" error from Groq is always
+          the real, final word on remaining quota, even if this shows plenty of room.
+        </div>
+      `;
+    } catch (e) {
+      usageModalBody.innerHTML = '<div class="usage-modal-empty">Couldn\'t load usage right now.</div>';
+    }
+  }
+
+  function openUsageModal(){
+    usageModalOverlay.classList.add('visible');
+    loadUsageToday();
+  }
+  function closeUsageModal(){
+    usageModalOverlay.classList.remove('visible');
+  }
+
+  if (usageTodayBtn) usageTodayBtn.addEventListener('click', openUsageModal);
+  if (usageModalCloseBtn) usageModalCloseBtn.addEventListener('click', closeUsageModal);
+  if (usageModalOverlay) usageModalOverlay.addEventListener('click', (e) => {
+    if (e.target === usageModalOverlay) closeUsageModal();
+  });
 
   // ---------- Personalized greeting (name comes from the signed-in account) ----------
   const GREETINGS = ['Back at it,', 'Welcome back,', 'Good to see you,', 'Hey there,'];
@@ -3372,6 +3524,7 @@
   let micTooltipTimer = null;
   let micSpeechRecognition = null;
   let micSpeechTranscript = '';
+  let micSpeechInterimTranscript = '';
   // Resolves with the next isFinal transcript, or rejects with the recognizer's
   // error code (e.g. 'no-speech', 'audio-capture') so we can surface a useful
   // message instead of silently sending a placeholder to the chat backend.
@@ -3404,6 +3557,7 @@
     hideMicTooltip();
     micAudioChunks = [];
     micSpeechTranscript = '';
+    micSpeechInterimTranscript = '';
     const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg';
     micMediaRecorder = new MediaRecorder(micStream, { mimeType });
     micMediaRecorder.ondataavailable = e => { if (e.data.size > 0) micAudioChunks.push(e.data); };
@@ -3425,13 +3579,17 @@
       micSpeechRecognition.lang = getVoiceInputLang();
       micSpeechRecognition.onresult = (event) => {
         let finalText = '';
+        let interimText = '';
         let hasFinal = false;
         for (let i = 0; i < event.results.length; i++) {
           if (event.results[i].isFinal) {
             finalText += event.results[i][0].transcript;
             hasFinal = true;
+          } else {
+            interimText += event.results[i][0].transcript;
           }
         }
+        if (interimText.trim()) micSpeechInterimTranscript = interimText.trim();
         if (hasFinal) {
           micSpeechTranscript = finalText.trim();
           if (micSpeechFinalPromise) {
@@ -3443,21 +3601,30 @@
       micSpeechRecognition.onerror = (event) => {
         // Common reasons: 'no-speech' (silence), 'audio-capture' (mic busy),
         // 'not-allowed' (permission), 'network' (Chrome's online recognizer).
-        // We surface this so the user knows why nothing was transcribed.
         const code = (event && event.error) || 'unknown';
         console.warn('Vigzone AI: speech recognition error:', code);
+        // 'aborted' fires in virtually every browser whenever
+        // recognition.stop() is called manually -- and stopRecording() does
+        // exactly that on every mic release. It does NOT mean transcription
+        // failed, it just means we ended the session ourselves. Don't reject
+        // here; let onend run its fallback logic (final or interim
+        // transcript) instead of surfacing a false "couldn't transcribe"
+        // error for perfectly good recordings.
+        if (code === 'aborted') return;
         if (micSpeechFinalPromise) {
           micSpeechFinalPromise.reject(new Error(code));
           micSpeechFinalPromise = null;
         }
       };
       micSpeechRecognition.onend = () => {
-        // If we stopped without ever firing onresult/isFinal (e.g. the user
-        // released the button before saying anything), unblock the awaiter
-        // so the UI doesn't hang waiting for a transcript.
+        // If we stopped without ever firing a final result (e.g. the mic
+        // was released before recognition finished finalizing, which is the
+        // common case with 'aborted'), fall back to the last interim
+        // transcript we captured rather than discarding it.
         if (micSpeechFinalPromise) {
-          if (micSpeechTranscript) {
-            micSpeechFinalPromise.resolve(micSpeechTranscript);
+          const fallback = (micSpeechTranscript || micSpeechInterimTranscript || '').trim();
+          if (fallback) {
+            micSpeechFinalPromise.resolve(fallback);
           } else {
             micSpeechFinalPromise.reject(new Error('no-speech'));
           }
