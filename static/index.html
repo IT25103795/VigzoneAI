@@ -304,6 +304,132 @@
       width:14px;
       height:14px;
     }
+
+    /* Shared usage modal */
+    .usage-modal-overlay{
+      position:fixed;inset:0;background:var(--overlay-bg);
+      display:none;align-items:center;justify-content:center;
+      z-index:200;padding:20px;
+    }
+    .usage-modal-overlay.visible{display:flex;}
+    .usage-modal{
+      background:var(--surface);border:1px solid var(--border);
+      border-radius:14px;max-width:420px;width:100%;
+      max-height:82vh;overflow-y:auto;
+      padding:20px;box-shadow:0 24px 60px -12px var(--sidebar-shadow);
+    }
+    .usage-modal-head{
+      display:flex;align-items:center;justify-content:space-between;
+      margin-bottom:6px;
+    }
+    .usage-modal-head h3{margin:0;font-size:15px;color:var(--text);}
+    .usage-modal-close{
+      background:none;border:none;color:var(--text-muted);
+      cursor:pointer;font-size:18px;line-height:1;padding:4px;
+    }
+    .usage-modal-close:hover{color:var(--text);}
+    .usage-modal-note{
+      font-size:12px;line-height:1.5;color:var(--text-muted);
+      background:var(--accent-dim);border:1px solid var(--border);
+      border-radius:8px;padding:10px 12px;margin:10px 0 14px;
+    }
+    .usage-modal-bar-track{
+      height:8px;border-radius:99px;background:var(--surface-2);
+      overflow:hidden;margin-bottom:6px;
+    }
+    .usage-modal-bar-fill{
+      height:100%;border-radius:99px;
+      background:var(--accent);transition:width .3s ease;
+    }
+    .usage-modal-bar-fill.warn{background:#ffb84d;}
+    .usage-modal-bar-fill.danger{background:var(--danger);}
+    .usage-modal-total-row{
+      display:flex;justify-content:space-between;
+      font-size:12px;color:var(--text-muted);margin-bottom:16px;
+    }
+    .usage-table{width:100%;border-collapse:collapse;font-size:13px;}
+    .usage-table th{
+      text-align:left;font-weight:600;color:var(--text-muted);
+      font-size:11px;text-transform:uppercase;letter-spacing:.03em;
+      padding:6px 8px;border-bottom:1px solid var(--border);
+    }
+    .usage-table th:last-child, .usage-table td:last-child{text-align:right;}
+    .usage-table td{
+      padding:8px;border-bottom:1px solid var(--border-subtle);color:var(--text);
+    }
+    .usage-table tr:last-child td{border-bottom:none;}
+    .usage-modal-empty, .usage-modal-loading{
+      font-size:13px;color:var(--text-muted);padding:12px 0;text-align:center;
+    }
+    .usage-modal-disclaimer{
+      font-size:11px;color:var(--text-muted);opacity:.75;
+      margin-top:14px;padding-top:12px;border-top:1px solid var(--border-subtle);
+      line-height:1.5;
+    }
+
+    /* Bring-your-own Groq API key box */
+    .api-key-box{
+      padding:10px 12px;margin-bottom:8px;
+      background:var(--surface-2);border:1px solid var(--border);
+      border-radius:10px;
+    }
+    .api-key-box-label{
+      display:flex;align-items:center;justify-content:space-between;
+      margin-bottom:8px;
+    }
+    .api-key-box-label span:first-child{
+      font-size:11px;font-weight:600;color:var(--text-muted);
+      text-transform:uppercase;letter-spacing:.03em;
+    }
+    .api-key-mode-badge{
+      font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;
+      background:var(--surface);border:1px solid var(--border);color:var(--text-muted);
+    }
+    .api-key-mode-badge.own-key{color:var(--accent);border-color:var(--accent);}
+    .api-key-input-row{display:flex;gap:6px;}
+    .api-key-input-row input{
+      flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);
+      border-radius:7px;padding:7px 9px;font-size:12px;color:var(--text);
+      font-family:inherit;
+    }
+    .api-key-input-row input:focus{outline:none;border-color:var(--accent);}
+    .api-key-check-btn{
+      flex-shrink:0;background:var(--accent-dim);border:1px solid var(--accent);
+      color:var(--accent);border-radius:7px;padding:0 12px;font-size:12px;
+      font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s ease;
+    }
+    .api-key-check-btn:hover{filter:brightness(1.1);}
+    .api-key-check-btn:disabled{opacity:.5;cursor:not-allowed;}
+    .api-key-check-btn.ready-to-use{background:var(--accent);color:#fff;}
+    .api-key-status{
+      font-size:11.5px;margin-top:6px;line-height:1.4;
+    }
+    .api-key-status.ok{color:#4ade80;}
+    .api-key-status.err{color:var(--danger);}
+    .api-key-active-row{
+      display:flex;align-items:center;justify-content:space-between;gap:8px;
+    }
+    .api-key-active-row span{font-size:12px;color:var(--text);}
+    .api-key-switch-back-btn{
+      flex-shrink:0;background:none;border:1px solid var(--border);
+      color:var(--text-muted);border-radius:7px;padding:5px 10px;font-size:11px;
+      cursor:pointer;white-space:nowrap;
+    }
+    .api-key-switch-back-btn:hover{color:var(--text);border-color:var(--hover-border);}
+    .api-key-hint{
+      font-size:11px;color:var(--text-muted);margin-top:8px;line-height:1.5;
+    }
+    .api-key-hint a, .api-key-hint summary{color:var(--accent);cursor:pointer;}
+    .api-key-tutorial{margin-top:6px;}
+    .api-key-tutorial summary{
+      font-size:11px;list-style:none;
+    }
+    .api-key-tutorial summary::-webkit-details-marker{display:none;}
+    .api-key-tutorial ol{
+      margin:8px 0 0;padding-left:18px;font-size:11px;color:var(--text-muted);
+      line-height:1.7;
+    }
+    .api-key-tutorial a{color:var(--accent);}
     .sidebar-user{
       display:flex;align-items:center;gap:8px;min-width:0;
       font-size:13px;color:var(--text-muted);
@@ -1392,6 +1518,38 @@
     <div class="history-label">Recent chats</div>
     <div class="history-list" id="historyList"></div>
     <div class="sidebar-footer">
+      <div class="api-key-box" id="apiKeyBox">
+        <div class="api-key-box-label">
+          <span>Your AI</span>
+          <span class="api-key-mode-badge" id="apiKeyModeBadge">Free (local)</span>
+        </div>
+
+        <div id="apiKeyInputSection">
+          <div class="api-key-input-row">
+            <input type="password" id="groqKeyInput" placeholder="Paste your Groq API key…" autocomplete="off" spellcheck="false" />
+            <button class="api-key-check-btn" id="groqKeyCheckBtn">Check</button>
+          </div>
+          <div class="api-key-status" id="groqKeyStatus"></div>
+          <div class="api-key-hint">
+            💡 Groq is fast and generous on the free tier — cheaper than most alternatives for a project like this.
+            <details class="api-key-tutorial">
+              <summary>How do I get a Groq API key?</summary>
+              <ol>
+                <li>Go to <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a> and sign in (free).</li>
+                <li>Click <strong>Create API Key</strong>, give it any name.</li>
+                <li>Copy the key it shows you (starts with <code>gsk_</code>) — you won't see it again.</li>
+                <li>Paste it in the box above and click <strong>Check</strong>.</li>
+              </ol>
+            </details>
+          </div>
+        </div>
+
+        <div class="api-key-active-row" id="apiKeyActiveSection" style="display:none;">
+          <span>Using your own Groq key ⚡</span>
+          <button class="api-key-switch-back-btn" id="groqKeyDeactivateBtn">Switch to free</button>
+        </div>
+      </div>
+
       <div class="sidebar-footer-row">
         <div class="sidebar-user">
           <div class="sidebar-user-dot" id="sidebarUserDot">?</div>
@@ -1412,10 +1570,28 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></svg>
         </button>
       </div>
+      <div class="sidebar-footer-row">
+        <span class="history-label" style="padding:0;margin:0;">My usage</span>
+        <button class="sidebar-teach-btn" id="usageTodayBtn" aria-label="View my usage" title="See your AI usage today">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"></line><line x1="18" y1="20" x2="18" y2="4"></line><line x1="6" y1="20" x2="6" y2="16"></line></svg>
+        </button>
+      </div>
     </div>
     </div>
 </aside>
 <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+<div class="usage-modal-overlay" id="usageModalOverlay">
+  <div class="usage-modal">
+    <div class="usage-modal-head">
+      <h3 id="usageModalTitle">My usage today</h3>
+      <button class="usage-modal-close" id="usageModalCloseBtn" aria-label="Close">&times;</button>
+    </div>
+    <div id="usageModalBody">
+      <div class="usage-modal-loading">Loading usage…</div>
+    </div>
+  </div>
+</div>
 
 <div class="main-col">
   <header>
@@ -1587,6 +1763,17 @@
   const signOutBtn = $('#signOutBtn');
   const sidebarUserName = $('#sidebarUserName');
   const sidebarUserDot = $('#sidebarUserDot');
+  const usageTodayBtn = $('#usageTodayBtn');
+  const usageModalOverlay = $('#usageModalOverlay');
+  const usageModalCloseBtn = $('#usageModalCloseBtn');
+  const usageModalBody = $('#usageModalBody');
+  const apiKeyModeBadge = $('#apiKeyModeBadge');
+  const apiKeyInputSection = $('#apiKeyInputSection');
+  const apiKeyActiveSection = $('#apiKeyActiveSection');
+  const groqKeyInput = $('#groqKeyInput');
+  const groqKeyCheckBtn = $('#groqKeyCheckBtn');
+  const groqKeyStatus = $('#groqKeyStatus');
+  const groqKeyDeactivateBtn = $('#groqKeyDeactivateBtn');
   let greetingText = $('#greetingText');
 
   const EMPTY_STATE_HTML = `
@@ -2301,6 +2488,204 @@
   sidebarToggleBtn.addEventListener('click', () => setSidebarCollapsed(!sidebar.classList.contains('collapsed')));
   sidebarOverlay.addEventListener('click', () => setSidebarCollapsed(true));
 
+  // ---------- My usage today (individual plan — own key or free Ollama) ----------
+  function formatDuration(totalSeconds){
+    totalSeconds = Math.max(0, totalSeconds | 0);
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  }
+
+  async function loadUsageToday(){
+    usageModalBody.innerHTML = '<div class="usage-modal-loading">Loading usage…</div>';
+    try {
+      const res = await fetch('/api/me/usage', { credentials: 'include' });
+      if (!res.ok) throw new Error('request failed');
+      const data = await res.json();
+
+      if (data.mode === 'testing') {
+        usageModalBody.innerHTML = '<div class="usage-modal-empty">Usage tracking is off in testing mode.</div>';
+        return;
+      }
+
+      if (data.mode === 'free_ollama') {
+        usageModalBody.innerHTML = `
+          <div class="usage-modal-empty">
+            ✅ You're on the free, unlimited local AI — no API key, no daily cap.
+            <br><br>
+            Want higher-quality replies? You can activate your own Groq API key from the
+            box above your account name in the sidebar.
+          </div>
+        `;
+        return;
+      }
+
+      // mode === 'own_key'
+      const limit = data.daily_limit || 0;
+      const used = data.used_today || 0;
+      const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
+      const barClass = pct >= 90 ? 'danger' : (pct >= 65 ? 'warn' : '');
+      const resetIn = data.seconds_until_reset ? `Resets in ${formatDuration(data.seconds_until_reset)}` : '';
+
+      usageModalBody.innerHTML = `
+        <div class="usage-modal-note">
+          Powered by your own Groq API key ⚡ — this is your personal quota, separate from
+          everyone else's. ${resetIn}
+        </div>
+        <div class="usage-modal-bar-track">
+          <div class="usage-modal-bar-fill ${barClass}" style="width:${pct}%"></div>
+        </div>
+        <div class="usage-modal-total-row">
+          <span>${used.toLocaleString()} used today</span>
+          <span>${limit ? limit.toLocaleString() + ' daily limit' : ''}</span>
+        </div>
+        <div class="usage-modal-disclaimer">${escapeHtml(data.disclaimer || '')}</div>
+      `;
+    } catch (e) {
+      usageModalBody.innerHTML = '<div class="usage-modal-empty">Couldn\'t load usage right now.</div>';
+    }
+  }
+
+  function openUsageModal(){
+    usageModalOverlay.classList.add('visible');
+    loadUsageToday();
+  }
+  function closeUsageModal(){
+    usageModalOverlay.classList.remove('visible');
+  }
+
+  if (usageTodayBtn) usageTodayBtn.addEventListener('click', openUsageModal);
+  if (usageModalCloseBtn) usageModalCloseBtn.addEventListener('click', closeUsageModal);
+  if (usageModalOverlay) usageModalOverlay.addEventListener('click', (e) => {
+    if (e.target === usageModalOverlay) closeUsageModal();
+  });
+
+  // ---------- Bring-your-own Groq API key box ----------
+  let groqKeyValidatedValue = null; // tracks which exact key string last passed validation
+
+  function setApiKeyBoxMode(usingOwnKey){
+    if (apiKeyModeBadge) {
+      apiKeyModeBadge.textContent = usingOwnKey ? 'Groq (your key)' : 'Free (local)';
+      apiKeyModeBadge.classList.toggle('own-key', !!usingOwnKey);
+    }
+    if (apiKeyInputSection) apiKeyInputSection.style.display = usingOwnKey ? 'none' : '';
+    if (apiKeyActiveSection) apiKeyActiveSection.style.display = usingOwnKey ? 'flex' : 'none';
+  }
+
+  async function refreshApiKeyBox(){
+    try {
+      const res = await fetch('/api/me/usage', { credentials: 'include' });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.mode === 'testing') return; // no key management shown differently in testing
+      setApiKeyBoxMode(!!data.using_own_key);
+    } catch (e) { /* silent — sidebar cosmetic only */ }
+  }
+
+  function resetGroqCheckButton(){
+    groqKeyValidatedValue = null;
+    if (groqKeyCheckBtn) {
+      groqKeyCheckBtn.textContent = 'Check';
+      groqKeyCheckBtn.classList.remove('ready-to-use');
+    }
+  }
+
+  if (groqKeyInput) {
+    groqKeyInput.addEventListener('input', () => {
+      if (groqKeyValidatedValue !== null && groqKeyInput.value !== groqKeyValidatedValue) {
+        resetGroqCheckButton();
+        if (groqKeyStatus) { groqKeyStatus.textContent = ''; groqKeyStatus.className = 'api-key-status'; }
+      }
+    });
+  }
+
+  if (groqKeyCheckBtn) {
+    groqKeyCheckBtn.addEventListener('click', async () => {
+      const value = (groqKeyInput.value || '').trim();
+      if (!value) return;
+
+      // Second click after a successful check → actually activate it.
+      if (groqKeyValidatedValue === value) {
+        groqKeyCheckBtn.disabled = true;
+        groqKeyCheckBtn.textContent = 'Activating…';
+        try {
+          const res = await fetch('/api/me/groq-key/activate', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ api_key: value }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.detail || 'Could not activate this key.');
+          groqKeyInput.value = '';
+          resetGroqCheckButton();
+          if (groqKeyStatus) { groqKeyStatus.textContent = ''; groqKeyStatus.className = 'api-key-status'; }
+          setApiKeyBoxMode(true);
+        } catch (e) {
+          if (groqKeyStatus) {
+            groqKeyStatus.textContent = e.message || "Couldn't activate this key.";
+            groqKeyStatus.className = 'api-key-status err';
+          }
+          groqKeyCheckBtn.textContent = 'Use this key';
+        } finally {
+          groqKeyCheckBtn.disabled = false;
+        }
+        return;
+      }
+
+      // First click → just validate, don't save anything yet.
+      groqKeyCheckBtn.disabled = true;
+      groqKeyCheckBtn.textContent = 'Checking…';
+      if (groqKeyStatus) { groqKeyStatus.textContent = ''; groqKeyStatus.className = 'api-key-status'; }
+      try {
+        const res = await fetch('/api/me/groq-key/validate', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ api_key: value }),
+        });
+        const data = await res.json();
+        if (data.valid) {
+          groqKeyValidatedValue = value;
+          groqKeyCheckBtn.textContent = 'Use this key';
+          groqKeyCheckBtn.classList.add('ready-to-use');
+          if (groqKeyStatus) {
+            groqKeyStatus.textContent = data.message || 'This key works.';
+            groqKeyStatus.className = 'api-key-status ok';
+          }
+        } else {
+          resetGroqCheckButton();
+          if (groqKeyStatus) {
+            groqKeyStatus.textContent = data.message || "This key doesn't seem to work.";
+            groqKeyStatus.className = 'api-key-status err';
+          }
+        }
+      } catch (e) {
+        resetGroqCheckButton();
+        if (groqKeyStatus) {
+          groqKeyStatus.textContent = "Couldn't check that key right now.";
+          groqKeyStatus.className = 'api-key-status err';
+        }
+      } finally {
+        groqKeyCheckBtn.disabled = false;
+      }
+    });
+  }
+
+  if (groqKeyDeactivateBtn) {
+    groqKeyDeactivateBtn.addEventListener('click', async () => {
+      groqKeyDeactivateBtn.disabled = true;
+      try {
+        await fetch('/api/me/groq-key/deactivate', { method: 'POST', credentials: 'include' });
+      } catch (e) { /* best-effort */ }
+      groqKeyDeactivateBtn.disabled = false;
+      setApiKeyBoxMode(false);
+    });
+  }
+
   // ---------- Personalized greeting (name comes from the signed-in account) ----------
   const GREETINGS = ['Back at it,', 'Welcome back,', 'Good to see you,', 'Hey there,'];
 
@@ -2328,6 +2713,7 @@
       const data = await res.json();
       userName = (data.user && data.user.name) || (data.user && data.user.email) || '';
       updateGreeting();
+      refreshApiKeyBox();
     } catch(e) {
       // Network hiccup — leave the UI as-is rather than bouncing the user.
       console.error("Auth check failed, likely offline.", e);
@@ -3372,6 +3758,7 @@
   let micTooltipTimer = null;
   let micSpeechRecognition = null;
   let micSpeechTranscript = '';
+  let micSpeechInterimTranscript = '';
   // Resolves with the next isFinal transcript, or rejects with the recognizer's
   // error code (e.g. 'no-speech', 'audio-capture') so we can surface a useful
   // message instead of silently sending a placeholder to the chat backend.
@@ -3404,6 +3791,7 @@
     hideMicTooltip();
     micAudioChunks = [];
     micSpeechTranscript = '';
+    micSpeechInterimTranscript = '';
     const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg';
     micMediaRecorder = new MediaRecorder(micStream, { mimeType });
     micMediaRecorder.ondataavailable = e => { if (e.data.size > 0) micAudioChunks.push(e.data); };
@@ -3425,13 +3813,17 @@
       micSpeechRecognition.lang = getVoiceInputLang();
       micSpeechRecognition.onresult = (event) => {
         let finalText = '';
+        let interimText = '';
         let hasFinal = false;
         for (let i = 0; i < event.results.length; i++) {
           if (event.results[i].isFinal) {
             finalText += event.results[i][0].transcript;
             hasFinal = true;
+          } else {
+            interimText += event.results[i][0].transcript;
           }
         }
+        if (interimText.trim()) micSpeechInterimTranscript = interimText.trim();
         if (hasFinal) {
           micSpeechTranscript = finalText.trim();
           if (micSpeechFinalPromise) {
@@ -3443,21 +3835,30 @@
       micSpeechRecognition.onerror = (event) => {
         // Common reasons: 'no-speech' (silence), 'audio-capture' (mic busy),
         // 'not-allowed' (permission), 'network' (Chrome's online recognizer).
-        // We surface this so the user knows why nothing was transcribed.
         const code = (event && event.error) || 'unknown';
         console.warn('Vigzone AI: speech recognition error:', code);
+        // 'aborted' fires in virtually every browser whenever
+        // recognition.stop() is called manually -- and stopRecording() does
+        // exactly that on every mic release. It does NOT mean transcription
+        // failed, it just means we ended the session ourselves. Don't reject
+        // here; let onend run its fallback logic (final or interim
+        // transcript) instead of surfacing a false "couldn't transcribe"
+        // error for perfectly good recordings.
+        if (code === 'aborted') return;
         if (micSpeechFinalPromise) {
           micSpeechFinalPromise.reject(new Error(code));
           micSpeechFinalPromise = null;
         }
       };
       micSpeechRecognition.onend = () => {
-        // If we stopped without ever firing onresult/isFinal (e.g. the user
-        // released the button before saying anything), unblock the awaiter
-        // so the UI doesn't hang waiting for a transcript.
+        // If we stopped without ever firing a final result (e.g. the mic
+        // was released before recognition finished finalizing, which is the
+        // common case with 'aborted'), fall back to the last interim
+        // transcript we captured rather than discarding it.
         if (micSpeechFinalPromise) {
-          if (micSpeechTranscript) {
-            micSpeechFinalPromise.resolve(micSpeechTranscript);
+          const fallback = (micSpeechTranscript || micSpeechInterimTranscript || '').trim();
+          if (fallback) {
+            micSpeechFinalPromise.resolve(fallback);
           } else {
             micSpeechFinalPromise.reject(new Error('no-speech'));
           }

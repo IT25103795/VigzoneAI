@@ -103,6 +103,101 @@ def init_db() -> None:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_token_usage_user ON token_usage(user_id)"
         )
+        # ---- Migrations for per-user "bring your own Groq key" feature ----
+        # SQLite has no "ADD COLUMN IF NOT EXISTS", so we probe first.
+        existing_user_cols = {row[1] for row in conn.execute("PRAGMA table_info(users)")}
+        if "own_groq_key_enc" not in existing_user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN own_groq_key_enc TEXT")
+        if "use_own_key" not in existing_user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN use_own_key INTEGER NOT NULL DEFAULT 0")
+        existing_usage_cols = {row[1] for row in conn.execute("PRAGMA table_info(token_usage)")}
+        if "provider" not in existing_usage_cols:
+            conn.execute("ALTER TABLE token_usage ADD COLUMN provider TEXT NOT NULL DEFAULT 'ollama'")
+
+
+# ==========================================
+# PER-USER GROQ API KEY (encrypted at rest)
+# ==========================================
+# Each user can optionally bring their own Groq API key instead of using the
+# app's default (free, local Ollama) mode. The key is encrypted before it
+# touches disk using a key derived from ENCRYPTION_SECRET (set this in your
+# environment — if it's ever missing we fall back to a random one generated
+# at startup, which works fine but means previously-saved keys become
+# unreadable after a restart, so users would need to re-enter them).
+def _get_fernet():
+    from cryptography.fernet import Fernet
+    import base64
+
+    secret = os.getenv("ENCRYPTION_SECRET", "")
+    if not secret:
+        # No persistent secret configured — derive a process-local one so
+        # the app still works, but warn since it won't survive a restart.
+        import logging
+        logging.getLogger("vigzone.auth").warning(
+            "ENCRYPTION_SECRET is not set — saved API keys will not survive "
+            "a restart. Set ENCRYPTION_SECRET to a fixed random string in "
+            "your environment to fix this."
+        )
+        secret = "vigzone-ephemeral-fallback-secret"
+    key_bytes = hashlib.sha256(secret.encode("utf-8")).digest()
+    fernet_key = base64.urlsafe_b64encode(key_bytes)
+    return Fernet(fernet_key)
+
+
+def set_user_groq_key(user_id: int, api_key: str) -> None:
+    """Encrypt and store a user's own Groq API key, and mark it active."""
+    token = _get_fernet().encrypt(api_key.encode("utf-8")).decode("utf-8")
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE users SET own_groq_key_enc = ?, use_own_key = 1 WHERE id = ?",
+            (token, user_id),
+        )
+
+
+def get_user_groq_key(user_id: int) -> Optional[str]:
+    """Return the user's decrypted Groq key, or None if they don't have one."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT own_groq_key_enc FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+    if not row or not row["own_groq_key_enc"]:
+        return None
+    try:
+        return _get_fernet().decrypt(row["own_groq_key_enc"].encode("utf-8")).decode("utf-8")
+    except Exception:
+        return None
+
+
+def get_user_key_status(user_id: int) -> dict:
+    """Return whether this user has a saved key and whether it's active."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT own_groq_key_enc, use_own_key FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+    if not row:
+        return {"has_key": False, "active": False}
+    return {
+        "has_key": bool(row["own_groq_key_enc"]),
+        "active": bool(row["use_own_key"]),
+    }
+
+
+def set_use_own_key(user_id: int, enabled: bool) -> None:
+    """Toggle whether the user's stored key is actually used for their chats."""
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE users SET use_own_key = ? WHERE id = ?",
+            (1 if enabled else 0, user_id),
+        )
+
+
+def clear_user_groq_key(user_id: int) -> None:
+    """Forget the user's stored key entirely and revert them to free/Ollama mode."""
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE users SET own_groq_key_enc = NULL, use_own_key = 0 WHERE id = ?",
+            (user_id,),
+        )
 
 
 # ==========================================

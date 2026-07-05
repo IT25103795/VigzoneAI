@@ -38,13 +38,17 @@ from vigzone_ai import (
     AI_PROVIDER,
     DEFAULT_MODEL,
     OLLAMA_BASE_URL,
+    GROQ_BYOK_API_URL,
+    GROQ_BYOK_MODEL,
     VISION_MODEL,
     IS_TESTING,
     VigzoneAIError,
     chat_once,
     get_user_token_stats,
+    get_user_daily_usage,
     is_configured,
     stream_chat,
+    validate_groq_api_key,
 )
 from self_learning import add_interaction, prune_kb, sanitize_assistant_for_memory
 from image_generation import generate_image, edit_image, ImageGenError
@@ -270,6 +274,10 @@ async def get_stats():
             "generate_image": "POST /api/generate-image",
             "edit_image": "POST /api/edit-image",
             "token_usage": "GET /api/me/tokens",
+            "usage_today": "GET /api/me/usage",
+            "groq_key_validate": "POST /api/me/groq-key/validate",
+            "groq_key_activate": "POST /api/me/groq-key/activate",
+            "groq_key_deactivate": "POST /api/me/groq-key/deactivate",
         },
         "docs": "/docs",
     })
@@ -461,6 +469,60 @@ async def my_token_usage(user: dict = Depends(require_current_user)):
     return JSONResponse({"mode": "production", **stats})
 
 
+@app.get("/api/me/usage", tags=["Account"])
+async def my_usage_today(user: dict = Depends(require_current_user)):
+    """
+    Returns today's usage for the SIGNED-IN user only — individual plans,
+    not a shared family pool. If they haven't activated their own Groq key,
+    they're on free/unlimited local Ollama and there's no quota to report.
+    """
+    key_status = authmod.get_user_key_status(user["id"])
+    if IS_TESTING:
+        return JSONResponse({
+            "mode": "testing",
+            "note": "Usage tracking is disabled in testing mode.",
+            "has_own_key": key_status["has_key"],
+            "using_own_key": key_status["active"],
+        })
+    usage = get_user_daily_usage(user["id"], has_own_key=key_status["active"])
+    return JSONResponse({
+        "has_own_key": key_status["has_key"],
+        "using_own_key": key_status["active"],
+        **usage,
+    })
+
+
+class GroqKeyRequest(BaseModel):
+    api_key: str
+
+
+@app.post("/api/me/groq-key/validate", tags=["Account"])
+async def validate_my_groq_key(request: GroqKeyRequest, user: dict = Depends(require_current_user)):
+    """Check whether a pasted Groq key actually works, WITHOUT saving it yet."""
+    result = await validate_groq_api_key(request.api_key)
+    return JSONResponse(result)
+
+
+@app.post("/api/me/groq-key/activate", tags=["Account"])
+async def activate_my_groq_key(request: GroqKeyRequest, user: dict = Depends(require_current_user)):
+    """
+    Validate (again, server-side — never trust the client) and save the
+    user's Groq key, then switch their chats over to using it.
+    """
+    result = await validate_groq_api_key(request.api_key)
+    if not result.get("valid"):
+        raise HTTPException(status_code=400, detail=result.get("message", "That Groq key didn't validate."))
+    authmod.set_user_groq_key(user["id"], request.api_key.strip())
+    return JSONResponse({"activated": True, "message": "Your Groq key is now powering your chats."})
+
+
+@app.post("/api/me/groq-key/deactivate", tags=["Account"])
+async def deactivate_my_groq_key(user: dict = Depends(require_current_user)):
+    """Switch the user back to free/unlimited local Ollama. Forgets the stored key entirely."""
+    authmod.clear_user_groq_key(user["id"])
+    return JSONResponse({"activated": False, "message": "Switched back to the free, unlimited local AI."})
+
+
 # ── Auth endpoints ────────────────────────────────────────────────────────────
 @app.post("/api/auth/signup", tags=["Auth"])
 async def signup(req: SignupRequest):
@@ -582,13 +644,35 @@ async def upload_file(file: UploadFile = File(...), user: dict = Depends(require
 
 
 # ── Chat endpoints ────────────────────────────────────────────────────────────
+def _resolve_provider_for_user(user: dict) -> tuple[Optional[dict], Optional[str]]:
+    """
+    Decide which AI backend a given user's message should use.
+    Returns (provider_override, override_model):
+      - (None, None)               → use the deployment default (Ollama/Groq
+                                      as configured in AI_PROVIDER)
+      - ({"api_url":..,"api_key":..}, GROQ_BYOK_MODEL) → this user has
+        activated their own personal Groq key, so their chats bypass the
+        shared default entirely and run on their own quota.
+    """
+    key_status = authmod.get_user_key_status(user["id"])
+    if key_status["active"]:
+        own_key = authmod.get_user_groq_key(user["id"])
+        if own_key:
+            return {"api_url": GROQ_BYOK_API_URL, "api_key": own_key}, GROQ_BYOK_MODEL
+    return None, None
+
+
 @app.post("/api/chat", tags=["Chat"])
 async def chat(request: ChatRequest, user: dict = Depends(require_current_user)):
     """
     Stream a chat response as Server-Sent Events.
     No message limits in testing mode. Token usage tracked in production mode.
+    Users with their own activated Groq key bypass the deployment default
+    entirely and run on their own personal quota.
     """
-    if not await is_configured():
+    provider_override, override_model = _resolve_provider_for_user(user)
+
+    if provider_override is None and not await is_configured():
         raise HTTPException(
             status_code=503,
             detail=(
@@ -619,10 +703,11 @@ async def chat(request: ChatRequest, user: dict = Depends(require_current_user))
             try:
                 async for chunk in stream_chat(
                     messages,
-                    model=request.model,
+                    model=override_model or request.model,
                     stream_id=stream_id,
                     user_id=user["id"],
                     user_name=user.get("name") or "",
+                    provider_override=provider_override,
                 ):
                     if is_cancelled(stream_id):
                         break
@@ -669,7 +754,9 @@ async def chat(request: ChatRequest, user: dict = Depends(require_current_user))
 @app.post("/api/chat/sync", tags=["Chat"])
 async def chat_sync(request: ChatRequest, user: dict = Depends(require_current_user)):
     """Non-streaming variant — returns the full reply in one JSON response."""
-    if not await is_configured():
+    provider_override, override_model = _resolve_provider_for_user(user)
+
+    if provider_override is None and not await is_configured():
         raise HTTPException(
             status_code=503,
             detail=(
@@ -682,7 +769,13 @@ async def chat_sync(request: ChatRequest, user: dict = Depends(require_current_u
         )
     messages = [{"role": m.role, "content": m.content} for m in request.messages]
     try:
-        reply = await chat_once(messages, model=request.model, user_id=user["id"], user_name=user.get("name") or "")
+        reply = await chat_once(
+            messages,
+            model=override_model or request.model,
+            user_id=user["id"],
+            user_name=user.get("name") or "",
+            provider_override=provider_override,
+        )
     except VigzoneAIError as e:
         logger.error("Chat failed: %s", e)
         raise HTTPException(status_code=502, detail=str(e))

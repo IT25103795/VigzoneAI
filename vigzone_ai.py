@@ -55,6 +55,69 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+
+def _friendly_groq_error(status_code: int, body_text: str) -> str:
+    """Turn a raw Groq error body into a short, user-facing message.
+
+    Groq's error bodies are raw JSON meant for developers (e.g. the full
+    429 rate-limit payload with org IDs and tier upsell links). Dumping that
+    straight into the chat is confusing for end users, so we parse out just
+    the useful bits: which limit was hit and how long until it resets.
+    """
+    try:
+        parsed = json.loads(body_text)
+        inner_message = parsed.get("error", {}).get("message", "")
+    except (json.JSONDecodeError, AttributeError):
+        inner_message = body_text
+
+    if status_code == 429:
+        # Groq's message includes a "Please try again in 17m22.848s" segment.
+        wait_match = re.search(r"try again in ([\d.]+m[\d.]+s|[\d.]+s)", inner_message)
+        wait_str = wait_match.group(1) if wait_match else None
+        if "tokens per day" in inner_message.lower() or "TPD" in inner_message:
+            base = "Vigzone AI has hit Groq's daily free-tier token limit for this model."
+        elif "tokens per minute" in inner_message.lower() or "TPM" in inner_message:
+            base = "Vigzone AI is sending messages a bit too fast for Groq's free tier."
+        else:
+            base = "Vigzone AI has hit Groq's rate limit."
+        if wait_str:
+            return f"{base} Please try again in about {wait_str}."
+        return f"{base} Please wait a bit and try again."
+
+    return f"Groq API error {status_code}: {inner_message[:300] or body_text[:300]}"
+
+
+async def validate_groq_api_key(api_key: str) -> dict:
+    """
+    Lightweight check that a user-supplied Groq API key actually works.
+    Hits Groq's /models list endpoint (cheap, no tokens consumed) rather
+    than running a real chat completion.
+    Returns {"valid": bool, "message": str}.
+    """
+    api_key = (api_key or "").strip()
+    if not api_key:
+        return {"valid": False, "message": "Please paste a Groq API key first."}
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                "https://api.groq.com/openai/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+    except httpx.RequestError as e:
+        return {"valid": False, "message": f"Couldn't reach Groq to check the key ({e})."}
+
+    if resp.status_code == 200:
+        return {"valid": True, "message": "This Groq key works."}
+    if resp.status_code == 401:
+        return {"valid": False, "message": "Groq says this key is invalid or revoked."}
+    if resp.status_code == 429:
+        # The key itself is real (Groq authenticated it) — it's just already
+        # rate-limited right now, which is still a "valid" key for our purposes.
+        return {"valid": True, "message": "This Groq key works (it's currently rate-limited, but that's fine)."}
+    return {"valid": False, "message": f"Groq returned an unexpected error (status {resp.status_code})."}
+
+
 # ── Config ───────────────────────────────────────────────────────────────────
 # AI_PROVIDER selects the chat backend:
 #   "groq"   (default) → Groq's hosted OpenAI-compatible API, needs GROQ_API_KEY
@@ -76,6 +139,20 @@ else:
     API_KEY         = os.getenv("GROQ_API_KEY", "")
 
 _AUTH_HEADERS = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
+
+# Constants for the "bring your own Groq key" feature — these are used
+# whenever a user has activated their own personal Groq key, REGARDLESS of
+# what AI_PROVIDER the deployment defaults to for everyone else.
+GROQ_BYOK_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1").rstrip("/")
+GROQ_BYOK_API_URL  = f"{GROQ_BYOK_BASE_URL}/chat/completions"
+GROQ_BYOK_MODEL    = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+
+# The Groq (or other hosted) API key is SHARED across every user of this
+# deployment — it is not a per-user quota. DAILY_TOKEN_LIMIT should match
+# whatever your provider's daily token cap actually is (Groq's free tier is
+# 100,000 tokens/day per model as of writing; check console.groq.com/settings/limits
+# for your current plan) so the usage table can show remaining headroom.
+DAILY_TOKEN_LIMIT = int(os.getenv("DAILY_TOKEN_LIMIT", "100000"))
 
 # APP_MODE controls rate-limiting & token tracking.
 #   "testing"    → unlimited, no tracking (default for local dev)
@@ -533,10 +610,12 @@ async def _build_payload(messages: list[dict], model: str, stream: bool, user_na
 
 
 # ── Token tracking (production mode only) ────────────────────────────────────
-def track_token_usage(user_id: int, prompt_tokens: int, completion_tokens: int) -> None:
+def track_token_usage(user_id: int, prompt_tokens: int, completion_tokens: int, provider: str = "ollama") -> None:
     """
     Persist token usage to SQLite. Only called in production mode.
     The token_usage table is created by auth.init_db() — see auth.py.
+    `provider` is 'ollama' (free, unlimited — recorded for visibility only)
+    or 'groq' (counts against that user's own Groq daily quota).
     """
     if IS_TESTING:
         return
@@ -546,14 +625,75 @@ def track_token_usage(user_id: int, prompt_tokens: int, completion_tokens: int) 
         with sqlite3.connect(db_path) as conn:
             conn.execute(
                 """
-                INSERT INTO token_usage (user_id, prompt_tokens, completion_tokens, total_tokens, ts)
-                VALUES (?, ?, ?, ?, strftime('%s','now'))
+                INSERT INTO token_usage (user_id, prompt_tokens, completion_tokens, total_tokens, ts, provider)
+                VALUES (?, ?, ?, ?, strftime('%s','now'), ?)
                 """,
-                (user_id, prompt_tokens, completion_tokens, prompt_tokens + completion_tokens),
+                (user_id, prompt_tokens, completion_tokens, prompt_tokens + completion_tokens, provider),
             )
             conn.commit()
     except Exception as exc:
         logger.warning("token_usage write failed: %s", exc)
+
+
+def get_user_daily_usage(user_id: int, has_own_key: bool) -> dict:
+    """
+    Return today's Groq usage for ONE user (their own personal key, their
+    own quota — no more shared family pool).
+
+    If the user isn't using their own key, there's no quota to report:
+    they're on free, unlimited local Ollama, so we return that mode instead.
+
+    "Today" resets at Sri Lanka local midnight (UTC+5:30) by default — set
+    the USAGE_TZ_OFFSET_MINUTES env var to change this. `ts` in the DB is
+    UTC epoch seconds either way; this just shifts which second counts as
+    "midnight" before comparing against it.
+    """
+    if not has_own_key:
+        return {
+            "mode": "free_ollama",
+            "message": "You're using the free, unlimited local AI — no API key needed.",
+        }
+
+    try:
+        import sqlite3, os as _os
+        from datetime import datetime, timezone, timedelta
+
+        db_path = _os.getenv("VIGZONE_DB_PATH", _os.path.join("data", "vigzone.db"))
+        tz_offset_minutes = int(_os.getenv("USAGE_TZ_OFFSET_MINUTES", "330"))  # +5:30 = Sri Lanka
+        local_tz = timezone(timedelta(minutes=tz_offset_minutes))
+        now_local = datetime.now(local_tz)
+        day_start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        day_start = int(day_start_local.timestamp())
+        seconds_until_reset = int((day_start_local + timedelta(days=1)).timestamp()) - int(now_local.timestamp())
+
+        with sqlite3.connect(db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT COALESCE(SUM(total_tokens), 0)
+                FROM token_usage
+                WHERE user_id = ? AND provider = 'groq' AND ts >= ?
+                """,
+                (user_id, day_start),
+            ).fetchone()
+
+        used_today = row[0] if row else 0
+        limit = DAILY_TOKEN_LIMIT
+        return {
+            "mode": "own_key",
+            "used_today": used_today,
+            "daily_limit": limit,
+            "remaining_today": max(limit - used_today, 0),
+            "seconds_until_reset": max(seconds_until_reset, 0),
+            "disclaimer": (
+                "This is Vigzone's own estimate based on your messages, not a live reading "
+                "from Groq's servers. A rate-limit error from Groq is always the real, final "
+                "word on what's left, even if this shows plenty of room."
+            ),
+        }
+    except Exception as exc:
+        logger.warning("get_user_daily_usage failed: %s", exc)
+        return {"mode": "own_key", "used_today": 0, "daily_limit": DAILY_TOKEN_LIMIT,
+                "remaining_today": DAILY_TOKEN_LIMIT, "seconds_until_reset": 0, "disclaimer": ""}
 
 
 def get_user_token_stats(user_id: int) -> dict:
@@ -589,8 +729,25 @@ async def stream_chat(
     stream_id: Optional[str] = None,
     user_id: Optional[int] = None,
     user_name: Optional[str] = None,
+    provider_override: Optional[dict] = None,
 ) -> AsyncGenerator[str, None]:
-    """Stream a chat completion token-by-token from a local Ollama server."""
+    """
+    Stream a chat completion token-by-token.
+
+    `provider_override`, when given, is {"api_url": ..., "api_key": ...} for
+    a user's own personal Groq key — used INSTEAD of the deployment's
+    default AI_PROVIDER/API_KEY for this one call. This is how per-user
+    "bring your own key" mode overrides the shared default without needing
+    a server restart or affecting any other user's requests.
+    """
+    using_override = provider_override is not None
+    effective_api_url = provider_override["api_url"] if using_override else OLLAMA_API_URL
+    effective_headers = (
+        {"Authorization": f"Bearer {provider_override['api_key']}"} if using_override else _AUTH_HEADERS
+    )
+    effective_provider_label = "groq" if using_override else ("ollama" if AI_PROVIDER == "ollama" else "groq")
+    is_ollama_call = (not using_override) and AI_PROVIDER == "ollama"
+
     payload = await _build_payload(messages, model, stream=True, user_name=user_name)
     client  = _get_client()
 
@@ -602,11 +759,11 @@ async def stream_chat(
     prompt_tokens = _estimate_tokens(prompt_text)
 
     try:
-        async with client.stream("POST", OLLAMA_API_URL, json=payload,
-                                  headers={"Content-Type": "application/json", **_AUTH_HEADERS}) as resp:
+        async with client.stream("POST", effective_api_url, json=payload,
+                                  headers={"Content-Type": "application/json", **effective_headers}) as resp:
             if resp.status_code == 404:
                 body = await resp.aread()
-                if AI_PROVIDER == "ollama":
+                if is_ollama_call:
                     raise VigzoneAIError(
                         f"Model \"{payload['model']}\" isn't pulled yet. "
                         f"Run `ollama pull {payload['model']}` then try again. "
@@ -620,14 +777,16 @@ async def stream_chat(
             if resp.status_code == 401:
                 body = await resp.aread()
                 raise VigzoneAIError(
-                    f"Groq rejected the API key. Check GROQ_API_KEY in .env. "
-                    f"(Error: {body.decode(errors='ignore')[:200]})"
+                    "Groq rejected this API key. "
+                    + ("Check the key you entered in Settings." if using_override else "Check GROQ_API_KEY in .env.")
+                    + f" (Error: {body.decode(errors='ignore')[:200]})"
                 )
             if resp.status_code != 200:
                 body = await resp.aread()
                 raise VigzoneAIError(
-                    f"{'Ollama' if AI_PROVIDER == 'ollama' else 'Groq'} API error "
-                    f"{resp.status_code}: {body.decode(errors='ignore')[:300]}"
+                    _friendly_groq_error(resp.status_code, body.decode(errors="ignore"))
+                    if not is_ollama_call else
+                    f"Ollama API error {resp.status_code}: {body.decode(errors='ignore')[:300]}"
                 )
 
             full_text   = ""
@@ -694,17 +853,18 @@ async def stream_chat(
             # Track token usage (production only)
             if user_id and not IS_TESTING:
                 completion_tokens = _estimate_tokens(full_text)
-                track_token_usage(user_id, prompt_tokens, completion_tokens)
+                track_token_usage(user_id, prompt_tokens, completion_tokens, provider=effective_provider_label)
 
     except httpx.RequestError as e:
-        if AI_PROVIDER == "ollama":
+        if is_ollama_call:
             raise VigzoneAIError(
                 f"Could not reach Ollama at {OLLAMA_BASE_URL}. "
                 f"Make sure Ollama is running (`ollama serve`) — ({e})"
             ) from e
         raise VigzoneAIError(
-            f"Could not reach Groq at {OLLAMA_BASE_URL}. Check the server's "
-            f"internet connection and GROQ_API_KEY — ({e})"
+            f"Could not reach Groq. Check the server's internet connection "
+            + ("and the API key you entered in Settings" if using_override else "and GROQ_API_KEY")
+            + f" — ({e})"
         ) from e
 
 
@@ -714,8 +874,18 @@ async def chat_once(
     model: str = DEFAULT_MODEL,
     user_id: Optional[int] = None,
     user_name: Optional[str] = None,
+    provider_override: Optional[dict] = None,
 ) -> str:
-    """Non-streaming convenience wrapper. Returns the full reply as one string."""
+    """Non-streaming convenience wrapper. Returns the full reply as one string.
+    See stream_chat's docstring for what `provider_override` does."""
+    using_override = provider_override is not None
+    effective_api_url = provider_override["api_url"] if using_override else OLLAMA_API_URL
+    effective_headers = (
+        {"Authorization": f"Bearer {provider_override['api_key']}"} if using_override else _AUTH_HEADERS
+    )
+    effective_provider_label = "groq" if using_override else ("ollama" if AI_PROVIDER == "ollama" else "groq")
+    is_ollama_call = (not using_override) and AI_PROVIDER == "ollama"
+
     payload = await _build_payload(messages, model, stream=False, user_name=user_name)
     client  = _get_client()
 
@@ -727,22 +897,23 @@ async def chat_once(
 
     try:
         resp = await client.post(
-            OLLAMA_API_URL, json=payload,
-            headers={"Content-Type": "application/json", **_AUTH_HEADERS},
+            effective_api_url, json=payload,
+            headers={"Content-Type": "application/json", **effective_headers},
         )
     except httpx.RequestError as e:
-        if AI_PROVIDER == "ollama":
+        if is_ollama_call:
             raise VigzoneAIError(
                 f"Could not reach Ollama at {OLLAMA_BASE_URL}. "
                 f"Make sure Ollama is running (`ollama serve`) — ({e})"
             ) from e
         raise VigzoneAIError(
-            f"Could not reach Groq at {OLLAMA_BASE_URL}. Check the server's "
-            f"internet connection and GROQ_API_KEY — ({e})"
+            f"Could not reach Groq. Check the server's internet connection "
+            + ("and the API key you entered in Settings" if using_override else "and GROQ_API_KEY")
+            + f" — ({e})"
         ) from e
 
     if resp.status_code == 404:
-        if AI_PROVIDER == "ollama":
+        if is_ollama_call:
             raise VigzoneAIError(
                 f"Model \"{payload['model']}\" isn't pulled yet. "
                 f"Run `ollama pull {payload['model']}` then try again."
@@ -752,11 +923,15 @@ async def chat_once(
             f"Check GROQ_MODEL against https://console.groq.com/docs/models."
         )
     if resp.status_code == 401:
-        raise VigzoneAIError("Groq rejected the API key. Check GROQ_API_KEY in .env.")
+        raise VigzoneAIError(
+            "Groq rejected this API key. "
+            + ("Check the key you entered in Settings." if using_override else "Check GROQ_API_KEY in .env.")
+        )
     if resp.status_code != 200:
         raise VigzoneAIError(
-            f"{'Ollama' if AI_PROVIDER == 'ollama' else 'Groq'} API error "
-            f"{resp.status_code}: {resp.text[:300]}"
+            _friendly_groq_error(resp.status_code, resp.text)
+            if not is_ollama_call else
+            f"Ollama API error {resp.status_code}: {resp.text[:300]}"
         )
 
     data = resp.json()
@@ -773,6 +948,6 @@ async def chat_once(
         reply += "\n\n_(Cut short — I started repeating myself. Mind rephrasing?)_"
 
     if user_id and not IS_TESTING:
-        track_token_usage(user_id, prompt_tokens, _estimate_tokens(reply))
+        track_token_usage(user_id, prompt_tokens, _estimate_tokens(reply), provider=effective_provider_label)
 
     return reply
