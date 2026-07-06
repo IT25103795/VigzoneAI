@@ -432,12 +432,13 @@ _LONG_FORM_RE = re.compile(
 # store", "menu page") so Vigzone catches website requests even when the
 # user doesn't use web-dev jargon.
 _WEBSITE_RE = re.compile(
-    r"\b(web ?site|web ?page|web ?app|webapp|landing page|portfolio (?:site|page)|"
-    r"home ?page|login page|signup page|dashboard ui|single[- ]page app|\bspa\b|"
-    r"html5?|css3?|tailwind|bootstrap|front[- ]?end|web design|ui/?ux|"
-    r"react (?:app|component|site)|vue (?:app|component)|"
-    r"online store|web ?store|web ?shop|menu page|coming soon page|"
-    r"(?:site|page) for my \w+|"
+    r"\b(web ?site|web ?page|web ?app|webapp|landing page|portfolio (?:site|page|website)|"
+    r"home ?page|homepage|login page|signup page|dashboard ui|single[- ]page app|\bspa\b|"
+    r"html5?|css3?|tailwind|bootstrap|front[- ]?end|frontend|web design|ui/?ux|"
+    r"react (?:app|component|site|website)|vue (?:app|component|site)|svelte (?:app|site)|"
+    r"online store|web ?store|web ?shop|menu page|booking site|reservation site|coming soon page|"
+    r"(?:build|create|make|design|develop|write|code|generate)\s+(?:me\s+)?(?:a|an|the\s+)?(?:modern|responsive|professional|full|complete|excellent\s+)?(?:web ?site|site|web ?page|web ?app|landing page)|"
+    r"(?:web ?site|site|web ?page|landing page|web ?app)\s+(?:for|about)\s+(?:my|a|an|the)?\s*[\w &'-]{2,80}|"
     r"\.html\b|index\.html)\b",
     re.IGNORECASE,
 )
@@ -710,7 +711,7 @@ async def _build_payload(messages: list[dict], model: str, stream: bool, user_na
         # tokens over and over (closing tags, braces, indentation, repeated
         # class names) and a penalty pushes the model to avoid that, which is
         # how you end up with mismatched tags or broken syntax.
-        "temperature": 0.4 if code_request else 0.7,
+        "temperature": 0.35 if code_request else 0.7,
         "max_tokens": _adaptive_max_tokens(messages),
         "frequency_penalty": 0.0 if code_request else 0.6,
         "presence_penalty": 0.0 if code_request else 0.4,

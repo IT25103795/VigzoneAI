@@ -135,3 +135,7 @@ API endpoints:
 - `PATCH /api/learning/memories/{id}`
 - `DELETE /api/learning/memories/{id}`
 
+
+
+## Website Studio V3 Upgrade
+Vigzone now uses an upgraded Website Studio prompt for modern website generation. It detects natural requests like "write a website for a hotel", applies industry-specific section guidance, requires complete self-contained code, and adds a browser Preview button for generated HTML blocks.

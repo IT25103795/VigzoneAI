@@ -2237,7 +2237,7 @@
   // website/code/long-form regexes in vigzone_ai.py, so the frontend shows
   // the glitchy "thinking" treatment for the same kinds of requests that
   // get a bigger token budget on the server) ----------
-  const COMPLEX_WEBSITE_RE = /\b(web ?site|web ?page|web ?app|webapp|landing page|portfolio (?:site|page)|home ?page|login page|signup page|dashboard ui|single[- ]page app|spa|html5?|css3?|tailwind|bootstrap|front[- ]?end|web design|ui\/?ux|react (?:app|component|site)|vue (?:app|component)|online store|web ?store|web ?shop|menu page|coming soon page|site for my \w+|page for my \w+|\.html\b|index\.html)\b/i;
+  const COMPLEX_WEBSITE_RE = /\b(web ?site|web ?page|web ?app|webapp|landing page|portfolio (?:site|page|website)|home ?page|homepage|login page|signup page|dashboard ui|single[- ]page app|spa|html5?|css3?|tailwind|bootstrap|front[- ]?end|frontend|web design|ui\/?ux|react (?:app|component|site|website)|vue (?:app|component|site)|svelte (?:app|site)|online store|web ?store|web ?shop|menu page|booking site|reservation site|coming soon page|(?:build|create|make|design|develop|write|code|generate)\s+(?:me\s+)?(?:a|an|the\s+)?(?:modern|responsive|professional|full|complete|excellent\s+)?(?:web ?site|site|web ?page|web ?app|landing page)|(?:web ?site|site|web ?page|landing page|web ?app)\s+(?:for|about)\s+(?:my|a|an|the)?\s*[\w &'-]{2,80}|\.html\b|index\.html)\b/i;
   const COMPLEX_CODE_RE = /\b(function|class \w|script|program|algorithm|snippet|api endpoint|refactor|debug|code for|code (?:to|that)|write (?:a|the) code|python|javascript|typescript|java\b|c\+\+|c#|sql query|regex)\b/i;
   const COMPLEX_LONGFORM_RE = /\b(explain|step[- ]by[- ]step|write a|essay|guide|tutorial|list all|detail|elaborate|summarize|generate|create a|compare|difference between|how does|how do|walk me through)\b/i;
   const CONTINUATION_RE = /^\s*(continue|keep going|go on|more|next|and then|carry on|finish (?:it|that|this)|what('?s| is) next)[\s.!?]*$/i;
@@ -2464,6 +2464,23 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
         </button>
       </div>`;
+      const looksLikeHtml = (lang === 'html') || /^\s*(?:<!doctype html|<html|<head|<body)/i.test(raw);
+      if (looksLikeHtml) {
+        const previewBtn = document.createElement('button');
+        previewBtn.className = 'code-preview-btn';
+        previewBtn.title = 'Preview website';
+        previewBtn.setAttribute('aria-label', 'Preview website');
+        previewBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+        previewBtn.addEventListener('click', () => {
+          const blob = new Blob([raw], { type: 'text/html' });
+          const url = URL.createObjectURL(blob);
+          const win = window.open(url, '_blank', 'noopener,noreferrer');
+          if (!win) downloadTextFile('index.html', raw);
+          setTimeout(() => URL.revokeObjectURL(url), 60000);
+        });
+        const actions = header.querySelector('.code-block-actions');
+        if (actions) actions.insertBefore(previewBtn, actions.firstChild);
+      }
       pre.parentNode.insertBefore(wrap, pre);
       wrap.appendChild(header);
       wrap.appendChild(pre);
