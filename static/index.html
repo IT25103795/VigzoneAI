@@ -3813,6 +3813,34 @@
     return navigator.language || 'en-US';
   }
 
+  function getExplicitVoiceInputLang() {
+    try {
+      return (voiceLangSelect && voiceLangSelect.value) ? voiceLangSelect.value : '';
+    } catch {
+      return '';
+    }
+  }
+
+  async function transcribeVoiceBlob(blob) {
+    const form = new FormData();
+    const ext = (blob.type || '').includes('ogg') ? 'ogg' : 'webm';
+    form.append('file', blob, `voice-message.${ext}`);
+    const selectedLang = getExplicitVoiceInputLang();
+    if (selectedLang) form.append('language', selectedLang);
+
+    const authToken = localStorage.getItem('vigzone_token') || '';
+    const res = await fetch('/api/transcribe', {
+      method: 'POST',
+      headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
+      body: form,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.detail || data.error || `Voice transcription failed (${res.status})`);
+    }
+    return (data.text || '').trim();
+  }
+
   if (voiceLangSelect) {
     try {
       voiceLangSelect.value = localStorage.getItem(VOICE_LANG_KEY) || '';
@@ -3855,9 +3883,10 @@
   let micSpeechRecognition = null;
   let micSpeechTranscript = '';
   let micSpeechInterimTranscript = '';
-  // Resolves with the next isFinal transcript, or rejects with the recognizer's
-  // error code (e.g. 'no-speech', 'audio-capture') so we can surface a useful
-  // message instead of silently sending a placeholder to the chat backend.
+  // Resolves with the next final/interim transcript, or rejects with the
+  // recognizer's error code. It is created BEFORE speech recognition starts;
+  // creating it after mic release caused false "no-speech" errors because the
+  // recognizer often ended before handleRecordingStop() began waiting.
   let micSpeechFinalPromise = null;
   let micSpeechSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
   let micSpeechWarned = false;
@@ -3888,6 +3917,7 @@
     micAudioChunks = [];
     micSpeechTranscript = '';
     micSpeechInterimTranscript = '';
+    micSpeechFinalPromise = null;
     const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg';
     micMediaRecorder = new MediaRecorder(micStream, { mimeType });
     micMediaRecorder.ondataavailable = e => { if (e.data.size > 0) micAudioChunks.push(e.data); };
@@ -3903,6 +3933,7 @@
     // happen client-side while the mic is live.)
     if (micSpeechSupported) {
       const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
+      micSpeechFinalPromise = createDeferred();
       micSpeechRecognition = new SpeechRecognitionImpl();
       micSpeechRecognition.continuous = true;
       micSpeechRecognition.interimResults = true;
@@ -3922,7 +3953,7 @@
         if (interimText.trim()) micSpeechInterimTranscript = interimText.trim();
         if (hasFinal) {
           micSpeechTranscript = finalText.trim();
-          if (micSpeechFinalPromise) {
+          if (micSpeechTranscript && micSpeechFinalPromise) {
             micSpeechFinalPromise.resolve(micSpeechTranscript);
             micSpeechFinalPromise = null;
           }
@@ -3997,47 +4028,47 @@
     const voiceMsgEl = renderVoiceMessage('user', audioUrl, parseFloat(duration));
 
     // Speech recognition runs while the mic is live (see startRecording).
-    // Here we wait for either (a) the next isFinal result, (b) a recognizer
-    // error, or (c) a 2.5s safety timeout — whichever fires first. The 300ms
-    // fixed delay we used to use often cut off the last word.
+    // First try the browser's instant recognizer, then fall back to Groq
+    // Whisper on the backend. This fixes the common false "no-speech" issue
+    // where the audio bubble is clearly audible but Chrome's recognizer returns
+    // nothing.
     let transcription = '';
     let speechErrorCode = null;
-    if (micSpeechSupported) {
-      micSpeechFinalPromise = createDeferred();
+    if (micSpeechSupported && micSpeechFinalPromise) {
       try {
         transcription = await Promise.race([
           micSpeechFinalPromise.promise,
           new Promise(resolve => setTimeout(() => resolve('__TIMEOUT__'), 2500))
         ]);
         if (transcription === '__TIMEOUT__') {
-          // No final result in time — fall back to whatever the recognizer
-          // captured so far (interim transcripts aren't available, but the
-          // last onresult finalised text is).
-          transcription = (micSpeechTranscript || '').trim();
+          transcription = (micSpeechTranscript || micSpeechInterimTranscript || '').trim();
         }
       } catch (e) {
         speechErrorCode = (e && e.message) || 'unknown';
         transcription = '';
       }
     } else {
-      // No browser support and no server-side fallback configured. Don't
-      // send a meaningless "[Voice message]" string to the chat backend.
-      showVoiceTranscriptionError(voiceMsgEl,
-        "Voice transcription isn't available in this browser. Try Chrome or Edge, or type your message instead.");
-      return;
+      transcription = (micSpeechTranscript || micSpeechInterimTranscript || '').trim();
     }
 
     if (!transcription) {
-      // Recognizer ran but produced nothing (silent mic, error, etc.).
-      // Don't pollute the conversation with a placeholder, and don't call
-      // /api/chat — that's what produced the misleading "trouble
-      // processing your voice message" error before.
+      try {
+        transcription = await transcribeVoiceBlob(blob);
+        speechErrorCode = null;
+      } catch (e) {
+        speechErrorCode = (e && e.message) || speechErrorCode || 'unknown';
+      }
+    }
+
+    if (!transcription) {
       const why = speechErrorCode === 'not-allowed'
         ? "Microphone permission was denied. Allow access and try again."
         : speechErrorCode === 'audio-capture'
           ? "Couldn't access the microphone. Check that no other app is using it."
-        : speechErrorCode === 'no-speech'
-          ? "I didn't hear anything. Try again, and speak a bit louder or closer to the mic."
+        : (speechErrorCode || '').includes('rate-limit') || (speechErrorCode || '').includes('429')
+          ? "Voice transcription is rate-limited right now. Please try again soon."
+        : (speechErrorCode || '').includes('Groq') || (speechErrorCode || '').includes('transcrib')
+          ? speechErrorCode
         : "I couldn't transcribe that voice message. Please try again, or type your message instead.";
       showVoiceTranscriptionError(voiceMsgEl, why);
       return;
@@ -4066,9 +4097,13 @@
     let fullReply = '';
 
     try {
+      const authToken = localStorage.getItem('vigzone_token') || '';
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+        },
         body: JSON.stringify({ messages: apiMessages() })
       });
 
@@ -4251,9 +4286,13 @@
     let fullReply = '';
 
     try {
+      const authToken = localStorage.getItem('vigzone_token') || '';
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+        },
         body: JSON.stringify({ messages: apiMessages() })
       });
       if (!response.ok || !response.body) {

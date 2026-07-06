@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import Cookie, Depends, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import Cookie, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -41,6 +41,7 @@ from vigzone_ai import (
     OLLAMA_BASE_URL,
     GROQ_BYOK_API_URL,
     GROQ_BYOK_MODEL,
+    API_KEY,
     VISION_MODEL,
     IS_TESTING,
     VigzoneAIError,
@@ -784,6 +785,121 @@ async def admin_reset_user_usage(user_id: int, admin: dict = Depends(require_adm
         cur = conn.execute("DELETE FROM token_usage WHERE user_id = ? AND ts >= ?", (user_id, start_ts))
         conn.commit()
     return JSONResponse({"ok": True, "deleted_rows": cur.rowcount})
+
+
+# ── Voice transcription endpoint ──────────────────────────────────────────────
+GROQ_TRANSCRIPTION_MODEL = os.getenv("GROQ_TRANSCRIPTION_MODEL", "whisper-large-v3-turbo")
+MAX_VOICE_UPLOAD_SIZE = int(os.getenv("MAX_VOICE_UPLOAD_SIZE_BYTES", str(25 * 1024 * 1024)))
+
+
+def _groq_audio_transcriptions_url(api_url: str) -> str:
+    """Build Groq's OpenAI-compatible audio transcription URL from the chat URL."""
+    base = (api_url or "https://api.groq.com/openai/v1/chat/completions").rstrip("/")
+    if base.endswith("/chat/completions"):
+        base = base[: -len("/chat/completions")]
+    return f"{base}/audio/transcriptions"
+
+
+def _normalize_transcription_language(language: Optional[str]) -> Optional[str]:
+    """Convert browser BCP-47 values like en-US/si-LK to Whisper's en/si."""
+    import re as _re
+
+    raw = (language or "").strip().lower()
+    if not raw or raw in ("auto", "default", "detect"):
+        return None
+    primary = raw.split("-", 1)[0].split("_", 1)[0].strip()
+    return primary if _re.fullmatch(r"[a-z]{2,3}", primary) else None
+
+
+@app.post("/api/transcribe", tags=["Voice"])
+async def transcribe_voice(
+    request: Request,
+    file: UploadFile = File(...),
+    language: Optional[str] = Form(default=None),
+    user: dict = Depends(require_current_user),
+):
+    """Transcribe a recorded voice message with Groq Whisper.
+
+    The frontend first tries the browser's built-in SpeechRecognition for instant
+    captions. If that gives a false `no-speech` result, this endpoint becomes the
+    reliable server fallback, using either the user's activated Groq key or the
+    deployment default key.
+    """
+    _check_chat_rate_limit(request, user)
+
+    provider_override, _ = _resolve_provider_for_user(user)
+    if provider_override is None and not await is_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Groq isn't configured — set GROQ_API_KEY before using voice transcription.",
+        )
+
+    audio = await file.read()
+    if not audio:
+        raise HTTPException(status_code=400, detail="Voice recording was empty.")
+    if len(audio) > MAX_VOICE_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, detail="Voice recording is too large. Try a shorter message.")
+
+    content_type = file.content_type or "audio/webm"
+    if not content_type.startswith("audio/") and content_type not in {"video/webm", "application/octet-stream"}:
+        raise HTTPException(status_code=415, detail="Unsupported voice recording format.")
+
+    using_override = provider_override is not None
+    api_url = provider_override["api_url"] if using_override else f"{OLLAMA_BASE_URL}/chat/completions"
+    api_key = provider_override["api_key"] if using_override else API_KEY
+    transcribe_url = _groq_audio_transcriptions_url(api_url)
+
+    data = {"model": GROQ_TRANSCRIPTION_MODEL, "response_format": "json"}
+    lang = _normalize_transcription_language(language)
+    if lang:
+        data["language"] = lang
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(connect=8.0, read=90.0, write=30.0, pool=5.0)) as client:
+            resp = await client.post(
+                transcribe_url,
+                headers={"Authorization": f"Bearer {api_key}"},
+                data=data,
+                files={"file": (file.filename or "voice.webm", audio, content_type)},
+            )
+    except httpx.RequestError as e:
+        logger.warning("Groq transcription request failed: %s", e)
+        raise HTTPException(status_code=502, detail="Couldn't reach Groq to transcribe the voice message.")
+
+    if resp.status_code == 401:
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "Groq rejected this API key for voice transcription. "
+                + ("Check the key you entered." if using_override else "Check GROQ_API_KEY in your deployment variables.")
+            ),
+        )
+    if resp.status_code == 429:
+        raise HTTPException(status_code=429, detail="Groq voice transcription is rate-limited right now. Please try again soon.")
+    if resp.status_code != 200:
+        logger.warning("Groq transcription error %s: %s", resp.status_code, resp.text[:500])
+        raise HTTPException(status_code=502, detail=f"Groq couldn't transcribe that voice message (status {resp.status_code}).")
+
+    try:
+        payload = resp.json()
+    except Exception:
+        payload = {}
+    text = (payload.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="I couldn't detect speech in that recording.")
+
+    # Count a small estimated amount against Vigzone's usage table so voice
+    # users do not get invisible/free backend activity. This is an estimate;
+    # Groq's rate-limit response is still the final source of truth.
+    try:
+        from vigzone_ai import track_token_usage, _estimate_tokens
+
+        if not IS_TESTING:
+            track_token_usage(user["id"], prompt_tokens=0, completion_tokens=_estimate_tokens(text), provider="groq")
+    except Exception:
+        logger.debug("Voice transcription usage tracking failed", exc_info=True)
+
+    return JSONResponse({"text": text, "provider": "groq", "model": GROQ_TRANSCRIPTION_MODEL})
 
 
 # ── Chat endpoints ────────────────────────────────────────────────────────────

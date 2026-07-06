@@ -116,3 +116,8 @@ Open `http://localhost:8000`.
 - Use a strong, stable `ENCRYPTION_SECRET`; changing it makes saved user keys unreadable.
 - Keep `COOKIE_SECURE=true` in HTTPS production.
 - Do not rely only on UI limits; this build enforces limits in the backend before chat requests.
+
+
+## Voice message reliability
+
+Voice messages first try the browser's instant speech recognizer. If the browser returns a false no-speech result, Vigzone falls back to Groq Whisper through `/api/transcribe`, using the deployment Groq key or the user's activated Groq key. Configure with `GROQ_TRANSCRIPTION_MODEL=whisper-large-v3-turbo`.
