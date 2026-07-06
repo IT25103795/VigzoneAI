@@ -1,16 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
   <defs>
-    <linearGradient id="f-bg" x1="5" y1="3" x2="27" y2="29" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#ff6b4a"/>
-      <stop offset="1" stop-color="#ff9a62"/>
+    <linearGradient id="bg" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#171B2B"/>
+      <stop offset="1" stop-color="#090D18"/>
     </linearGradient>
-    <linearGradient id="f-teal" x1="18" y1="6" x2="30" y2="22" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#6ef0dc"/>
-      <stop offset="1" stop-color="#2fb8a1"/>
+    <linearGradient id="vgrad" x1="16" y1="12" x2="47" y2="51" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF8766"/>
+      <stop offset="0.55" stop-color="#FF6D4C"/>
+      <stop offset="1" stop-color="#FF502E"/>
     </linearGradient>
   </defs>
-  <rect width="32" height="32" rx="8" fill="url(#f-bg)"/>
-  <path d="M21 9.5a10 10 0 0 1 2 5.8" stroke="url(#f-teal)" stroke-width="1.8" stroke-linecap="round"/>
-  <path d="M9.5 12 16 23 22.5 12" stroke="#120a08" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="16" cy="11.5" r="2.4" fill="url(#f-teal)"/>
+  <rect width="64" height="64" rx="18" fill="url(#bg)"/>
+  <ellipse cx="19" cy="14" rx="13" ry="7" fill="#FFFFFF" opacity="0.06"/>
+  <path d="M17.5 15.5c0-1.38 1.57-2.18 2.69-1.37l12.2 8.89a2.8 2.8 0 0 0 3.3 0l11.62-8.53c1.12-.82 2.69-.02 2.69 1.37 0 .47-.15.92-.44 1.29L37.84 34.12a6 6 0 0 0-1.24 3.67v8.49c0 .71-.3 1.39-.84 1.86l-3.04 2.71a1.5 1.5 0 0 1-2.46-.85l-.46-3.17a6 6 0 0 0-1.25-2.96L17.93 17.02a2.1 2.1 0 0 1-.43-1.52Z" fill="url(#vgrad)"/>
+  <path d="M31.95 17.3v12.1" stroke="#414760" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M31.95 22.8 26.7 27" stroke="#414760" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M31.95 22.8 37.2 27" stroke="#414760" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="31.95" cy="16.8" r="3.2" fill="#FF7A59"/>
+  <circle cx="26.2" cy="27.4" r="2.2" fill="#414760"/>
+  <circle cx="37.7" cy="27.4" r="2.2" fill="#414760"/>
+  <circle cx="31.95" cy="30.2" r="2.2" fill="#414760"/>
 </svg>

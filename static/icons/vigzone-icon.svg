@@ -1,26 +1,38 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" role="img" aria-label="Vigzone AI">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-label="Vigzone AI">
   <defs>
-    <linearGradient id="vz-bg" x1="5" y1="3" x2="27" y2="29" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#ff6b4a"/>
-      <stop offset="1" stop-color="#ff9a62"/>
+    <linearGradient id="bg" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#171B2B"/>
+      <stop offset="1" stop-color="#090D18"/>
     </linearGradient>
-    <linearGradient id="vz-teal" x1="18" y1="6" x2="30" y2="22" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#6ef0dc"/>
-      <stop offset="1" stop-color="#2fb8a1"/>
+    <linearGradient id="vgrad" x1="16" y1="12" x2="47" y2="51" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF8766"/>
+      <stop offset="0.55" stop-color="#FF6D4C"/>
+      <stop offset="1" stop-color="#FF502E"/>
     </linearGradient>
-    <radialGradient id="vz-glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(16 11.2) scale(5)">
-      <stop stop-color="#ffffff" stop-opacity=".45"/>
-      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(32 18) scale(7)">
+      <stop stop-color="#FFB29E" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#FF7B59" stop-opacity="0"/>
     </radialGradient>
+    <filter id="softGlow" x="0" y="0" width="64" height="64" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="1.6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
   </defs>
-  <rect width="32" height="32" rx="9" fill="url(#vz-bg)"/>
-  <ellipse cx="10.5" cy="8.5" rx="7.5" ry="4.5" fill="#ffffff" opacity=".14"/>
-  <path d="M21.5 9.2a10.8 10.8 0 0 1 2.2 6.1" stroke="url(#vz-teal)" stroke-width="1.7" stroke-linecap="round" opacity=".95"/>
-  <path d="M19.8 7.1a13.6 13.6 0 0 1 3.4 9.3" stroke="url(#vz-teal)" stroke-width="1.25" stroke-linecap="round" opacity=".58"/>
-  <path d="M18.1 5.2a16.2 16.2 0 0 1 4.6 12.2" stroke="url(#vz-teal)" stroke-width=".95" stroke-linecap="round" opacity=".32"/>
-  <path d="M9.4 11.8 16 22.8 22.6 11.8" stroke="#120a08" stroke-width="3.1" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M10.8 12.4 16 20.8 21.2 12.4" stroke="#ffffff" stroke-width="1.05" stroke-linecap="round" stroke-linejoin="round" opacity=".26"/>
-  <circle cx="16" cy="11.2" r="3.1" fill="url(#vz-glow)"/>
-  <circle cx="16" cy="11.2" r="2.35" fill="url(#vz-teal)"/>
-  <circle cx="16" cy="11.2" r="1" fill="#0a0d14" opacity=".28"/>
+  <rect width="64" height="64" rx="18" fill="url(#bg)"/>
+  <rect x="1" y="1" width="62" height="62" rx="17" stroke="#FFFFFF" stroke-opacity="0.08"/>
+  <ellipse cx="19" cy="14" rx="13" ry="7" fill="#FFFFFF" opacity="0.06"/>
+  <circle cx="32" cy="18" r="8" fill="url(#glow)"/>
+  <g filter="url(#softGlow)">
+    <path d="M17.5 15.5c0-1.38 1.57-2.18 2.69-1.37l12.2 8.89a2.8 2.8 0 0 0 3.3 0l11.62-8.53c1.12-.82 2.69-.02 2.69 1.37 0 .47-.15.92-.44 1.29L37.84 34.12a6 6 0 0 0-1.24 3.67v8.49c0 .71-.3 1.39-.84 1.86l-3.04 2.71a1.5 1.5 0 0 1-2.46-.85l-.46-3.17a6 6 0 0 0-1.25-2.96L17.93 17.02a2.1 2.1 0 0 1-.43-1.52Z" fill="url(#vgrad)"/>
+    <path d="M31.95 17.3v12.1" stroke="#3F455E" stroke-width="2.5" stroke-linecap="round"/>
+    <path d="M31.95 22.8 26.7 27" stroke="#3F455E" stroke-width="2.5" stroke-linecap="round"/>
+    <path d="M31.95 22.8 37.2 27" stroke="#3F455E" stroke-width="2.5" stroke-linecap="round"/>
+    <circle cx="31.95" cy="16.8" r="3.2" fill="#FF7A59"/>
+    <circle cx="26.2" cy="27.4" r="2.2" fill="#3F455E"/>
+    <circle cx="37.7" cy="27.4" r="2.2" fill="#3F455E"/>
+    <circle cx="31.95" cy="30.2" r="2.2" fill="#3F455E"/>
+  </g>
 </svg>
