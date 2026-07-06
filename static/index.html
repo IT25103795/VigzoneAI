@@ -636,6 +636,15 @@
 
     @keyframes usagePopoverIn{from{opacity:0;transform:translateY(-4px) scale(.98);}to{opacity:1;transform:translateY(0) scale(1);}}
     .usage-cycle-popover::before{display:none;}
+    .floating-menu-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px;}
+    .floating-menu-head .usage-cycle-pop-title{margin-bottom:0;}
+    .floating-menu-close-btn{
+      display:flex;align-items:center;justify-content:center;flex:0 0 auto;
+      width:22px;height:22px;border-radius:7px;border:none;background:transparent;
+      color:var(--text-muted);cursor:pointer;padding:0;
+    }
+    .floating-menu-close-btn svg{width:14px;height:14px;display:block;}
+    .floating-menu-close-btn:hover{background:var(--border-subtle);color:var(--text);}
     .usage-cycle-pop-title{font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;}
     .usage-cycle-pop-percent{font-family:'Sora',sans-serif;font-size:24px;font-weight:800;letter-spacing:-.03em;margin-bottom:6px;}
     .usage-cycle-pop-meta{color:var(--text-muted);display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--border-subtle);padding-top:7px;margin-top:7px;}
@@ -1784,6 +1793,12 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
           </button>
           <div class="export-menu" id="exportMenu">
+            <div class="floating-menu-head">
+              <div class="usage-cycle-pop-title">Export chat</div>
+              <button class="floating-menu-close-btn" id="exportMenuCloseBtn" type="button" aria-label="Close">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </div>
             <button class="deep-action-btn" id="exportTxtBtn" type="button">Export TXT</button>
             <button class="deep-action-btn" id="exportHtmlBtn" type="button">Export HTML</button>
           </div>
@@ -1871,7 +1886,12 @@
           <span class="usage-cycle-center" id="usageCycleCenter">0</span>
         </button>
         <div class="usage-cycle-popover" id="usageCyclePopover" role="status" aria-live="polite">
-          <div class="usage-cycle-pop-title">Usage today</div>
+          <div class="floating-menu-head">
+            <div class="usage-cycle-pop-title">Usage today</div>
+            <button class="floating-menu-close-btn" id="usageCycleCloseBtn" type="button" aria-label="Close">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+          </div>
           <div class="usage-cycle-pop-percent" id="usageCyclePercent">0%</div>
           <div class="usage-cycle-pop-note" id="usageCycleNote">Loading usage…</div>
         </div>
@@ -2046,6 +2066,7 @@
   const exportMenu = $('#exportMenu');
   const exportTxtBtn = $('#exportTxtBtn');
   const exportHtmlBtn = $('#exportHtmlBtn');
+  const exportMenuCloseBtn = $('#exportMenuCloseBtn');
   const fileInput = $('#fileInput');
   const attachmentsBar = $('#attachmentsBar');
   const scrollToBottomBtn = $('#scrollToBottomBtn');
@@ -2070,6 +2091,7 @@
   const usageCycleFill = $('#usageCycleFill');
   const usageCycleCenter = $('#usageCycleCenter');
   const usageCyclePopover = $('#usageCyclePopover');
+  const usageCycleCloseBtn = $('#usageCycleCloseBtn');
   const usageCyclePercent = $('#usageCyclePercent');
   const usageCycleNote = $('#usageCycleNote');
   const floatingMenuBackdrop = document.createElement('div');
@@ -3205,6 +3227,7 @@
   });
   exportTxtBtn?.addEventListener('click', (e)=>{ e.stopPropagation(); exportChat('txt'); closeExportMenu(); });
   exportHtmlBtn?.addEventListener('click', (e)=>{ e.stopPropagation(); exportChat('html'); closeExportMenu(); });
+  exportMenuCloseBtn?.addEventListener('click', (e)=>{ e.stopPropagation(); closeExportMenu(); });
 
   async function analyzeReadyFiles(){
     const docs = pendingFiles.filter(f => f.status === 'ready' && f.text);
@@ -3366,6 +3389,7 @@
   }
 
   if (usageCycleBtn) usageCycleBtn.addEventListener('click', toggleUsageCyclePopover);
+  usageCycleCloseBtn?.addEventListener('click', (e)=>{ e.stopPropagation(); closeUsageCyclePopover(); });
 
   function isInsideFloatingMenuTarget(target){
     // Only the toggle buttons themselves are protected here (so re-tapping them
