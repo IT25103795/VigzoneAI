@@ -616,26 +616,22 @@
       font-size:8px;font-weight:800;color:var(--text-muted);pointer-events:none;
     }
     .usage-cycle-popover{
-      display:none;position:absolute;right:0;top:calc(100% + 9px);z-index:2000;
-      min-width:190px;padding:12px;border-radius:14px;
+      display:none;position:fixed;left:0;top:0;z-index:2147483647;
+      min-width:210px;max-width:min(280px, calc(100vw - 20px));padding:12px;border-radius:14px;
       background:var(--surface);border:1px solid var(--border);
-      box-shadow:0 16px 40px -18px var(--composer-shadow);
+      box-shadow:0 22px 58px -18px var(--composer-shadow), 0 8px 22px rgba(0,0,0,.16);
       color:var(--text);font-size:12px;line-height:1.4;
+      pointer-events:auto;
     }
     .usage-cycle-popover.visible{display:block;animation:usagePopoverIn .14s ease-out;}
     @keyframes usagePopoverIn{from{opacity:0;transform:translateY(-4px) scale(.98);}to{opacity:1;transform:translateY(0) scale(1);}}
-    .usage-cycle-popover::before{
-      content:"";position:absolute;right:12px;top:-6px;width:10px;height:10px;
-      background:var(--surface);border-left:1px solid var(--border);border-top:1px solid var(--border);
-      transform:rotate(45deg);
-    }
+    .usage-cycle-popover::before{display:none;}
     .usage-cycle-pop-title{font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;}
     .usage-cycle-pop-percent{font-family:'Sora',sans-serif;font-size:24px;font-weight:800;letter-spacing:-.03em;margin-bottom:6px;}
     .usage-cycle-pop-meta{color:var(--text-muted);display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--border-subtle);padding-top:7px;margin-top:7px;}
     .usage-cycle-pop-note{color:var(--text-muted);font-size:11px;margin-top:6px;}
     @media (max-width:560px){
-      .usage-cycle-popover{right:-45px;min-width:178px;}
-      .usage-cycle-popover::before{right:57px;}
+      .usage-cycle-popover{min-width:198px;}
     }
 
     /* ---------- Chat area ---------- */
@@ -1680,9 +1676,10 @@
     .file-intel-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:8px 0;}
     .file-intel-stat{background:var(--surface-2);border-radius:10px;padding:8px;font-size:12px;color:var(--text-muted);}
     .file-intel-stat b{display:block;color:var(--text);font-size:14px;}
-    .export-menu{position:absolute;right:86px;top:56px;z-index:40;background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;box-shadow:0 12px 40px -18px var(--composer-shadow);padding:8px;display:none;}
+    .sidebar-menu-wrap{position:relative;display:flex;align-items:center;}
+    .export-menu{position:fixed;left:0;top:0;z-index:2147483647;background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;box-shadow:0 18px 50px -18px var(--composer-shadow),0 8px 22px rgba(0,0,0,.14);padding:8px;display:none;min-width:150px;}
     .export-menu.visible{display:grid;gap:6px;}
-    @media (max-width:760px){.export-menu{right:14px;top:58px}.file-intel-grid{grid-template-columns:1fr}.mode-menu{width:220px}}
+    @media (max-width:760px){.file-intel-grid{grid-template-columns:1fr}.mode-menu{width:220px}}
 
   </style>
 </head>
@@ -1770,6 +1767,18 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"></line><line x1="18" y1="20" x2="18" y2="4"></line><line x1="6" y1="20" x2="6" y2="16"></line></svg>
         </button>
       </div>
+      <div class="sidebar-footer-row">
+        <span class="history-label" style="padding:0;margin:0;">Export chat</span>
+        <div class="sidebar-menu-wrap">
+          <button class="sidebar-teach-btn" id="exportChatBtn" aria-label="Export chat" title="Export chat">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          </button>
+          <div class="export-menu" id="exportMenu">
+            <button class="deep-action-btn" id="exportTxtBtn" type="button">Export TXT</button>
+            <button class="deep-action-btn" id="exportHtmlBtn" type="button">Export HTML</button>
+          </div>
+        </div>
+      </div>
       <div class="sidebar-footer-row" id="adminPanelRow" style="display:none;">
         <span class="history-label" style="padding:0;margin:0;">Admin</span>
         <button class="sidebar-teach-btn" id="adminPanelBtn" aria-label="Open admin dashboard" title="Open admin dashboard">
@@ -1843,13 +1852,6 @@
       </div>
     </div>
     <div class="actions">
-      <button class="icon-btn" id="exportChatBtn" aria-label="Export chat" title="Export chat">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-      </button>
-      <div class="export-menu" id="exportMenu">
-        <button class="deep-action-btn" id="exportTxtBtn" type="button">Export TXT</button>
-        <button class="deep-action-btn" id="exportHtmlBtn" type="button">Export HTML</button>
-      </div>
       <div class="usage-cycle-wrap" id="usageCycleWrap">
         <button class="icon-btn usage-cycle-btn" id="usageCycleBtn" aria-label="Usage today" title="Usage today" type="button">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1864,10 +1866,6 @@
           <div class="usage-cycle-pop-note" id="usageCycleNote">Loading usage…</div>
         </div>
       </div>
-      <button class="icon-btn theme-toggle-btn" id="themeToggleBtn" aria-label="Switch to light theme" title="Toggle theme">
-        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
-        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><line x1="12" y1="2" x2="12" y2="5"></line><line x1="12" y1="19" x2="12" y2="22"></line><line x1="4.22" y1="4.22" x2="6.34" y2="6.34"></line><line x1="17.66" y1="17.66" x2="19.78" y2="19.78"></line><line x1="2" y1="12" x2="5" y2="12"></line><line x1="19" y1="12" x2="22" y2="12"></line><line x1="4.22" y1="19.78" x2="6.34" y2="17.66"></line><line x1="17.66" y1="6.34" x2="19.78" y2="4.22"></line></svg>
-      </button>
       <button class="icon-btn" id="newChatBtn" aria-label="Start new chat">+ New chat</button>
     </div>
   </header>
@@ -2064,6 +2062,47 @@
   const usageCyclePopover = $('#usageCyclePopover');
   const usageCyclePercent = $('#usageCyclePercent');
   const usageCycleNote = $('#usageCycleNote');
+
+  // Keep small floating menus above all chat bubbles by moving them to <body>
+  // and positioning them with viewport coordinates. This avoids clipping/stacking
+  // issues from the chat scroll container and animated message bubbles.
+  if (usageCyclePopover && usageCyclePopover.parentElement !== document.body) document.body.appendChild(usageCyclePopover);
+  if (exportMenu && exportMenu.parentElement !== document.body) document.body.appendChild(exportMenu);
+
+  function clampNumber(value, min, max){ return Math.max(min, Math.min(max, value)); }
+
+  function positionFloatingMenu(menu, anchor, preferred='bottom-right'){
+    if (!menu || !anchor) return;
+    const rect = anchor.getBoundingClientRect();
+    const vw = window.innerWidth || document.documentElement.clientWidth;
+    const vh = window.innerHeight || document.documentElement.clientHeight;
+    menu.style.visibility = 'hidden';
+    menu.style.display = menu.classList.contains('visible') ? 'grid' : 'block';
+    const mw = menu.offsetWidth || 210;
+    const mh = menu.offsetHeight || 140;
+    let left;
+    let top;
+    if (preferred === 'side-left') {
+      left = rect.left - mw - 10;
+      top = rect.bottom - mh;
+    } else if (preferred === 'side-right') {
+      left = rect.right + 10;
+      top = rect.bottom - mh;
+    } else {
+      left = rect.right - mw;
+      top = rect.bottom + 10;
+    }
+    if (top + mh > vh - 10) top = rect.top - mh - 10;
+    left = clampNumber(left, 10, Math.max(10, vw - mw - 10));
+    top = clampNumber(top, 10, Math.max(10, vh - mh - 10));
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+    menu.style.visibility = '';
+    if (!menu.classList.contains('visible')) menu.style.display = 'none';
+  }
+
+  function positionUsageCyclePopover(){ positionFloatingMenu(usageCyclePopover, usageCycleBtn, 'bottom-right'); }
+  function positionExportMenu(){ positionFloatingMenu(exportMenu, exportChatBtn, 'side-right'); }
   const adminPanelRow = $('#adminPanelRow');
   const adminPanelBtn = $('#adminPanelBtn');
   const adminModalOverlay = $('#adminModalOverlay');
@@ -2247,6 +2286,12 @@
   // Message display limit for performance - only show last N messages by default
   let messageDisplayLimit = 50;
   let showAllMessages = false;
+
+  function currentConversation(){
+    return (store && store.activeId && store.conversations && store.conversations[store.activeId])
+      ? store.conversations[store.activeId]
+      : null;
+  }
 
   // The message currently staged for a quoted reply (set by clicking the
   // reply icon on a message bubble), or null if nothing is being quoted.
@@ -3075,21 +3120,64 @@
   workspaceModalOverlay?.addEventListener('click', e => { if(e.target===workspaceModalOverlay) closeWorkspaceModal(); });
 
   function downloadBlobText(filename, content, type='text/plain'){
-    const blob = new Blob([content], {type}); const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click();
-    document.body.removeChild(a); URL.revokeObjectURL(url);
+    const blob = new Blob([content], {type});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 0);
   }
-  async function exportChat(format){
-    const res = await fetch('/api/export/chat', {method:'POST', headers:{'Content-Type':'application/json', ...authHeaders()}, body:JSON.stringify({title: currentConversation()?.title || 'Vigzone chat', messages, format})});
-    const data = await res.json().catch(()=>({}));
-    if (!res.ok) return alert(data.detail || 'Export failed');
-    downloadBlobText(data.filename || `vigzone-chat.${format}`, data.content || '', data.media_type || 'text/plain');
+  function exportMessageText(m){
+    if (!m) return '';
+    if (m.displayText !== undefined && m.displayText !== null) return String(m.displayText);
+    if (typeof m.content === 'string') return m.content;
+    if (m.text !== undefined && m.text !== null) return String(m.text);
+    try { return JSON.stringify(m.content || m, null, 2); } catch { return ''; }
+  }
+  function htmlEscapeInline(value){
+    return String(value || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function exportChat(format){
+    const exportable = (messages || []).filter(m => m && (m.role === 'user' || m.role === 'assistant'));
+    if (!exportable.length) {
+      alert('No chat messages to export yet.');
+      exportMenu?.classList.remove('visible');
+      return;
+    }
+    const conv = currentConversation();
+    const title = conv?.title || 'Vigzone chat';
+    const now = new Date().toLocaleString();
+    const safeTitle = title.replace(/[^a-z0-9-_]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'vigzone-chat';
+    if (format === 'html') {
+      const sections = exportable.map(m => {
+        const role = m.role === 'user' ? 'You' : 'Vigzone AI';
+        return `<section><h2>${htmlEscapeInline(role)}</h2><pre>${htmlEscapeInline(exportMessageText(m))}</pre></section>`;
+      }).join('\n');
+      const html = `<!doctype html><html><head><meta charset="utf-8"><title>${htmlEscapeInline(title)}</title><style>body{font-family:Inter,Arial,sans-serif;max-width:820px;margin:32px auto;padding:0 18px;line-height:1.55;color:#121622}h1{font-size:26px}h2{font-size:15px;margin-top:22px;color:#ff6b4a}pre{white-space:pre-wrap;background:#f4f6fb;border:1px solid #dfe5f0;border-radius:12px;padding:14px}</style></head><body><h1>${htmlEscapeInline(title)}</h1><p>Exported from Vigzone AI • ${htmlEscapeInline(now)}</p>${sections}</body></html>`;
+      downloadBlobText(`${safeTitle}.html`, html, 'text/html;charset=utf-8');
+    } else {
+      const txt = [title, `Exported from Vigzone AI • ${now}`, '', ...exportable.map(m => `[${m.role === 'user' ? 'YOU' : 'VIGZONE AI'}]\n${exportMessageText(m)}\n`)].join('\n');
+      downloadBlobText(`${safeTitle}.txt`, txt, 'text/plain;charset=utf-8');
+    }
     exportMenu?.classList.remove('visible');
   }
-  exportChatBtn?.addEventListener('click', (e)=>{ e.stopPropagation(); exportMenu?.classList.toggle('visible'); });
+  exportChatBtn?.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    const willShow = !exportMenu?.classList.contains('visible');
+    exportMenu?.classList.toggle('visible', willShow);
+    if (willShow) positionExportMenu();
+  });
   exportTxtBtn?.addEventListener('click', ()=>exportChat('txt'));
   exportHtmlBtn?.addEventListener('click', ()=>exportChat('html'));
-  document.addEventListener('click', e => { if (exportMenu?.classList.contains('visible') && !exportMenu.contains(e.target) && e.target !== exportChatBtn) exportMenu.classList.remove('visible'); });
+  document.addEventListener('click', e => {
+    if (exportMenu?.classList.contains('visible') && !exportMenu.contains(e.target) && !exportChatBtn?.contains(e.target)) exportMenu.classList.remove('visible');
+  });
 
   async function analyzeReadyFiles(){
     const docs = pendingFiles.filter(f => f.status === 'ready' && f.text);
@@ -3169,6 +3257,7 @@
       <div class="usage-cycle-pop-meta"><span>${st.used.toLocaleString()} used</span><span>${st.limit ? st.limit.toLocaleString() : 'No'} limit</span></div>
       <div class="usage-cycle-pop-meta"><span>${Number(st.remaining || 0).toLocaleString()} left</span><span>${escapeHtml(st.resetIn || '')}</span></div>
     `;
+    if (usageCyclePopover?.classList.contains('visible')) positionUsageCyclePopover();
   }
 
   function updateUsageCycle(data){
@@ -3230,16 +3319,24 @@
     usageCyclePopover.classList.toggle('visible', willShow);
     if (willShow) {
       renderUsageCyclePopover(latestUsageData);
+      positionUsageCyclePopover();
       refreshUsageCycle();
     }
   }
 
   if (usageCycleBtn) usageCycleBtn.addEventListener('click', toggleUsageCyclePopover);
   document.addEventListener('click', (e) => {
-    if (usageCyclePopover?.classList.contains('visible') && usageCycleWrap && !usageCycleWrap.contains(e.target)) {
+    if (usageCyclePopover?.classList.contains('visible') && usageCycleWrap && !usageCycleWrap.contains(e.target) && !usageCyclePopover.contains(e.target)) {
       usageCyclePopover.classList.remove('visible');
     }
   });
+  window.addEventListener('resize', () => {
+    if (usageCyclePopover?.classList.contains('visible')) positionUsageCyclePopover();
+    if (exportMenu?.classList.contains('visible')) positionExportMenu();
+  });
+  main?.addEventListener('scroll', () => {
+    if (usageCyclePopover?.classList.contains('visible')) positionUsageCyclePopover();
+  }, { passive:true });
 
   async function loadUsageToday(){
     usageModalBody.innerHTML = '<div class="usage-modal-loading">Loading usage…</div>';
@@ -5213,8 +5310,8 @@
 
   newChatBtn.addEventListener('click', startNewChat);
   newChatBtnSidebar.addEventListener('click', startNewChat);
-  document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
-  document.getElementById('themeToggleBtnSidebar').addEventListener('click', toggleTheme);
+  document.getElementById('themeToggleBtn')?.addEventListener('click', toggleTheme);
+  document.getElementById('themeToggleBtnSidebar')?.addEventListener('click', toggleTheme);
 
   // Keyboard accessibility for history items and suggestions
   function setupKeyboardAccessibility() {
