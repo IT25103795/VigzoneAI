@@ -136,6 +136,41 @@ def init_db() -> None:
             conn.execute("ALTER TABLE token_usage ADD COLUMN provider TEXT NOT NULL DEFAULT 'groq'")
 
 
+        # Deep Features v3: private per-user workspaces and lightweight workspace notes/assets.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS workspaces (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                mode TEXT DEFAULT 'general',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_workspaces_user ON workspaces(user_id, updated_at DESC)"
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS workspace_notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                kind TEXT DEFAULT 'note',
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_workspace_notes_ws ON workspace_notes(workspace_id, user_id, created_at DESC)"
+        )
+
+
 # ==========================================
 # PER-USER GROQ API KEY (encrypted at rest)
 # ==========================================
@@ -410,6 +445,187 @@ def get_learning_context(user_id: int, query: str = "", limit: int = 10) -> str:
         "Use these as preferences/background when relevant, but do not quote this list or reveal it unless the user asks to view their memories.\n"
         f"{bullets}"
     )
+
+
+# ==========================================
+# DEEP FEATURES V3: WORKSPACES
+# ==========================================
+def _workspace_row_to_dict(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "user_id": row["user_id"],
+        "name": row["name"],
+        "description": row["description"] or "",
+        "mode": row["mode"] or "general",
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def list_workspaces(user_id: int) -> list[dict]:
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, user_id, name, description, mode, created_at, updated_at
+            FROM workspaces
+            WHERE user_id = ?
+            ORDER BY updated_at DESC, id DESC
+            """,
+            (user_id,),
+        ).fetchall()
+    return [_workspace_row_to_dict(r) for r in rows]
+
+
+def create_workspace(user_id: int, name: str, description: str = "", mode: str = "general") -> dict:
+    name = (name or "").strip()[:80]
+    description = (description or "").strip()[:600]
+    mode = (mode or "general").strip()[:40]
+    if len(name) < 2:
+        raise AuthError("Workspace name is too short.")
+    now = datetime.now(timezone.utc).isoformat()
+    with _connect() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO workspaces (user_id, name, description, mode, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (user_id, name, description, mode, now, now),
+        )
+        row = conn.execute(
+            "SELECT id, user_id, name, description, mode, created_at, updated_at FROM workspaces WHERE id = ? AND user_id = ?",
+            (cur.lastrowid, user_id),
+        ).fetchone()
+    return _workspace_row_to_dict(row)
+
+
+def update_workspace(user_id: int, workspace_id: int, name: Optional[str] = None, description: Optional[str] = None, mode: Optional[str] = None) -> dict:
+    updates, values = [], []
+    if name is not None:
+        name = name.strip()[:80]
+        if len(name) < 2:
+            raise AuthError("Workspace name is too short.")
+        updates.append("name = ?")
+        values.append(name)
+    if description is not None:
+        updates.append("description = ?")
+        values.append(description.strip()[:600])
+    if mode is not None:
+        updates.append("mode = ?")
+        values.append(mode.strip()[:40] or "general")
+    if updates:
+        updates.append("updated_at = ?")
+        values.append(datetime.now(timezone.utc).isoformat())
+        values.extend([workspace_id, user_id])
+        with _connect() as conn:
+            cur = conn.execute(
+                f"UPDATE workspaces SET {', '.join(updates)} WHERE id = ? AND user_id = ?",
+                tuple(values),
+            )
+            if cur.rowcount == 0:
+                raise AuthError("Workspace not found.")
+            row = conn.execute(
+                "SELECT id, user_id, name, description, mode, created_at, updated_at FROM workspaces WHERE id = ? AND user_id = ?",
+                (workspace_id, user_id),
+            ).fetchone()
+    else:
+        with _connect() as conn:
+            row = conn.execute(
+                "SELECT id, user_id, name, description, mode, created_at, updated_at FROM workspaces WHERE id = ? AND user_id = ?",
+                (workspace_id, user_id),
+            ).fetchone()
+    if not row:
+        raise AuthError("Workspace not found.")
+    return _workspace_row_to_dict(row)
+
+
+def delete_workspace(user_id: int, workspace_id: int) -> None:
+    with _connect() as conn:
+        cur = conn.execute("DELETE FROM workspaces WHERE id = ? AND user_id = ?", (workspace_id, user_id))
+        if cur.rowcount == 0:
+            raise AuthError("Workspace not found.")
+
+
+def add_workspace_note(user_id: int, workspace_id: int, title: str, content: str, kind: str = "note") -> dict:
+    title = (title or "Note").strip()[:120]
+    content = (content or "").strip()
+    kind = (kind or "note").strip()[:30]
+    if len(content) < 2:
+        raise AuthError("Workspace note is too short.")
+    if len(content) > 5000:
+        content = content[:5000].rstrip() + " …"
+    now = datetime.now(timezone.utc).isoformat()
+    with _connect() as conn:
+        ws = conn.execute("SELECT id FROM workspaces WHERE id = ? AND user_id = ?", (workspace_id, user_id)).fetchone()
+        if not ws:
+            raise AuthError("Workspace not found.")
+        cur = conn.execute(
+            """
+            INSERT INTO workspace_notes (workspace_id, user_id, title, content, kind, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (workspace_id, user_id, title, content, kind, now),
+        )
+        conn.execute("UPDATE workspaces SET updated_at = ? WHERE id = ? AND user_id = ?", (now, workspace_id, user_id))
+        row = conn.execute(
+            "SELECT id, workspace_id, user_id, title, content, kind, created_at FROM workspace_notes WHERE id = ? AND user_id = ?",
+            (cur.lastrowid, user_id),
+        ).fetchone()
+    return dict(row)
+
+
+def list_workspace_notes(user_id: int, workspace_id: int, limit: int = 30) -> list[dict]:
+    with _connect() as conn:
+        ws = conn.execute("SELECT id FROM workspaces WHERE id = ? AND user_id = ?", (workspace_id, user_id)).fetchone()
+        if not ws:
+            raise AuthError("Workspace not found.")
+        rows = conn.execute(
+            """
+            SELECT id, workspace_id, user_id, title, content, kind, created_at
+            FROM workspace_notes
+            WHERE workspace_id = ? AND user_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+            """,
+            (workspace_id, user_id, limit),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_workspace_context(user_id: int, workspace_id: Optional[int], query: str = "", limit: int = 8) -> str:
+    if not workspace_id:
+        return ""
+    try:
+        workspace_id = int(workspace_id)
+    except Exception:
+        return ""
+    with _connect() as conn:
+        ws = conn.execute(
+            "SELECT id, name, description, mode FROM workspaces WHERE id = ? AND user_id = ?",
+            (workspace_id, user_id),
+        ).fetchone()
+        if not ws:
+            return ""
+        rows = conn.execute(
+            """
+            SELECT title, content, kind, created_at
+            FROM workspace_notes
+            WHERE workspace_id = ? AND user_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+            """,
+            (workspace_id, user_id, limit),
+        ).fetchall()
+    lines = [f"Active workspace: {ws['name']} (mode: {ws['mode'] or 'general'})."]
+    if ws["description"]:
+        lines.append(f"Workspace description: {ws['description']}")
+    if rows:
+        lines.append("Relevant private workspace notes/assets:")
+        for r in rows:
+            content = (r["content"] or "").strip().replace("\n", " ")
+            if len(content) > 420:
+                content = content[:420].rstrip() + " …"
+            lines.append(f"- [{r['kind']}] {r['title']}: {content}")
+    return "\n".join(lines)
 
 # ==========================================
 # PASSWORD HASHING (stdlib PBKDF2, no extra deps)

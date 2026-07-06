@@ -12,9 +12,13 @@ Modes (set APP_MODE in .env):
 import logging
 import os
 import time
+import io
+import json
+import zipfile
+from datetime import datetime, timezone
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
-from typing import List, Literal, Optional, Union
+from typing import List, Literal, Optional, Union, Any
 
 from dotenv import load_dotenv
 
@@ -123,6 +127,8 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     messages: List[ChatMessage] = Field(..., min_length=1)
     model: str = Field(default=DEFAULT_MODEL)
+    ai_mode: Optional[str] = Field(default="general", max_length=40)
+    workspace_id: Optional[int] = Field(default=None)
 
 
 class HealthCheckResponse(BaseModel):
@@ -175,6 +181,41 @@ class EditImageRequest(BaseModel):
     image_data_uri: str = Field(..., min_length=1)
     prompt: str = Field(..., min_length=1, max_length=800)
     size: Optional[str] = Field(default="1024x1024")
+
+
+class WorkspaceCreateRequest(BaseModel):
+    name: str = Field(..., min_length=2, max_length=80)
+    description: str = Field(default="", max_length=600)
+    mode: str = Field(default="general", max_length=40)
+
+
+class WorkspaceUpdateRequest(BaseModel):
+    name: Optional[str] = Field(default=None, max_length=80)
+    description: Optional[str] = Field(default=None, max_length=600)
+    mode: Optional[str] = Field(default=None, max_length=40)
+
+
+class WorkspaceNoteRequest(BaseModel):
+    title: str = Field(default="Note", max_length=120)
+    content: str = Field(..., min_length=2, max_length=5000)
+    kind: str = Field(default="note", max_length=30)
+
+
+class FileIntelRequest(BaseModel):
+    name: str = Field(default="file", max_length=180)
+    kind: str = Field(default="document", max_length=30)
+    text: str = Field(default="", max_length=60000)
+
+
+class ExportRequest(BaseModel):
+    title: str = Field(default="Vigzone Export", max_length=120)
+    messages: List[dict] = Field(default_factory=list)
+    format: Literal["txt", "html"] = "txt"
+
+
+class WebsiteExportRequest(BaseModel):
+    html: str = Field(..., min_length=1, max_length=500000)
+    filename: str = Field(default="vigzone-website.zip", max_length=100)
 
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
@@ -240,6 +281,66 @@ def require_admin(user: dict = Depends(require_current_user)) -> dict:
     if not authmod.is_admin_email(user.get("email", "")):
         raise HTTPException(status_code=403, detail="Admin access required.")
     return user
+
+
+AI_MODE_PROMPTS = {
+    "general": "Mode: General Chat. Be helpful, direct, and accurate.",
+    "website": "Mode: Website Studio. Prioritize modern responsive UI, complete runnable HTML/CSS/JS, strong visual hierarchy, mobile-first layout, CTAs, SEO basics, accessibility, and downloadable file structure when useful.",
+    "code": "Mode: Code Fixer. Diagnose issues, explain the exact cause briefly, and provide complete corrected files or patches. Prefer runnable, production-safe code.",
+    "study": "Mode: Study Helper. Teach clearly with exam-focused summaries, examples, quick revision, and practice questions where useful.",
+    "file": "Mode: File Analyzer. Extract key facts, summarize, compare, find risks/errors, and give action items based only on the provided file content.",
+    "business": "Mode: Business Writer. Write polished, persuasive, practical business content with clear structure and professional tone.",
+    "voice": "Mode: Voice Assistant. Keep replies conversational, concise, and easy to listen to aloud.",
+}
+
+
+def _mode_context(mode: Optional[str]) -> str:
+    key = (mode or "general").strip().lower()
+    return AI_MODE_PROMPTS.get(key, AI_MODE_PROMPTS["general"])
+
+
+def _combine_context(*parts: str) -> str:
+    clean = [p.strip() for p in parts if p and p.strip()]
+    return "\n\n".join(clean)
+
+
+def _simple_file_intel(name: str, kind: str, text: str) -> dict:
+    text = (text or "").strip()
+    words = re.findall(r"[A-Za-z0-9_'-]+", text)
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    preview = " ".join(lines[:10])[:900]
+    # crude keyword extraction without extra dependencies
+    stop = {"the","and","for","with","that","this","from","are","was","were","have","has","not","you","your","but","all","can","will","into","about","there","their","they","them","our","his","her","its","to","of","in","a","an","is","on","as","by","or","be","it"}
+    freq = {}
+    for w in words:
+        lw = w.lower()
+        if len(lw) >= 4 and lw not in stop:
+            freq[lw] = freq.get(lw, 0) + 1
+    keywords = [k for k,_ in sorted(freq.items(), key=lambda kv: (-kv[1], kv[0]))[:12]]
+    risks = []
+    low = text.lower()
+    for needle,label in [("error","Possible error references"),("failed","Failure references"),("todo","TODO items"),("password","Sensitive password/key mention"),("api_key","Sensitive API key mention"),("secret","Sensitive secret mention"),("deadline","Deadline mentioned")]:
+        if needle in low:
+            risks.append(label)
+    if not text:
+        summary = "No readable text was extracted from this file. Try asking Vigzone about the file directly, or upload a clearer text/PDF/DOCX/CSV file."
+    else:
+        summary = f"{name} contains about {len(words):,} words across {len(lines):,} non-empty lines. Main visible topics: {', '.join(keywords[:6]) or 'general content'}."
+    return {
+        "name": name,
+        "kind": kind,
+        "word_count": len(words),
+        "line_count": len(lines),
+        "keywords": keywords,
+        "summary": summary,
+        "preview": preview,
+        "risks": risks,
+        "suggested_prompts": [
+            f"Summarize {name} in exam-ready bullet points.",
+            f"Find mistakes, risks, and missing parts in {name}.",
+            f"Create an action plan based on {name}.",
+        ],
+    }
 
 
 def _set_session_cookie(response: JSONResponse, token: str) -> None:
@@ -733,6 +834,102 @@ async def google_callback(
     return response
 
 
+
+# ── Workspaces / Deep Features v3 ─────────────────────────────────────────────
+@app.get("/api/workspaces", tags=["Workspaces"])
+async def api_list_workspaces(user: dict = Depends(require_current_user)):
+    return JSONResponse({"workspaces": authmod.list_workspaces(user["id"])})
+
+
+@app.post("/api/workspaces", tags=["Workspaces"])
+async def api_create_workspace(req: WorkspaceCreateRequest, user: dict = Depends(require_current_user)):
+    try:
+        ws = authmod.create_workspace(user["id"], req.name, req.description, req.mode)
+        return JSONResponse({"workspace": ws})
+    except authmod.AuthError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.patch("/api/workspaces/{workspace_id}", tags=["Workspaces"])
+async def api_update_workspace(workspace_id: int, req: WorkspaceUpdateRequest, user: dict = Depends(require_current_user)):
+    try:
+        ws = authmod.update_workspace(user["id"], workspace_id, req.name, req.description, req.mode)
+        return JSONResponse({"workspace": ws})
+    except authmod.AuthError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.delete("/api/workspaces/{workspace_id}", tags=["Workspaces"])
+async def api_delete_workspace(workspace_id: int, user: dict = Depends(require_current_user)):
+    try:
+        authmod.delete_workspace(user["id"], workspace_id)
+        return JSONResponse({"ok": True})
+    except authmod.AuthError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.get("/api/workspaces/{workspace_id}/notes", tags=["Workspaces"])
+async def api_workspace_notes(workspace_id: int, user: dict = Depends(require_current_user)):
+    try:
+        return JSONResponse({"notes": authmod.list_workspace_notes(user["id"], workspace_id)})
+    except authmod.AuthError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.post("/api/workspaces/{workspace_id}/notes", tags=["Workspaces"])
+async def api_add_workspace_note(workspace_id: int, req: WorkspaceNoteRequest, user: dict = Depends(require_current_user)):
+    try:
+        note = authmod.add_workspace_note(user["id"], workspace_id, req.title, req.content, req.kind)
+        return JSONResponse({"note": note})
+    except authmod.AuthError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/file-intel/analyze", tags=["File Intelligence"])
+async def api_file_intel(req: FileIntelRequest, user: dict = Depends(require_current_user)):
+    return JSONResponse(_simple_file_intel(req.name, req.kind, req.text))
+
+
+@app.post("/api/export/chat", tags=["Export"])
+async def api_export_chat(req: ExportRequest, user: dict = Depends(require_current_user)):
+    title = (req.title or "Vigzone Export").strip()
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    if req.format == "html":
+        body = [f"<h1>{title}</h1><p>Exported {now}</p>"]
+        for m in req.messages:
+            role = str(m.get("role", "message")).title()
+            content = str(m.get("displayText") or m.get("content") or "")
+            body.append(f"<section><h2>{role}</h2><pre>{content.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')}</pre></section>")
+        data = "<!doctype html><meta charset='utf-8'><title>" + title + "</title><body>" + "\n".join(body) + "</body>"
+        media = "text/html"
+        filename = "vigzone-chat-export.html"
+    else:
+        chunks = [title, f"Exported {now}", ""]
+        for m in req.messages:
+            role = str(m.get("role", "message")).upper()
+            content = str(m.get("displayText") or m.get("content") or "")
+            chunks.append(f"[{role}]\n{content}\n")
+        data = "\n".join(chunks)
+        media = "text/plain"
+        filename = "vigzone-chat-export.txt"
+    return JSONResponse({"filename": filename, "media_type": media, "content": data})
+
+
+@app.post("/api/website/export", tags=["Website Studio"])
+async def api_export_website(req: WebsiteExportRequest, user: dict = Depends(require_current_user)):
+    html = req.html.strip()
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("index.html", html)
+        zf.writestr("README.txt", "Generated by Vigzone AI Website Studio. Open index.html in a browser or upload it to your hosting provider.\n")
+    data = buf.getvalue()
+    filename = req.filename if req.filename.endswith(".zip") else req.filename + ".zip"
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
 # ── Upload endpoint ───────────────────────────────────────────────────────────
 @app.post("/api/upload", tags=["Chat"])
 async def upload_file(file: UploadFile = File(...), user: dict = Depends(require_current_user)):
@@ -1029,7 +1226,11 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
         if m.get("role") == "user" and isinstance(m.get("content"), str):
             last_user_query = m.get("content") or ""
             break
-    user_learning_context = authmod.get_learning_context(user["id"], last_user_query)
+    user_learning_context = _combine_context(
+        _mode_context(chat_request.ai_mode),
+        authmod.get_workspace_context(user["id"], chat_request.workspace_id, last_user_query),
+        authmod.get_learning_context(user["id"], last_user_query),
+    )
     stream_id = create_stream_id()
     register_stream(stream_id)
 
@@ -1123,7 +1324,11 @@ async def chat_sync(request: Request, chat_request: ChatRequest, user: dict = De
         if m.get("role") == "user" and isinstance(m.get("content"), str):
             last_user_query = m.get("content") or ""
             break
-    user_learning_context = authmod.get_learning_context(user["id"], last_user_query)
+    user_learning_context = _combine_context(
+        _mode_context(chat_request.ai_mode),
+        authmod.get_workspace_context(user["id"], chat_request.workspace_id, last_user_query),
+        authmod.get_learning_context(user["id"], last_user_query),
+    )
     try:
         reply = await chat_once(
             messages,

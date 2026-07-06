@@ -7,6 +7,7 @@
   <title>Vigzone AI</title>
   <link rel="icon" href="/static/icons/favicon.svg?v=logo1-simple" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/static/icons/vigzone-icon.svg?v=logo1-simple" />
+  <link rel="manifest" href="/static/manifest.json" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Sinhala:wght@400;500;600&display=swap" rel="stylesheet">
@@ -1628,6 +1629,44 @@
         padding: 20px 14px 160px;
       }
     }
+
+
+    /* ---------- Deep Features v3 ---------- */
+    .mode-select{
+      height:34px;min-width:138px;border-radius:12px;border:1px solid var(--border-subtle);
+      background:var(--surface);color:var(--text);padding:0 10px;font:600 12.5px 'Inter',sans-serif;
+      box-shadow:0 1px 2px -1px var(--composer-shadow);outline:none;
+    }
+    .workspace-pill{
+      display:flex;align-items:center;gap:7px;height:34px;border-radius:12px;border:1px solid var(--border-subtle);
+      background:var(--surface);color:var(--text-muted);padding:0 10px;font:600 12.5px 'Inter',sans-serif;cursor:pointer;
+      max-width:190px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    }
+    .workspace-pill.active{color:var(--text);border-color:var(--accent);background:var(--accent-dim);}
+    .workspace-modal .workspace-list{display:grid;gap:8px;margin:12px 0;max-height:230px;overflow:auto;}
+    .workspace-card{border:1px solid var(--border-subtle);background:var(--surface-2);border-radius:12px;padding:10px;cursor:pointer;}
+    .workspace-card.active{border-color:var(--accent);background:var(--accent-dim);}
+    .workspace-card-title{font-weight:700;color:var(--text);}
+    .workspace-card-sub{font-size:12px;color:var(--text-muted);margin-top:3px;}
+    .workspace-form{display:grid;gap:8px;margin-top:10px;}
+    .workspace-form input,.workspace-form textarea,.workspace-form select{
+      width:100%;border-radius:10px;border:1px solid var(--border-subtle);background:var(--surface);color:var(--text);padding:9px 10px;font:500 13px 'Inter',sans-serif;
+    }
+    .workspace-form textarea{min-height:70px;resize:vertical;}
+    .deep-action-btn{
+      border:1px solid var(--border-subtle);background:var(--surface-2);color:var(--text);border-radius:10px;padding:7px 10px;
+      font:700 12px 'Inter',sans-serif;cursor:pointer;display:inline-flex;align-items:center;gap:6px;
+    }
+    .deep-action-btn:hover{border-color:var(--hover-border);background:var(--surface-3, var(--surface-2));}
+    .file-intel-panel{margin:8px auto 0;max-width:780px;border:1px solid var(--border-subtle);background:var(--surface);border-radius:14px;padding:12px;color:var(--text);font-size:13px;box-shadow:0 8px 26px -18px var(--composer-shadow);}
+    .file-intel-title{font-weight:800;margin-bottom:6px;}
+    .file-intel-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:8px 0;}
+    .file-intel-stat{background:var(--surface-2);border-radius:10px;padding:8px;font-size:12px;color:var(--text-muted);}
+    .file-intel-stat b{display:block;color:var(--text);font-size:14px;}
+    .export-menu{position:absolute;right:86px;top:56px;z-index:40;background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;box-shadow:0 12px 40px -18px var(--composer-shadow);padding:8px;display:none;}
+    .export-menu.visible{display:grid;gap:6px;}
+    @media (max-width:760px){.mode-select{display:none}.workspace-pill{max-width:120px}.export-menu{right:14px;top:58px}.file-intel-grid{grid-template-columns:1fr}}
+
   </style>
 </head>
 <body style="display: none;">
@@ -1697,6 +1736,12 @@
         </button>
       </div>
       <div class="sidebar-footer-row">
+        <span class="history-label" style="padding:0;margin:0;">Workspace</span>
+        <button class="sidebar-teach-btn" id="workspaceSidebarBtn" aria-label="Open workspaces" title="Open workspaces">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h7l2 2h9v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2"></path></svg>
+        </button>
+      </div>
+      <div class="sidebar-footer-row">
         <span class="history-label" style="padding:0;margin:0;">Learning</span>
         <button class="sidebar-teach-btn" id="teachVigzoneBtn" aria-label="Teach Vigzone" title="Teach Vigzone about specific topics">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></svg>
@@ -1755,6 +1800,17 @@
   </div>
 </div>
 
+
+<div class="usage-modal-overlay" id="workspaceModalOverlay">
+  <div class="usage-modal workspace-modal">
+    <div class="usage-modal-head">
+      <h3>Workspaces</h3>
+      <button class="usage-modal-close" id="workspaceModalCloseBtn" aria-label="Close">&times;</button>
+    </div>
+    <div id="workspaceModalBody"><div class="usage-modal-loading">Loading workspaces…</div></div>
+  </div>
+</div>
+
 <div class="main-col">
   <header>
     <div class="header-left">
@@ -1770,6 +1826,23 @@
       </div>
     </div>
     <div class="actions">
+      <select class="mode-select" id="aiModeSelect" title="Smart mode">
+        <option value="general">General</option>
+        <option value="website">Website Studio</option>
+        <option value="code">Code Fixer</option>
+        <option value="study">Study Helper</option>
+        <option value="file">File Analyzer</option>
+        <option value="business">Business Writer</option>
+        <option value="voice">Voice</option>
+      </select>
+      <button class="workspace-pill" id="workspacePill" type="button" title="Choose workspace">No workspace</button>
+      <button class="icon-btn" id="exportChatBtn" aria-label="Export chat" title="Export chat">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+      </button>
+      <div class="export-menu" id="exportMenu">
+        <button class="deep-action-btn" id="exportTxtBtn" type="button">Export TXT</button>
+        <button class="deep-action-btn" id="exportHtmlBtn" type="button">Export HTML</button>
+      </div>
       <div class="usage-cycle-wrap" id="usageCycleWrap">
         <button class="icon-btn usage-cycle-btn" id="usageCycleBtn" aria-label="Usage today" title="Usage today" type="button">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -2148,6 +2221,9 @@
   //   dataUri?, mime?, text?, truncated?, error? }
   let pendingFiles = [];
   const MAX_ATTACHMENTS = 5;
+  let activeWorkspaceId = Number(localStorage.getItem('vigzone_active_workspace_id') || 0) || null;
+  let workspaces = [];
+  let activeAiMode = localStorage.getItem('vigzone_ai_mode') || 'general';
 
   const VIGZONE_ICON = '/static/icons/vigzone-icon.svg?v=logo1-simple';
   const ICON_IMAGE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="M21 15l-5-5L5 21"></path></svg>';
@@ -2862,6 +2938,119 @@
     } catch (e) {
       if (learningModalBody) learningModalBody.innerHTML = `<div class="usage-modal-empty">${escapeHtml(e.message || 'Could not load Learning Center.')}</div>`;
     }
+  }
+
+
+  // ---------- Deep Features v3: smart modes, workspaces, file intel, export ----------
+  function currentMode(){ return (aiModeSelect && aiModeSelect.value) || activeAiMode || 'general'; }
+  if (aiModeSelect) {
+    aiModeSelect.value = activeAiMode;
+    aiModeSelect.addEventListener('change', () => {
+      activeAiMode = aiModeSelect.value || 'general';
+      localStorage.setItem('vigzone_ai_mode', activeAiMode);
+    });
+  }
+
+  function workspaceName(id){
+    const ws = workspaces.find(w => Number(w.id) === Number(id));
+    return ws ? ws.name : '';
+  }
+  function updateWorkspacePill(){
+    if (!workspacePill) return;
+    const name = activeWorkspaceId ? workspaceName(activeWorkspaceId) : '';
+    workspacePill.textContent = name ? `📁 ${name}` : 'No workspace';
+    workspacePill.classList.toggle('active', !!name);
+  }
+  async function loadWorkspaces(){
+    try {
+      const res = await fetch('/api/workspaces', {headers: authHeaders()});
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Failed to load workspaces');
+      workspaces = data.workspaces || [];
+      if (activeWorkspaceId && !workspaces.some(w => Number(w.id) === Number(activeWorkspaceId))) {
+        activeWorkspaceId = null; localStorage.removeItem('vigzone_active_workspace_id');
+      }
+      updateWorkspacePill();
+      return workspaces;
+    } catch (e) { console.warn(e); return []; }
+  }
+  function renderWorkspaceModal(){
+    if (!workspaceModalBody) return;
+    const cards = workspaces.length ? workspaces.map(w => `
+      <div class="workspace-card${Number(w.id)===Number(activeWorkspaceId)?' active':''}" data-ws-id="${w.id}">
+        <div class="workspace-card-title">${escapeHtml(w.name)}</div>
+        <div class="workspace-card-sub">${escapeHtml(w.mode || 'general')}${w.description ? ' • '+escapeHtml(w.description) : ''}</div>
+      </div>
+    `).join('') : '<div class="usage-modal-loading">No workspaces yet. Create one below.</div>';
+    workspaceModalBody.innerHTML = `
+      <div class="workspace-list">${cards}</div>
+      <button class="deep-action-btn" id="clearWorkspaceBtn" type="button">Use no workspace</button>
+      <div class="workspace-form">
+        <input id="workspaceNameInput" placeholder="Workspace name, e.g. Hotel Website Project" />
+        <textarea id="workspaceDescInput" placeholder="Short project description / goal"></textarea>
+        <select id="workspaceModeInput">
+          <option value="general">General</option><option value="website">Website Studio</option><option value="code">Code Fixer</option><option value="study">Study Helper</option><option value="file">File Analyzer</option><option value="business">Business Writer</option>
+        </select>
+        <button class="deep-action-btn" id="createWorkspaceBtn" type="button">+ Create workspace</button>
+      </div>`;
+    workspaceModalBody.querySelectorAll('[data-ws-id]').forEach(el => el.addEventListener('click', () => {
+      activeWorkspaceId = Number(el.dataset.wsId); localStorage.setItem('vigzone_active_workspace_id', String(activeWorkspaceId));
+      updateWorkspacePill(); renderWorkspaceModal();
+    }));
+    $('#clearWorkspaceBtn')?.addEventListener('click', () => { activeWorkspaceId=null; localStorage.removeItem('vigzone_active_workspace_id'); updateWorkspacePill(); renderWorkspaceModal(); });
+    $('#createWorkspaceBtn')?.addEventListener('click', async () => {
+      const name = $('#workspaceNameInput').value.trim();
+      const description = $('#workspaceDescInput').value.trim();
+      const mode = $('#workspaceModeInput').value;
+      if (!name) return alert('Enter a workspace name first.');
+      const res = await fetch('/api/workspaces', {method:'POST', headers:{'Content-Type':'application/json', ...authHeaders()}, body:JSON.stringify({name, description, mode})});
+      const data = await res.json().catch(()=>({}));
+      if (!res.ok) return alert(data.detail || 'Could not create workspace');
+      activeWorkspaceId = data.workspace.id; localStorage.setItem('vigzone_active_workspace_id', String(activeWorkspaceId));
+      await loadWorkspaces(); renderWorkspaceModal();
+    });
+  }
+  async function openWorkspaceModal(){ workspaceModalOverlay?.classList.add('visible'); await loadWorkspaces(); renderWorkspaceModal(); }
+  function closeWorkspaceModal(){ workspaceModalOverlay?.classList.remove('visible'); }
+  workspaceSidebarBtn?.addEventListener('click', openWorkspaceModal);
+  workspacePill?.addEventListener('click', openWorkspaceModal);
+  workspaceModalCloseBtn?.addEventListener('click', closeWorkspaceModal);
+  workspaceModalOverlay?.addEventListener('click', e => { if(e.target===workspaceModalOverlay) closeWorkspaceModal(); });
+
+  function downloadBlobText(filename, content, type='text/plain'){
+    const blob = new Blob([content], {type}); const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+  }
+  async function exportChat(format){
+    const res = await fetch('/api/export/chat', {method:'POST', headers:{'Content-Type':'application/json', ...authHeaders()}, body:JSON.stringify({title: currentConversation()?.title || 'Vigzone chat', messages, format})});
+    const data = await res.json().catch(()=>({}));
+    if (!res.ok) return alert(data.detail || 'Export failed');
+    downloadBlobText(data.filename || `vigzone-chat.${format}`, data.content || '', data.media_type || 'text/plain');
+    exportMenu?.classList.remove('visible');
+  }
+  exportChatBtn?.addEventListener('click', (e)=>{ e.stopPropagation(); exportMenu?.classList.toggle('visible'); });
+  exportTxtBtn?.addEventListener('click', ()=>exportChat('txt'));
+  exportHtmlBtn?.addEventListener('click', ()=>exportChat('html'));
+  document.addEventListener('click', e => { if (exportMenu?.classList.contains('visible') && !exportMenu.contains(e.target) && e.target !== exportChatBtn) exportMenu.classList.remove('visible'); });
+
+  async function analyzeReadyFiles(){
+    const docs = pendingFiles.filter(f => f.status === 'ready' && f.text);
+    if (!docs.length) return;
+    const panel = document.createElement('div'); panel.className = 'file-intel-panel'; panel.innerHTML = '<div class="usage-modal-loading">Analyzing files…</div>';
+    attachmentsBar.insertAdjacentElement('afterend', panel);
+    const reports = [];
+    for (const f of docs){
+      const res = await fetch('/api/file-intel/analyze', {method:'POST', headers:{'Content-Type':'application/json', ...authHeaders()}, body:JSON.stringify({name:f.name, kind:f.kind, text:f.text || ''})});
+      const data = await res.json().catch(()=>({})); if (res.ok) reports.push(data);
+    }
+    panel.innerHTML = reports.map(r => `
+      <div class="file-intel-title">🧠 ${escapeHtml(r.name)}</div>
+      <div>${escapeHtml(r.summary || '')}</div>
+      <div class="file-intel-grid"><div class="file-intel-stat"><b>${r.word_count||0}</b>words</div><div class="file-intel-stat"><b>${r.line_count||0}</b>lines</div><div class="file-intel-stat"><b>${(r.risks||[]).length}</b>risks</div></div>
+      <div><b>Keywords:</b> ${escapeHtml((r.keywords||[]).slice(0,10).join(', ') || '—')}</div>
+      ${(r.risks||[]).length ? `<div style="margin-top:6px"><b>Warnings:</b> ${escapeHtml(r.risks.join(', '))}</div>` : ''}
+    `).join('<hr style="border:none;border-top:1px solid var(--border-subtle);margin:10px 0">');
   }
 
   function openLearningModal(){
@@ -3818,7 +4007,7 @@
           'Content-Type': 'application/json',
           ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
         },
-        body: JSON.stringify({ messages: apiMessages() })
+        body: JSON.stringify({ messages: apiMessages(), ai_mode: currentMode(), workspace_id: activeWorkspaceId || null })
       });
 
       if (!res.ok || !res.body) {
@@ -4107,6 +4296,10 @@
       </div>
     `;
     }).join('');
+    if (pendingFiles.some(f => f.status === 'ready' && f.text)) {
+      attachmentsBar.insertAdjacentHTML('beforeend', '<button class="deep-action-btn" id="analyzeFilesBtn" type="button">🧠 Analyze files</button>');
+      $('#analyzeFilesBtn')?.addEventListener('click', analyzeReadyFiles);
+    }
     updateSendButtonState();
     updateImageModeHint();
   }
@@ -4570,7 +4763,7 @@
           'Content-Type': 'application/json',
           ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
         },
-        body: JSON.stringify({ messages: apiMessages() })
+        body: JSON.stringify({ messages: apiMessages(), ai_mode: currentMode(), workspace_id: activeWorkspaceId || null })
       });
 
       if (!response.ok || !response.body) {
@@ -4762,7 +4955,7 @@
           'Content-Type': 'application/json',
           ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
         },
-        body: JSON.stringify({ messages: apiMessages() })
+        body: JSON.stringify({ messages: apiMessages(), ai_mode: currentMode(), workspace_id: activeWorkspaceId || null })
       });
       if (!response.ok || !response.body) {
         const errData = await response.json().catch(() => ({}));
