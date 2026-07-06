@@ -1245,12 +1245,22 @@
     .live-voice-end svg{width:22px;height:22px;}
 
     /* ---------- Voice message bubble ---------- */
+    .bubble.voice-bubble{
+      display:inline-flex;
+      flex-direction:column;
+      width:fit-content;
+      max-width:min(300px, 78vw);
+      padding:8px 10px 7px;
+      line-height:1.35;
+    }
+    .msg.user .bubble.voice-bubble{max-width:min(300px, 72%);}
+    .msg.assistant .bubble.voice-bubble{max-width:min(300px, 72%);}
     .voice-msg{
-      display:flex;align-items:center;gap:10px;
-      padding:6px 4px;min-width:180px;
+      display:flex;align-items:center;gap:8px;
+      padding:2px 0;min-width:0;width:220px;max-width:100%;
     }
     .voice-play-btn{
-      width:34px;height:34px;border-radius:50%;flex-shrink:0;
+      width:30px;height:30px;border-radius:50%;flex-shrink:0;
       background:rgba(255,255,255,.2);border:none;cursor:pointer;
       display:flex;align-items:center;justify-content:center;
       transition:background .15s;color:inherit;
@@ -1258,17 +1268,23 @@
     .voice-play-btn:hover{background:rgba(255,255,255,.35);}
     .msg.assistant .voice-play-btn{background:var(--surface-2);color:var(--text);}
     .msg.assistant .voice-play-btn:hover{background:var(--hover-border);}
-    .voice-play-btn svg{width:16px;height:16px;pointer-events:none;}
+    .voice-play-btn svg{width:14px;height:14px;pointer-events:none;}
     .voice-waveform{
-      flex:1;height:28px;display:flex;align-items:center;gap:2px;
+      flex:1;height:22px;display:flex;align-items:center;gap:2px;
       overflow:hidden;
     }
     .voice-waveform span{
-      display:inline-block;width:3px;border-radius:2px;
+      display:inline-block;width:2.5px;border-radius:2px;
       background:currentColor;opacity:.55;
       transition:height .1s ease;
     }
-    .voice-duration{font-size:11px;opacity:.7;white-space:nowrap;}
+    .voice-duration{font-size:11px;opacity:.78;white-space:nowrap;flex-shrink:0;}
+    .bubble.voice-bubble .voice-error-note{
+      margin-top:5px;font-size:11px;opacity:.78;max-width:220px;line-height:1.35;
+    }
+    .bubble.voice-bubble .voice-transcript{
+      margin-top:5px;font-size:11px;opacity:.7;font-style:italic;max-width:220px;word-wrap:break-word;
+    }
 
     /* ---------- Attachments bar (pending, above composer) ---------- */
     .attachments-bar{
@@ -3117,7 +3133,7 @@
       avatar.innerHTML = `<img src="${VIGZONE_ICON}" alt="Vigzone AI" width="30" height="30" />`;
     }
     const bubble = document.createElement('div');
-    bubble.className = 'bubble';
+    bubble.className = 'bubble voice-bubble';
     if (opts.error) bubble.classList.add('error-bubble');
 
     if (opts.quote) {
@@ -4083,7 +4099,7 @@
     // Show the transcript under the voice bubble.
     if (voiceMsgEl) {
       const transcriptLabel = document.createElement('div');
-      transcriptLabel.style.cssText = 'font-size:11px;opacity:0.65;margin-top:5px;font-style:italic;max-width:280px;word-wrap:break-word;';
+      transcriptLabel.className = 'voice-transcript';
       transcriptLabel.textContent = '"' + transcription + '"';
       voiceMsgEl.closest('.bubble').appendChild(transcriptLabel);
     }
