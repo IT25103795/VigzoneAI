@@ -2142,6 +2142,20 @@
   function anyFloatingMenuOpen(){
     return !!(usageCyclePopover?.classList.contains('visible') || exportMenu?.classList.contains('visible'));
   }
+  function hideFloatingMenu(menu){
+    if (!menu) return;
+    menu.classList.remove('visible');
+    menu.style.display = 'none';
+    menu.style.visibility = '';
+  }
+
+  function showFloatingMenu(menu){
+    if (!menu) return;
+    menu.classList.add('visible');
+    menu.style.display = '';
+    menu.style.visibility = '';
+  }
+
   function syncFloatingMenuBackdrop(){
     if (!floatingMenuBackdrop) return;
     floatingMenuBackdrop.classList.toggle('visible', anyFloatingMenuOpen());
@@ -3187,9 +3201,7 @@
     return String(value || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
   function closeExportMenu(){
-    if (exportMenu?.classList.contains('visible')) {
-      exportMenu.classList.remove('visible');
-    }
+    hideFloatingMenu(exportMenu);
     syncFloatingMenuBackdrop();
   }
 
@@ -3221,9 +3233,13 @@
     e.stopPropagation();
     const wasOpen = !!exportMenu?.classList.contains('visible');
     closeFloatingMenus('export');
-    exportMenu?.classList.toggle('visible', !wasOpen);
-    syncFloatingMenuBackdrop();
-    if (!wasOpen) positionExportMenu();
+    if (wasOpen) {
+      closeExportMenu();
+    } else {
+      showFloatingMenu(exportMenu);
+      syncFloatingMenuBackdrop();
+      positionExportMenu();
+    }
   });
   exportTxtBtn?.addEventListener('click', (e)=>{ e.stopPropagation(); exportChat('txt'); closeExportMenu(); });
   exportHtmlBtn?.addEventListener('click', (e)=>{ e.stopPropagation(); exportChat('html'); closeExportMenu(); });
@@ -3363,9 +3379,7 @@
   }
 
   function closeUsageCyclePopover(){
-    if (usageCyclePopover?.classList.contains('visible')) {
-      usageCyclePopover.classList.remove('visible');
-    }
+    hideFloatingMenu(usageCyclePopover);
     syncFloatingMenuBackdrop();
   }
 
@@ -3379,9 +3393,11 @@
     if (!usageCyclePopover) return;
     const wasOpen = usageCyclePopover.classList.contains('visible');
     closeFloatingMenus('usage');
-    usageCyclePopover.classList.toggle('visible', !wasOpen);
-    syncFloatingMenuBackdrop();
-    if (!wasOpen) {
+    if (wasOpen) {
+      closeUsageCyclePopover();
+    } else {
+      showFloatingMenu(usageCyclePopover);
+      syncFloatingMenuBackdrop();
       renderUsageCyclePopover(latestUsageData);
       positionUsageCyclePopover();
       refreshUsageCycle();
