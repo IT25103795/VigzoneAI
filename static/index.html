@@ -3368,11 +3368,14 @@
   if (usageCycleBtn) usageCycleBtn.addEventListener('click', toggleUsageCyclePopover);
 
   function isInsideFloatingMenuTarget(target){
+    // Only the toggle buttons themselves are protected here (so re-tapping them
+    // still toggles open/closed correctly). Tapping anywhere else - including
+    // inside the popover/menu body - should close it. The actual export option
+    // buttons (exportTxtBtn/exportHtmlBtn) still fire their own click handlers
+    // and run exportChat() regardless of this closing them first.
     return !!(
       (usageCycleBtn && usageCycleBtn.contains(target)) ||
-      (usageCyclePopover && usageCyclePopover.contains(target)) ||
-      (exportChatBtn && exportChatBtn.contains(target)) ||
-      (exportMenu && exportMenu.contains(target))
+      (exportChatBtn && exportChatBtn.contains(target))
     );
   }
 
