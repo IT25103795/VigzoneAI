@@ -3324,11 +3324,26 @@
     }
   }
 
-  if (usageCycleBtn) usageCycleBtn.addEventListener('click', toggleUsageCyclePopover);
-  document.addEventListener('click', (e) => {
-    if (usageCyclePopover?.classList.contains('visible') && usageCycleWrap && !usageCycleWrap.contains(e.target) && !usageCyclePopover.contains(e.target)) {
+  function closeUsageCyclePopover(){
+    if (usageCyclePopover?.classList.contains('visible')) {
       usageCyclePopover.classList.remove('visible');
     }
+  }
+
+  if (usageCycleBtn) usageCycleBtn.addEventListener('click', toggleUsageCyclePopover);
+
+  // Close the usage popup when the user taps/clicks anywhere else.
+  // Use pointerdown in capture mode so it works reliably on mobile touch,
+  // chat bubbles, empty space, and floating menus.
+  document.addEventListener('pointerdown', (e) => {
+    if (!usageCyclePopover?.classList.contains('visible')) return;
+    if (usageCycleBtn && usageCycleBtn.contains(e.target)) return;
+    closeUsageCyclePopover();
+  }, true);
+
+  // Keyboard accessibility: Escape closes the popup too.
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeUsageCyclePopover();
   });
   window.addEventListener('resize', () => {
     if (usageCyclePopover?.classList.contains('visible')) positionUsageCyclePopover();
