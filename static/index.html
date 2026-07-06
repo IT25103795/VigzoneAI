@@ -3143,11 +3143,17 @@
   function htmlEscapeInline(value){
     return String(value || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
+  function closeExportMenu(){
+    if (exportMenu?.classList.contains('visible')) {
+      exportMenu.classList.remove('visible');
+    }
+  }
+
   function exportChat(format){
     const exportable = (messages || []).filter(m => m && (m.role === 'user' || m.role === 'assistant'));
     if (!exportable.length) {
       alert('No chat messages to export yet.');
-      exportMenu?.classList.remove('visible');
+      closeExportMenu();
       return;
     }
     const conv = currentConversation();
@@ -3165,19 +3171,17 @@
       const txt = [title, `Exported from Vigzone AI • ${now}`, '', ...exportable.map(m => `[${m.role === 'user' ? 'YOU' : 'VIGZONE AI'}]\n${exportMessageText(m)}\n`)].join('\n');
       downloadBlobText(`${safeTitle}.txt`, txt, 'text/plain;charset=utf-8');
     }
-    exportMenu?.classList.remove('visible');
+    closeExportMenu();
   }
   exportChatBtn?.addEventListener('click', (e)=>{
     e.stopPropagation();
-    const willShow = !exportMenu?.classList.contains('visible');
-    exportMenu?.classList.toggle('visible', willShow);
-    if (willShow) positionExportMenu();
+    const wasOpen = !!exportMenu?.classList.contains('visible');
+    closeFloatingMenus('export');
+    exportMenu?.classList.toggle('visible', !wasOpen);
+    if (!wasOpen) positionExportMenu();
   });
-  exportTxtBtn?.addEventListener('click', ()=>exportChat('txt'));
-  exportHtmlBtn?.addEventListener('click', ()=>exportChat('html'));
-  document.addEventListener('click', e => {
-    if (exportMenu?.classList.contains('visible') && !exportMenu.contains(e.target) && !exportChatBtn?.contains(e.target)) exportMenu.classList.remove('visible');
-  });
+  exportTxtBtn?.addEventListener('click', (e)=>{ e.stopPropagation(); exportChat('txt'); closeExportMenu(); });
+  exportHtmlBtn?.addEventListener('click', (e)=>{ e.stopPropagation(); exportChat('html'); closeExportMenu(); });
 
   async function analyzeReadyFiles(){
     const docs = pendingFiles.filter(f => f.status === 'ready' && f.text);
@@ -3312,38 +3316,58 @@
     refreshUsageCycle();
   }
 
-  function toggleUsageCyclePopover(e){
-    e?.stopPropagation();
-    if (!usageCyclePopover) return;
-    const willShow = !usageCyclePopover.classList.contains('visible');
-    usageCyclePopover.classList.toggle('visible', willShow);
-    if (willShow) {
-      renderUsageCyclePopover(latestUsageData);
-      positionUsageCyclePopover();
-      refreshUsageCycle();
-    }
-  }
-
   function closeUsageCyclePopover(){
     if (usageCyclePopover?.classList.contains('visible')) {
       usageCyclePopover.classList.remove('visible');
     }
   }
 
+  function closeFloatingMenus(except){
+    if (except !== 'usage') closeUsageCyclePopover();
+    if (except !== 'export') closeExportMenu();
+  }
+
+  function toggleUsageCyclePopover(e){
+    e?.stopPropagation();
+    if (!usageCyclePopover) return;
+    const wasOpen = usageCyclePopover.classList.contains('visible');
+    closeFloatingMenus('usage');
+    usageCyclePopover.classList.toggle('visible', !wasOpen);
+    if (!wasOpen) {
+      renderUsageCyclePopover(latestUsageData);
+      positionUsageCyclePopover();
+      refreshUsageCycle();
+    }
+  }
+
   if (usageCycleBtn) usageCycleBtn.addEventListener('click', toggleUsageCyclePopover);
 
-  // Close the usage popup when the user taps/clicks anywhere else.
-  // Use pointerdown in capture mode so it works reliably on mobile touch,
-  // chat bubbles, empty space, and floating menus.
-  document.addEventListener('pointerdown', (e) => {
-    if (!usageCyclePopover?.classList.contains('visible')) return;
-    if (usageCycleBtn && usageCycleBtn.contains(e.target)) return;
-    closeUsageCyclePopover();
-  }, true);
+  function isInsideFloatingMenuTarget(target){
+    return !!(
+      (usageCycleBtn && usageCycleBtn.contains(target)) ||
+      (usageCyclePopover && usageCyclePopover.contains(target)) ||
+      (exportChatBtn && exportChatBtn.contains(target)) ||
+      (exportMenu && exportMenu.contains(target))
+    );
+  }
 
-  // Keyboard accessibility: Escape closes the popup too.
+  function handleOutsideFloatingMenuTap(e){
+    if (!usageCyclePopover?.classList.contains('visible') && !exportMenu?.classList.contains('visible')) return;
+    if (isInsideFloatingMenuTarget(e.target)) return;
+    closeFloatingMenus();
+  }
+
+  // Close floating menus when tapping/clicking anywhere outside.
+  // Multiple event names are intentional: this makes it reliable on desktop,
+  // mobile touch screens, and elements that stop normal click bubbling.
+  ['pointerdown', 'mousedown', 'touchstart', 'click'].forEach((eventName) => {
+    document.addEventListener(eventName, handleOutsideFloatingMenuTap, true);
+    window.addEventListener(eventName, handleOutsideFloatingMenuTap, true);
+  });
+
+  // Keyboard accessibility: Escape closes all floating menus too.
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeUsageCyclePopover();
+    if (e.key === 'Escape') closeFloatingMenus();
   });
   window.addEventListener('resize', () => {
     if (usageCyclePopover?.classList.contains('visible')) positionUsageCyclePopover();
