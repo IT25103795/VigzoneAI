@@ -613,7 +613,7 @@ def _should_try_fallback(status_code: int) -> bool:
     return status_code in {404, 408, 409, 429, 500, 502, 503, 504}
 
 
-async def _build_payload(messages: list[dict], model: str, stream: bool, user_name: Optional[str] = None) -> dict:
+async def _build_payload(messages: list[dict], model: str, stream: bool, user_name: Optional[str] = None, user_learning_context: str = "") -> dict:
     # Keep latest turns verbatim and compact older turns to reduce token spend.
     messages, history_summary_block = _compact_history_for_model(messages)
     effective_model = VISION_MODEL if _contains_image(messages) else model
@@ -664,6 +664,8 @@ async def _build_payload(messages: list[dict], model: str, stream: bool, user_na
         system_messages.append({"role": "system", "content": realtime_block})
     if memory_block:
         system_messages.append({"role": "system", "content": memory_block})
+    if user_learning_context and user_learning_context.strip():
+        system_messages.append({"role": "system", "content": user_learning_context.strip()})
     if history_summary_block:
         system_messages.append({"role": "system", "content": history_summary_block})
 
@@ -901,6 +903,7 @@ async def stream_chat(
     user_id: Optional[int] = None,
     user_name: Optional[str] = None,
     provider_override: Optional[dict] = None,
+    user_learning_context: str = "",
 ) -> AsyncGenerator[str, None]:
     """Stream a chat completion token-by-token with Groq model fallback."""
     using_override = provider_override is not None
@@ -914,7 +917,13 @@ async def stream_chat(
     candidates = _model_candidates(model, contains_image=_contains_image(messages))
 
     for candidate_model in candidates:
-        payload = await _build_payload(messages, candidate_model, stream=True, user_name=user_name)
+        payload = await _build_payload(
+            messages,
+            candidate_model,
+            stream=True,
+            user_name=user_name,
+            user_learning_context=user_learning_context,
+        )
 
         # Estimate prompt tokens for tracking
         prompt_text = " ".join(
@@ -1030,6 +1039,7 @@ async def chat_once(
     user_id: Optional[int] = None,
     user_name: Optional[str] = None,
     provider_override: Optional[dict] = None,
+    user_learning_context: str = "",
 ) -> str:
     """Non-streaming convenience wrapper with Groq model fallback."""
     using_override = provider_override is not None
@@ -1043,7 +1053,13 @@ async def chat_once(
     candidates = _model_candidates(model, contains_image=_contains_image(messages))
 
     for candidate_model in candidates:
-        payload = await _build_payload(messages, candidate_model, stream=False, user_name=user_name)
+        payload = await _build_payload(
+            messages,
+            candidate_model,
+            stream=False,
+            user_name=user_name,
+            user_learning_context=user_learning_context,
+        )
         prompt_text = " ".join(
             _message_content_as_text(m.get("content", ""))
             for m in payload["messages"]

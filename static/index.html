@@ -378,6 +378,34 @@
     .admin-reset-btn{border:1px solid var(--border);background:var(--surface-2);color:var(--text-muted);border-radius:7px;padding:4px 7px;font-size:11px;cursor:pointer;}
     .admin-reset-btn:hover{color:var(--text);border-color:var(--hover-border);}
 
+    .learning-modal{max-width:520px;}
+    .learning-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0;}
+    .learning-toggle{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--text-muted);}
+    .learning-switch{position:relative;width:42px;height:24px;border-radius:99px;border:1px solid var(--border);background:var(--surface-2);cursor:pointer;transition:background .15s,border-color .15s;}
+    .learning-switch::after{content:'';position:absolute;width:18px;height:18px;top:2px;left:2px;border-radius:50%;background:var(--text-muted);transition:left .15s,background .15s;}
+    .learning-switch.on{background:var(--accent-dim);border-color:var(--accent);}
+    .learning-switch.on::after{left:20px;background:var(--accent);}
+    .learning-add-box{border:1px solid var(--border);background:var(--surface-2);border-radius:12px;padding:12px;margin:12px 0;}
+    .learning-add-box textarea{width:100%;min-height:78px;resize:vertical;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--text);padding:10px 11px;font-family:inherit;font-size:13px;line-height:1.5;}
+    .learning-add-box textarea:focus{outline:none;border-color:var(--accent);}
+    .learning-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px;}
+    .learning-count{font-size:11px;color:var(--text-muted);}
+    .learning-save-btn{border:1px solid var(--accent);background:var(--accent);color:var(--on-accent);border-radius:8px;padding:7px 11px;font-size:12px;font-weight:700;cursor:pointer;}
+    .learning-save-btn:disabled{opacity:.55;cursor:not-allowed;}
+    .learning-list{display:flex;flex-direction:column;gap:9px;margin-top:12px;}
+    .learning-card{border:1px solid var(--border);background:var(--surface-2);border-radius:11px;padding:10px 11px;}
+    .learning-card.paused{opacity:.62;}
+    .learning-card-text{font-size:12.5px;color:var(--text);line-height:1.48;white-space:pre-wrap;word-break:break-word;}
+    .learning-card-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:9px;}
+    .learning-badge{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);}
+    .learning-card-actions{display:flex;align-items:center;gap:6px;}
+    .learning-card-actions button{border:1px solid var(--border);background:var(--surface);color:var(--text-muted);border-radius:7px;padding:4px 7px;font-size:11px;cursor:pointer;}
+    .learning-card-actions button:hover{color:var(--text);border-color:var(--hover-border);}
+    .learning-card-actions .danger:hover{color:var(--danger);border-color:var(--danger);}
+    .learning-status{font-size:11px;line-height:1.45;margin-top:7px;min-height:16px;}
+    .learning-status.ok{color:#4ade80;}
+    .learning-status.err{color:var(--danger);}
+
     /* Bring-your-own Groq API key box */
     .api-key-box{
       padding:10px 12px;margin-bottom:8px;
@@ -1670,6 +1698,18 @@
   </div>
 </div>
 
+<div class="usage-modal-overlay" id="learningModalOverlay">
+  <div class="usage-modal learning-modal">
+    <div class="usage-modal-head">
+      <h3>Learning Center</h3>
+      <button class="usage-modal-close" id="learningModalCloseBtn" aria-label="Close">&times;</button>
+    </div>
+    <div id="learningModalBody">
+      <div class="usage-modal-loading">Loading memories…</div>
+    </div>
+  </div>
+</div>
+
 <div class="main-col">
   <header>
     <div class="header-left">
@@ -1840,6 +1880,10 @@
   const signOutBtn = $('#signOutBtn');
   const sidebarUserName = $('#sidebarUserName');
   const sidebarUserDot = $('#sidebarUserDot');
+  const teachVigzoneBtn = $('#teachVigzoneBtn');
+  const learningModalOverlay = $('#learningModalOverlay');
+  const learningModalCloseBtn = $('#learningModalCloseBtn');
+  const learningModalBody = $('#learningModalBody');
   const usageTodayBtn = $('#usageTodayBtn');
   const usageModalOverlay = $('#usageModalOverlay');
   const usageModalCloseBtn = $('#usageModalCloseBtn');
@@ -2569,6 +2613,184 @@
 
   sidebarToggleBtn.addEventListener('click', () => setSidebarCollapsed(!sidebar.classList.contains('collapsed')));
   sidebarOverlay.addEventListener('click', () => setSidebarCollapsed(true));
+
+  // ---------- Learning Center / private memories ----------
+  let learningState = { enabled: true, memories: [] };
+
+  async function learningFetch(url, options = {}){
+    const res = await fetch(url, {
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+      ...options,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || data.error || 'Learning request failed.');
+    return data;
+  }
+
+  function renderLearningCenter(){
+    if (!learningModalBody) return;
+    const status = learningState.status || { enabled: true, active_count: 0, count: 0 };
+    const memories = learningState.memories || [];
+    const enabled = !!status.enabled;
+    const activeCount = status.active_count ?? memories.filter(m => m.is_active).length;
+    const totalCount = status.count ?? memories.length;
+    const listHtml = memories.map(m => `
+      <div class="learning-card ${m.is_active ? '' : 'paused'}" data-memory-id="${m.id}">
+        <div class="learning-card-text">${escapeHtml(m.memory_text || '')}</div>
+        <div class="learning-card-meta">
+          <span class="learning-badge">${m.is_active ? 'Active memory' : 'Paused'}</span>
+          <div class="learning-card-actions">
+            <button data-learning-edit="${m.id}">Edit</button>
+            <button data-learning-toggle="${m.id}" data-learning-active="${m.is_active ? '1' : '0'}">${m.is_active ? 'Pause' : 'Activate'}</button>
+            <button class="danger" data-learning-delete="${m.id}">Delete</button>
+          </div>
+        </div>
+      </div>
+    `).join('');
+
+    learningModalBody.innerHTML = `
+      <div class="usage-modal-note">
+        Vigzone can remember useful instructions you approve. These memories are private to your account and are used only when Learning is ON.
+      </div>
+      <div class="learning-row">
+        <div>
+          <div style="font-size:13px;color:var(--text);font-weight:700;">Use memories in chat</div>
+          <div style="font-size:11px;color:var(--text-muted);">${activeCount.toLocaleString()} active · ${totalCount.toLocaleString()} total</div>
+        </div>
+        <button class="learning-switch ${enabled ? 'on' : ''}" id="learningToggleSwitch" aria-label="Toggle Learning"></button>
+      </div>
+      <div class="learning-add-box">
+        <textarea id="learningMemoryInput" maxlength="1200" placeholder="Example: When I ask for code changes, give me the full updated zip file.\nExample: My project is Groq-only production mode."></textarea>
+        <div class="learning-actions">
+          <span class="learning-count" id="learningCharCount">0 / 1200</span>
+          <button class="learning-save-btn" id="learningSaveBtn">Add memory</button>
+        </div>
+        <div class="learning-status" id="learningStatusText"></div>
+      </div>
+      <div class="learning-list">
+        ${listHtml || '<div class="usage-modal-empty">No memories yet. Add one above.</div>'}
+      </div>
+    `;
+
+    const textarea = $('#learningMemoryInput');
+    const charCount = $('#learningCharCount');
+    const statusText = $('#learningStatusText');
+    const saveBtn = $('#learningSaveBtn');
+    const toggleSwitch = $('#learningToggleSwitch');
+
+    if (textarea && charCount) {
+      textarea.addEventListener('input', () => {
+        charCount.textContent = `${textarea.value.length} / 1200`;
+      });
+    }
+
+    if (saveBtn && textarea) {
+      saveBtn.addEventListener('click', async () => {
+        const value = textarea.value.trim();
+        if (value.length < 3) {
+          if (statusText) { statusText.textContent = 'Write a useful memory first.'; statusText.className = 'learning-status err'; }
+          return;
+        }
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Saving…';
+        try {
+          await learningFetch('/api/learning/memories', {
+            method: 'POST',
+            body: JSON.stringify({ memory_text: value }),
+          });
+          textarea.value = '';
+          await loadLearningCenter(false);
+        } catch (e) {
+          if (statusText) { statusText.textContent = e.message || 'Could not save memory.'; statusText.className = 'learning-status err'; }
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Add memory';
+        }
+      });
+    }
+
+    if (toggleSwitch) {
+      toggleSwitch.addEventListener('click', async () => {
+        toggleSwitch.disabled = true;
+        try {
+          const next = !enabled;
+          const status = await learningFetch('/api/learning/toggle', {
+            method: 'POST',
+            body: JSON.stringify({ enabled: next }),
+          });
+          learningState.status = status;
+          renderLearningCenter();
+        } catch (e) {
+          toggleSwitch.disabled = false;
+        }
+      });
+    }
+
+    learningModalBody.querySelectorAll('[data-learning-edit]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = Number(btn.getAttribute('data-learning-edit'));
+        const current = memories.find(m => m.id === id);
+        const updated = prompt('Edit this memory:', current ? current.memory_text : '');
+        if (updated === null) return;
+        const memory_text = updated.trim();
+        if (memory_text.length < 3) return;
+        try {
+          await learningFetch(`/api/learning/memories/${id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ memory_text }),
+          });
+          await loadLearningCenter(false);
+        } catch (e) { alert(e.message || 'Could not edit memory.'); }
+      });
+    });
+
+    learningModalBody.querySelectorAll('[data-learning-toggle]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = Number(btn.getAttribute('data-learning-toggle'));
+        const isActive = btn.getAttribute('data-learning-active') === '1';
+        try {
+          await learningFetch(`/api/learning/memories/${id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ is_active: !isActive }),
+          });
+          await loadLearningCenter(false);
+        } catch (e) { alert(e.message || 'Could not update memory.'); }
+      });
+    });
+
+    learningModalBody.querySelectorAll('[data-learning-delete]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = Number(btn.getAttribute('data-learning-delete'));
+        if (!confirm('Delete this memory permanently?')) return;
+        try {
+          await learningFetch(`/api/learning/memories/${id}`, { method: 'DELETE' });
+          await loadLearningCenter(false);
+        } catch (e) { alert(e.message || 'Could not delete memory.'); }
+      });
+    });
+  }
+
+  async function loadLearningCenter(showLoading = true){
+    if (showLoading && learningModalBody) learningModalBody.innerHTML = '<div class="usage-modal-loading">Loading memories…</div>';
+    try {
+      const data = await learningFetch('/api/learning/memories');
+      learningState = data;
+      renderLearningCenter();
+    } catch (e) {
+      if (learningModalBody) learningModalBody.innerHTML = `<div class="usage-modal-empty">${escapeHtml(e.message || 'Could not load Learning Center.')}</div>`;
+    }
+  }
+
+  function openLearningModal(){
+    learningModalOverlay?.classList.add('visible');
+    loadLearningCenter(true);
+  }
+  function closeLearningModal(){ learningModalOverlay?.classList.remove('visible'); }
+  if (teachVigzoneBtn) teachVigzoneBtn.addEventListener('click', openLearningModal);
+  if (learningModalCloseBtn) learningModalCloseBtn.addEventListener('click', closeLearningModal);
+  if (learningModalOverlay) learningModalOverlay.addEventListener('click', (e) => {
+    if (e.target === learningModalOverlay) closeLearningModal();
+  });
 
   // ---------- My usage today (Groq default plan or own key) ----------
   function formatDuration(totalSeconds){

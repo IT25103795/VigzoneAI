@@ -121,3 +121,17 @@ Open `http://localhost:8000`.
 ## Voice message reliability
 
 Voice messages first try the browser's instant speech recognizer. If the browser returns a false no-speech result, Vigzone falls back to Groq Whisper through `/api/transcribe`, using the deployment Groq key or the user's activated Groq key. Configure with `GROQ_TRANSCRIPTION_MODEL=whisper-large-v3-turbo`.
+
+## Learning Center (private per-user memory)
+
+This build includes a real Learning Center from the sidebar. Each signed-in user can add, edit, pause, delete, and toggle their own approved memories. Memories are private to that account and are injected into only that user's chat context when Learning is ON. They do not change the model weights and are not shared with other users.
+
+API endpoints:
+
+- `GET /api/learning/status`
+- `POST /api/learning/toggle`
+- `GET /api/learning/memories`
+- `POST /api/learning/memories`
+- `PATCH /api/learning/memories/{id}`
+- `DELETE /api/learning/memories/{id}`
+

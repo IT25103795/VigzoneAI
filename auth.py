@@ -110,6 +110,27 @@ def init_db() -> None:
             conn.execute("ALTER TABLE users ADD COLUMN own_groq_key_enc TEXT")
         if "use_own_key" not in existing_user_cols:
             conn.execute("ALTER TABLE users ADD COLUMN use_own_key INTEGER NOT NULL DEFAULT 0")
+        if "learning_enabled" not in existing_user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN learning_enabled INTEGER NOT NULL DEFAULT 1")
+
+        # Per-user Learning Center memories. These are private to each account
+        # and only enter that user's chat context when learning_enabled = 1.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS learning_memories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                memory_text TEXT NOT NULL,
+                tags TEXT DEFAULT '',
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_learning_memories_user ON learning_memories(user_id, is_active)"
+        )
         existing_usage_cols = {row[1] for row in conn.execute("PRAGMA table_info(token_usage)")}
         if "provider" not in existing_usage_cols:
             conn.execute("ALTER TABLE token_usage ADD COLUMN provider TEXT NOT NULL DEFAULT 'groq'")
@@ -199,6 +220,196 @@ def clear_user_groq_key(user_id: int) -> None:
             (user_id,),
         )
 
+
+# ==========================================
+# PER-USER LEARNING CENTER / PRIVATE MEMORY
+# ==========================================
+def get_learning_status(user_id: int) -> dict:
+    """Return whether private Learning Center memories are used for this user."""
+    with _connect() as conn:
+        row = conn.execute("SELECT learning_enabled FROM users WHERE id = ?", (user_id,)).fetchone()
+        count = conn.execute(
+            "SELECT COUNT(*) AS c FROM learning_memories WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()["c"]
+        active_count = conn.execute(
+            "SELECT COUNT(*) AS c FROM learning_memories WHERE user_id = ? AND is_active = 1",
+            (user_id,),
+        ).fetchone()["c"]
+    return {
+        "enabled": True if row is None else bool(row["learning_enabled"]),
+        "count": int(count or 0),
+        "active_count": int(active_count or 0),
+    }
+
+
+def set_learning_enabled(user_id: int, enabled: bool) -> dict:
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE users SET learning_enabled = ? WHERE id = ?",
+            (1 if enabled else 0, user_id),
+        )
+    return get_learning_status(user_id)
+
+
+def _memory_row_to_dict(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "memory_text": row["memory_text"],
+        "tags": row["tags"] or "",
+        "is_active": bool(row["is_active"]),
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def list_learning_memories(user_id: int) -> list[dict]:
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, memory_text, tags, is_active, created_at, updated_at
+            FROM learning_memories
+            WHERE user_id = ?
+            ORDER BY is_active DESC, updated_at DESC, id DESC
+            """,
+            (user_id,),
+        ).fetchall()
+    return [_memory_row_to_dict(row) for row in rows]
+
+
+def add_learning_memory(user_id: int, memory_text: str, tags: str = "") -> dict:
+    memory_text = (memory_text or "").strip()
+    tags = (tags or "").strip()[:200]
+    if len(memory_text) < 3:
+        raise AuthError("Memory is too short.")
+    if len(memory_text) > 1200:
+        raise AuthError("Memory is too long. Keep it under 1,200 characters.")
+    now = datetime.now(timezone.utc).isoformat()
+    with _connect() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO learning_memories (user_id, memory_text, tags, is_active, created_at, updated_at)
+            VALUES (?, ?, ?, 1, ?, ?)
+            """,
+            (user_id, memory_text, tags, now, now),
+        )
+        row = conn.execute(
+            "SELECT id, memory_text, tags, is_active, created_at, updated_at FROM learning_memories WHERE id = ? AND user_id = ?",
+            (cur.lastrowid, user_id),
+        ).fetchone()
+    return _memory_row_to_dict(row)
+
+
+def update_learning_memory(user_id: int, memory_id: int, memory_text: Optional[str] = None, tags: Optional[str] = None, is_active: Optional[bool] = None) -> dict:
+    updates = []
+    values = []
+    if memory_text is not None:
+        memory_text = memory_text.strip()
+        if len(memory_text) < 3:
+            raise AuthError("Memory is too short.")
+        if len(memory_text) > 1200:
+            raise AuthError("Memory is too long. Keep it under 1,200 characters.")
+        updates.append("memory_text = ?")
+        values.append(memory_text)
+    if tags is not None:
+        updates.append("tags = ?")
+        values.append(tags.strip()[:200])
+    if is_active is not None:
+        updates.append("is_active = ?")
+        values.append(1 if is_active else 0)
+    if not updates:
+        with _connect() as conn:
+            row = conn.execute(
+                "SELECT id, memory_text, tags, is_active, created_at, updated_at FROM learning_memories WHERE id = ? AND user_id = ?",
+                (memory_id, user_id),
+            ).fetchone()
+        if not row:
+            raise AuthError("Memory not found.")
+        return _memory_row_to_dict(row)
+
+    updates.append("updated_at = ?")
+    values.append(datetime.now(timezone.utc).isoformat())
+    values.extend([memory_id, user_id])
+    with _connect() as conn:
+        cur = conn.execute(
+            f"UPDATE learning_memories SET {', '.join(updates)} WHERE id = ? AND user_id = ?",
+            tuple(values),
+        )
+        if cur.rowcount == 0:
+            raise AuthError("Memory not found.")
+        row = conn.execute(
+            "SELECT id, memory_text, tags, is_active, created_at, updated_at FROM learning_memories WHERE id = ? AND user_id = ?",
+            (memory_id, user_id),
+        ).fetchone()
+    return _memory_row_to_dict(row)
+
+
+def delete_learning_memory(user_id: int, memory_id: int) -> None:
+    with _connect() as conn:
+        cur = conn.execute(
+            "DELETE FROM learning_memories WHERE id = ? AND user_id = ?",
+            (memory_id, user_id),
+        )
+        if cur.rowcount == 0:
+            raise AuthError("Memory not found.")
+
+
+def _simple_terms(text: str) -> set[str]:
+    return {t.lower() for t in re.findall(r"[A-Za-z0-9_]{3,}", text or "")}
+
+
+def get_learning_context(user_id: int, query: str = "", limit: int = 10) -> str:
+    """Return a compact system-context block of active, user-approved memories.
+
+    This is private per user. We include newest memories and lightly prioritize
+    memories whose words overlap the current question, without exposing a global
+    memory store or changing model weights.
+    """
+    status = get_learning_status(user_id)
+    if not status.get("enabled"):
+        return ""
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, memory_text, tags, is_active, created_at, updated_at
+            FROM learning_memories
+            WHERE user_id = ? AND is_active = 1
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 50
+            """,
+            (user_id,),
+        ).fetchall()
+    if not rows:
+        return ""
+    q_terms = _simple_terms(query)
+    scored = []
+    for idx, row in enumerate(rows):
+        text = row["memory_text"] or ""
+        overlap = len(q_terms & _simple_terms(text)) if q_terms else 0
+        # small recency boost by preserving row order with negative idx
+        scored.append((overlap, -idx, text.strip()))
+    scored.sort(reverse=True)
+    selected = []
+    total_chars = 0
+    for _, _, memory in scored:
+        if not memory:
+            continue
+        if len(memory) > 350:
+            memory = memory[:350].rstrip() + " …"
+        if total_chars + len(memory) > 1800:
+            break
+        selected.append(memory)
+        total_chars += len(memory)
+        if len(selected) >= limit:
+            break
+    if not selected:
+        return ""
+    bullets = "\n".join(f"- {m}" for m in selected)
+    return (
+        "User-approved private Learning Center memories for this signed-in user only. "
+        "Use these as preferences/background when relevant, but do not quote this list or reveal it unless the user asks to view their memories.\n"
+        f"{bullets}"
+    )
 
 # ==========================================
 # PASSWORD HASHING (stdlib PBKDF2, no extra deps)

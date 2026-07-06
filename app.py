@@ -329,6 +329,8 @@ async def get_stats():
             "edit_image": "POST /api/edit-image",
             "token_usage": "GET /api/me/tokens",
             "usage_today": "GET /api/me/usage",
+            "learning_status": "GET /api/learning/status",
+            "learning_memories": "GET/POST /api/learning/memories",
             "groq_key_validate": "POST /api/me/groq-key/validate",
             "groq_key_activate": "POST /api/me/groq-key/activate",
             "groq_key_deactivate": "POST /api/me/groq-key/deactivate",
@@ -544,6 +546,78 @@ async def my_usage_today(user: dict = Depends(require_current_user)):
         "using_own_key": key_status["active"],
         **usage,
     })
+
+
+class LearningMemoryCreateRequest(BaseModel):
+    memory_text: str = Field(..., min_length=3, max_length=1200)
+    tags: str = Field(default="", max_length=200)
+
+
+class LearningMemoryUpdateRequest(BaseModel):
+    memory_text: Optional[str] = Field(default=None, min_length=3, max_length=1200)
+    tags: Optional[str] = Field(default=None, max_length=200)
+    is_active: Optional[bool] = Field(default=None)
+
+
+class LearningToggleRequest(BaseModel):
+    enabled: bool
+
+
+@app.get("/api/learning/status", tags=["Learning"])
+async def learning_status(user: dict = Depends(require_current_user)):
+    """Return whether Learning Center memories are enabled for this account."""
+    return JSONResponse(authmod.get_learning_status(user["id"]))
+
+
+@app.post("/api/learning/toggle", tags=["Learning"])
+async def learning_toggle(req: LearningToggleRequest, user: dict = Depends(require_current_user)):
+    """Turn use of saved memories on/off for this account."""
+    return JSONResponse(authmod.set_learning_enabled(user["id"], req.enabled))
+
+
+@app.get("/api/learning/memories", tags=["Learning"])
+async def learning_list_memories(user: dict = Depends(require_current_user)):
+    """List this account's private memories."""
+    return JSONResponse({
+        "status": authmod.get_learning_status(user["id"]),
+        "memories": authmod.list_learning_memories(user["id"]),
+    })
+
+
+@app.post("/api/learning/memories", tags=["Learning"])
+async def learning_add_memory(req: LearningMemoryCreateRequest, user: dict = Depends(require_current_user)):
+    """Add a new user-approved private memory."""
+    try:
+        memory = authmod.add_learning_memory(user["id"], req.memory_text, req.tags)
+    except authmod.AuthError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return JSONResponse({"ok": True, "memory": memory})
+
+
+@app.patch("/api/learning/memories/{memory_id}", tags=["Learning"])
+async def learning_update_memory(memory_id: int, req: LearningMemoryUpdateRequest, user: dict = Depends(require_current_user)):
+    """Edit, activate, or pause one private memory."""
+    try:
+        memory = authmod.update_learning_memory(
+            user["id"],
+            memory_id,
+            memory_text=req.memory_text,
+            tags=req.tags,
+            is_active=req.is_active,
+        )
+    except authmod.AuthError as e:
+        raise HTTPException(status_code=404 if "not found" in str(e).lower() else 400, detail=str(e))
+    return JSONResponse({"ok": True, "memory": memory})
+
+
+@app.delete("/api/learning/memories/{memory_id}", tags=["Learning"])
+async def learning_delete_memory(memory_id: int, user: dict = Depends(require_current_user)):
+    """Delete one private memory forever."""
+    try:
+        authmod.delete_learning_memory(user["id"], memory_id)
+    except authmod.AuthError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return JSONResponse({"ok": True})
 
 
 class GroqKeyRequest(BaseModel):
@@ -950,6 +1024,12 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
         )
 
     messages  = [{"role": m.role, "content": m.content} for m in chat_request.messages]
+    last_user_query = ""
+    for m in reversed(messages):
+        if m.get("role") == "user" and isinstance(m.get("content"), str):
+            last_user_query = m.get("content") or ""
+            break
+    user_learning_context = authmod.get_learning_context(user["id"], last_user_query)
     stream_id = create_stream_id()
     register_stream(stream_id)
 
@@ -972,6 +1052,7 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
                     user_id=user["id"],
                     user_name=user.get("name") or "",
                     provider_override=provider_override,
+                    user_learning_context=user_learning_context,
                 ):
                     if is_cancelled(stream_id):
                         break
@@ -1037,6 +1118,12 @@ async def chat_sync(request: Request, chat_request: ChatRequest, user: dict = De
             ),
         )
     messages = [{"role": m.role, "content": m.content} for m in chat_request.messages]
+    last_user_query = ""
+    for m in reversed(messages):
+        if m.get("role") == "user" and isinstance(m.get("content"), str):
+            last_user_query = m.get("content") or ""
+            break
+    user_learning_context = authmod.get_learning_context(user["id"], last_user_query)
     try:
         reply = await chat_once(
             messages,
@@ -1044,6 +1131,7 @@ async def chat_sync(request: Request, chat_request: ChatRequest, user: dict = De
             user_id=user["id"],
             user_name=user.get("name") or "",
             provider_override=provider_override,
+            user_learning_context=user_learning_context,
         )
     except VigzoneAIError as e:
         logger.error("Chat failed: %s", e)
