@@ -592,6 +592,50 @@
     [data-theme="light"] .theme-toggle-btn .icon-sun{display:block;}
     [data-theme="light"] .theme-toggle-btn .icon-moon{display:none;}
 
+    /* ---------- Header usage cycle ---------- */
+    .usage-cycle-wrap{position:relative;display:flex;align-items:center;}
+    .usage-cycle-btn{
+      width:34px;height:34px;padding:0;justify-content:center;position:relative;
+      border-radius:10px;overflow:visible;
+    }
+    .usage-cycle-btn svg{width:19px;height:19px;display:block;transform:rotate(-90deg);}
+    .usage-cycle-bg{stroke:var(--border);stroke-width:3.2;fill:none;}
+    .usage-cycle-fill{
+      stroke:var(--accent);stroke-width:3.2;fill:none;stroke-linecap:round;
+      stroke-dasharray:100;stroke-dashoffset:100;transition:stroke-dashoffset .35s ease, stroke .2s ease;
+    }
+    .usage-cycle-btn.warn .usage-cycle-fill{stroke:#ffb84d;}
+    .usage-cycle-btn.danger .usage-cycle-fill{stroke:var(--danger);}
+    .usage-cycle-btn.loading .usage-cycle-fill{animation:usageCycleSpin 1.05s linear infinite;stroke-dashoffset:72;}
+    .usage-cycle-btn.limit-hit{box-shadow:0 0 0 1px color-mix(in srgb, var(--danger) 45%, transparent), 0 0 12px color-mix(in srgb, var(--danger) 25%, transparent);}
+    @keyframes usageCycleSpin{to{transform:rotate(360deg);}}
+    .usage-cycle-center{
+      position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+      font-size:8px;font-weight:800;color:var(--text-muted);pointer-events:none;
+    }
+    .usage-cycle-popover{
+      display:none;position:absolute;right:0;top:calc(100% + 9px);z-index:80;
+      min-width:190px;padding:12px;border-radius:14px;
+      background:var(--surface);border:1px solid var(--border);
+      box-shadow:0 16px 40px -18px var(--composer-shadow);
+      color:var(--text);font-size:12px;line-height:1.4;
+    }
+    .usage-cycle-popover.visible{display:block;animation:usagePopoverIn .14s ease-out;}
+    @keyframes usagePopoverIn{from{opacity:0;transform:translateY(-4px) scale(.98);}to{opacity:1;transform:translateY(0) scale(1);}}
+    .usage-cycle-popover::before{
+      content:"";position:absolute;right:12px;top:-6px;width:10px;height:10px;
+      background:var(--surface);border-left:1px solid var(--border);border-top:1px solid var(--border);
+      transform:rotate(45deg);
+    }
+    .usage-cycle-pop-title{font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;}
+    .usage-cycle-pop-percent{font-family:'Sora',sans-serif;font-size:24px;font-weight:800;letter-spacing:-.03em;margin-bottom:6px;}
+    .usage-cycle-pop-meta{color:var(--text-muted);display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--border-subtle);padding-top:7px;margin-top:7px;}
+    .usage-cycle-pop-note{color:var(--text-muted);font-size:11px;margin-top:6px;}
+    @media (max-width:560px){
+      .usage-cycle-popover{right:-45px;min-width:178px;}
+      .usage-cycle-popover::before{right:57px;}
+    }
+
     /* ---------- Chat area ---------- */
     main{
       flex:1;
@@ -1726,6 +1770,20 @@
       </div>
     </div>
     <div class="actions">
+      <div class="usage-cycle-wrap" id="usageCycleWrap">
+        <button class="icon-btn usage-cycle-btn" id="usageCycleBtn" aria-label="Usage today" title="Usage today" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle class="usage-cycle-bg" cx="12" cy="12" r="8.5" pathLength="100"></circle>
+            <circle class="usage-cycle-fill" id="usageCycleFill" cx="12" cy="12" r="8.5" pathLength="100"></circle>
+          </svg>
+          <span class="usage-cycle-center" id="usageCycleCenter">0</span>
+        </button>
+        <div class="usage-cycle-popover" id="usageCyclePopover" role="status" aria-live="polite">
+          <div class="usage-cycle-pop-title">Usage today</div>
+          <div class="usage-cycle-pop-percent" id="usageCyclePercent">0%</div>
+          <div class="usage-cycle-pop-note" id="usageCycleNote">Loading usage…</div>
+        </div>
+      </div>
       <button class="icon-btn theme-toggle-btn" id="themeToggleBtn" aria-label="Switch to light theme" title="Toggle theme">
         <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
         <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><line x1="12" y1="2" x2="12" y2="5"></line><line x1="12" y1="19" x2="12" y2="22"></line><line x1="4.22" y1="4.22" x2="6.34" y2="6.34"></line><line x1="17.66" y1="17.66" x2="19.78" y2="19.78"></line><line x1="2" y1="12" x2="5" y2="12"></line><line x1="19" y1="12" x2="22" y2="12"></line><line x1="4.22" y1="19.78" x2="6.34" y2="17.66"></line><line x1="17.66" y1="6.34" x2="19.78" y2="4.22"></line></svg>
@@ -1889,6 +1947,13 @@
   const usageModalOverlay = $('#usageModalOverlay');
   const usageModalCloseBtn = $('#usageModalCloseBtn');
   const usageModalBody = $('#usageModalBody');
+  const usageCycleWrap = $('#usageCycleWrap');
+  const usageCycleBtn = $('#usageCycleBtn');
+  const usageCycleFill = $('#usageCycleFill');
+  const usageCycleCenter = $('#usageCycleCenter');
+  const usageCyclePopover = $('#usageCyclePopover');
+  const usageCyclePercent = $('#usageCyclePercent');
+  const usageCycleNote = $('#usageCycleNote');
   const adminPanelRow = $('#adminPanelRow');
   const adminPanelBtn = $('#adminPanelBtn');
   const adminModalOverlay = $('#adminModalOverlay');
@@ -2821,12 +2886,120 @@
     return `${s}s`;
   }
 
+  let latestUsageData = null;
+  let usageCyclePollTimer = null;
+  let usageCycleRefreshTimer = null;
+
+  async function fetchUsageTodayData(){
+    const res = await fetch('/api/me/usage', { credentials: 'include' });
+    if (!res.ok) throw new Error('request failed');
+    return await res.json();
+  }
+
+  function usageStatsFromData(data){
+    const limit = Number(data?.daily_limit || 0);
+    const used = Number(data?.used_today || 0);
+    const remaining = data?.remaining_today ?? Math.max(limit - used, 0);
+    const pctRaw = limit > 0 ? (used / limit) * 100 : 0;
+    const pct = Math.max(0, Math.min(100, pctRaw));
+    const pctLabel = limit > 0 ? `${Math.round(pct)}%` : '—';
+    const resetIn = data?.seconds_until_reset ? `Resets in ${formatDuration(data.seconds_until_reset)}` : '';
+    return { limit, used, remaining, pct, pctLabel, resetIn };
+  }
+
+  function renderUsageCyclePopover(data){
+    if (!usageCyclePercent || !usageCycleNote) return;
+    if (!data || data.mode === 'testing') {
+      usageCyclePercent.textContent = '—';
+      usageCycleNote.textContent = data?.mode === 'testing' ? 'Usage tracking is off in testing mode.' : 'Usage data not loaded yet.';
+      return;
+    }
+    const st = usageStatsFromData(data);
+    const ownKey = data.mode === 'own_key' || data.using_own_key;
+    const planName = data.plan_label || (ownKey ? 'Personal Groq key' : 'Vigzone default Groq plan');
+    usageCyclePercent.textContent = `${st.pctLabel} used`;
+    usageCycleNote.innerHTML = `
+      <strong>${escapeHtml(planName)}</strong>
+      <div class="usage-cycle-pop-meta"><span>${st.used.toLocaleString()} used</span><span>${st.limit ? st.limit.toLocaleString() : 'No'} limit</span></div>
+      <div class="usage-cycle-pop-meta"><span>${Number(st.remaining || 0).toLocaleString()} left</span><span>${escapeHtml(st.resetIn || '')}</span></div>
+    `;
+  }
+
+  function updateUsageCycle(data){
+    latestUsageData = data || latestUsageData;
+    if (!usageCycleBtn || !usageCycleFill || !usageCycleCenter) return;
+    const current = data || latestUsageData;
+    usageCycleBtn.classList.remove('warn', 'danger', 'limit-hit');
+
+    if (!current || current.mode === 'testing') {
+      usageCycleFill.style.strokeDashoffset = '100';
+      usageCycleCenter.textContent = '—';
+      usageCycleBtn.title = current?.mode === 'testing' ? 'Usage tracking off' : 'Usage today';
+      renderUsageCyclePopover(current);
+      return;
+    }
+
+    const st = usageStatsFromData(current);
+    usageCycleFill.style.strokeDashoffset = String(100 - st.pct);
+    usageCycleCenter.textContent = st.limit > 0 ? String(Math.round(st.pct)) : '∞';
+    usageCycleBtn.setAttribute('aria-label', `Usage today: ${st.pctLabel} used`);
+    usageCycleBtn.title = `Usage today: ${st.pctLabel} used`;
+    if (st.pct >= 90) usageCycleBtn.classList.add('danger');
+    else if (st.pct >= 65) usageCycleBtn.classList.add('warn');
+    if (current.is_limited) usageCycleBtn.classList.add('limit-hit');
+    renderUsageCyclePopover(current);
+  }
+
+  async function refreshUsageCycle(){
+    if (!usageCycleBtn) return;
+    try {
+      const data = await fetchUsageTodayData();
+      updateUsageCycle(data);
+    } catch (e) {
+      // Keep the last known ring instead of flashing an error in the header.
+      renderUsageCyclePopover(latestUsageData);
+    }
+  }
+
+  function startUsageCycleLiveUpdates(){
+    if (!usageCycleBtn) return;
+    usageCycleBtn.classList.add('loading');
+    refreshUsageCycle();
+    clearInterval(usageCyclePollTimer);
+    usageCyclePollTimer = setInterval(refreshUsageCycle, 5000);
+  }
+
+  function stopUsageCycleLiveUpdates(){
+    if (!usageCycleBtn) return;
+    usageCycleBtn.classList.remove('loading');
+    clearInterval(usageCyclePollTimer);
+    usageCyclePollTimer = null;
+    refreshUsageCycle();
+  }
+
+  function toggleUsageCyclePopover(e){
+    e?.stopPropagation();
+    if (!usageCyclePopover) return;
+    const willShow = !usageCyclePopover.classList.contains('visible');
+    usageCyclePopover.classList.toggle('visible', willShow);
+    if (willShow) {
+      renderUsageCyclePopover(latestUsageData);
+      refreshUsageCycle();
+    }
+  }
+
+  if (usageCycleBtn) usageCycleBtn.addEventListener('click', toggleUsageCyclePopover);
+  document.addEventListener('click', (e) => {
+    if (usageCyclePopover?.classList.contains('visible') && usageCycleWrap && !usageCycleWrap.contains(e.target)) {
+      usageCyclePopover.classList.remove('visible');
+    }
+  });
+
   async function loadUsageToday(){
     usageModalBody.innerHTML = '<div class="usage-modal-loading">Loading usage…</div>';
     try {
-      const res = await fetch('/api/me/usage', { credentials: 'include' });
-      if (!res.ok) throw new Error('request failed');
-      const data = await res.json();
+      const data = await fetchUsageTodayData();
+      updateUsageCycle(data);
 
       if (data.mode === 'testing') {
         usageModalBody.innerHTML = '<div class="usage-modal-empty">Usage tracking is off in testing mode.</div>';
@@ -3006,6 +3179,7 @@
           resetGroqCheckButton();
           if (groqKeyStatus) { groqKeyStatus.textContent = ''; groqKeyStatus.className = 'api-key-status'; }
           setApiKeyBoxMode(true);
+          refreshUsageCycle();
         } catch (e) {
           if (groqKeyStatus) {
             groqKeyStatus.textContent = e.message || "Couldn't activate this key.";
@@ -3065,6 +3239,7 @@
       } catch (e) { /* best-effort */ }
       groqKeyDeactivateBtn.disabled = false;
       setApiKeyBoxMode(false);
+      refreshUsageCycle();
     });
   }
 
@@ -3097,6 +3272,7 @@
       if (adminPanelRow && data.user && data.user.is_admin) adminPanelRow.style.display = '';
       updateGreeting();
       refreshApiKeyBox();
+      refreshUsageCycle();
     } catch(e) {
       // Network hiccup — leave the UI as-is rather than bouncing the user.
       console.error("Auth check failed, likely offline.", e);
@@ -3626,6 +3802,7 @@
     const thinkingTagEl = requestIsComplex ? showThinkingTag(avatarEl) : null;
     streaming = true;
     updateSendButtonState();
+    startUsageCycleLiveUpdates();
 
     activeStreamBubble = assistantBubble;
 
@@ -3715,6 +3892,7 @@
       activeStreamBubble = null;
       getActiveStreamReply = null;
       updateSendButtonState();
+      stopUsageCycleLiveUpdates();
     }
   }
 
@@ -4407,6 +4585,7 @@
 
       streaming = true;
       updateSendButtonState();
+      startUsageCycleLiveUpdates();
 
       while (true) {
         const { done, value } = await reader.read();
@@ -4447,6 +4626,7 @@
     clearAvatarThinkingState(avatarEl, thinkingTagEl);
     streaming = false;
     updateSendButtonState();
+    stopUsageCycleLiveUpdates();
   }
 
   // ===== LIVE VOICE MODE (hands-free conversation, like Gemini Live) =====
@@ -4561,6 +4741,7 @@
   async function sendLiveVoiceTurn(text) {
     setLiveVoiceState('thinking', 'Vigi is thinking…');
     liveCaptionEl.textContent = text;
+    startUsageCycleLiveUpdates();
 
     renderMessage('user', text, { index: messages.length });
     messages.push({ role: 'user', content: text });
@@ -4623,12 +4804,14 @@
       messages.push({ role: 'assistant', content: fullReply, displayText: fullReply });
       saveConversation();
       clearAvatarThinkingState(avatarEl, thinkingTagEl);
+      stopUsageCycleLiveUpdates();
 
       if (!liveVoiceActive) return; // overlay was closed while waiting
       liveCaptionEl.textContent = truncateText(fullReply, 220);
       speakLiveReply(fullReply);
     } catch (err) {
       clearAvatarThinkingState(avatarEl, thinkingTagEl);
+      stopUsageCycleLiveUpdates();
       assistantBubble.classList.add('error-bubble');
       assistantBubble.innerHTML = `⚠ ${escapeHtml(err.message || 'Something went wrong.')}`;
       if (!liveVoiceActive) return;
@@ -4901,6 +5084,7 @@
   checkHealth();
   loadAccount();
   autoResize();
+  usageCycleRefreshTimer = setInterval(refreshUsageCycle, 60000);
 </script>
 </body>
 </html>
