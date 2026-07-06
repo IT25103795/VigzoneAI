@@ -624,6 +624,16 @@
       pointer-events:auto;
     }
     .usage-cycle-popover.visible{display:block;animation:usagePopoverIn .14s ease-out;}
+    .floating-menu-backdrop{
+      display:none;
+      position:fixed;
+      inset:0;
+      z-index:2147483600;
+      background:transparent;
+      pointer-events:auto;
+    }
+    .floating-menu-backdrop.visible{display:block;}
+
     @keyframes usagePopoverIn{from{opacity:0;transform:translateY(-4px) scale(.98);}to{opacity:1;transform:translateY(0) scale(1);}}
     .usage-cycle-popover::before{display:none;}
     .usage-cycle-pop-title{font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;}
@@ -2062,6 +2072,10 @@
   const usageCyclePopover = $('#usageCyclePopover');
   const usageCyclePercent = $('#usageCyclePercent');
   const usageCycleNote = $('#usageCycleNote');
+  const floatingMenuBackdrop = document.createElement('div');
+  floatingMenuBackdrop.className = 'floating-menu-backdrop';
+  floatingMenuBackdrop.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(floatingMenuBackdrop);
 
   // Keep small floating menus above all chat bubbles by moving them to <body>
   // and positioning them with viewport coordinates. This avoids clipping/stacking
@@ -2103,6 +2117,13 @@
 
   function positionUsageCyclePopover(){ positionFloatingMenu(usageCyclePopover, usageCycleBtn, 'bottom-right'); }
   function positionExportMenu(){ positionFloatingMenu(exportMenu, exportChatBtn, 'side-right'); }
+  function anyFloatingMenuOpen(){
+    return !!(usageCyclePopover?.classList.contains('visible') || exportMenu?.classList.contains('visible'));
+  }
+  function syncFloatingMenuBackdrop(){
+    if (!floatingMenuBackdrop) return;
+    floatingMenuBackdrop.classList.toggle('visible', anyFloatingMenuOpen());
+  }
   const adminPanelRow = $('#adminPanelRow');
   const adminPanelBtn = $('#adminPanelBtn');
   const adminModalOverlay = $('#adminModalOverlay');
@@ -3147,6 +3168,7 @@
     if (exportMenu?.classList.contains('visible')) {
       exportMenu.classList.remove('visible');
     }
+    syncFloatingMenuBackdrop();
   }
 
   function exportChat(format){
@@ -3178,6 +3200,7 @@
     const wasOpen = !!exportMenu?.classList.contains('visible');
     closeFloatingMenus('export');
     exportMenu?.classList.toggle('visible', !wasOpen);
+    syncFloatingMenuBackdrop();
     if (!wasOpen) positionExportMenu();
   });
   exportTxtBtn?.addEventListener('click', (e)=>{ e.stopPropagation(); exportChat('txt'); closeExportMenu(); });
@@ -3320,6 +3343,7 @@
     if (usageCyclePopover?.classList.contains('visible')) {
       usageCyclePopover.classList.remove('visible');
     }
+    syncFloatingMenuBackdrop();
   }
 
   function closeFloatingMenus(except){
@@ -3333,6 +3357,7 @@
     const wasOpen = usageCyclePopover.classList.contains('visible');
     closeFloatingMenus('usage');
     usageCyclePopover.classList.toggle('visible', !wasOpen);
+    syncFloatingMenuBackdrop();
     if (!wasOpen) {
       renderUsageCyclePopover(latestUsageData);
       positionUsageCyclePopover();
@@ -3363,6 +3388,16 @@
   ['pointerdown', 'mousedown', 'touchstart', 'click'].forEach((eventName) => {
     document.addEventListener(eventName, handleOutsideFloatingMenuTap, true);
     window.addEventListener(eventName, handleOutsideFloatingMenuTap, true);
+  });
+
+  // Strong fallback: when a menu is open, this invisible full-screen layer
+  // sits behind the menu and catches any outside tap/click.
+  ['pointerdown', 'mousedown', 'touchstart', 'click'].forEach((eventName) => {
+    floatingMenuBackdrop.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      closeFloatingMenus();
+    }, true);
   });
 
   // Keyboard accessibility: Escape closes all floating menus too.
