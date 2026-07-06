@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="theme-color" content="#080a0f" id="themeColorMeta" />
 <title>Vigzone AI - Sign in</title>
-<link rel="icon" href="/static/icons/favicon.svg?v=logo1-clean" type="image/svg+xml" />
-<link rel="apple-touch-icon" href="/static/icons/vigzone-icon.svg?v=logo1-clean" />
+<link rel="icon" href="/static/icons/favicon.svg?v=logo1-simple" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="/static/icons/vigzone-icon.svg?v=logo1-simple" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -844,6 +844,18 @@
     .auth-tabs{border-radius:14px;}
     .auth-tab{font-size:12.5px;}
   }
+/* logo1-simple-fix */
+
+.brand-mark{
+  background:linear-gradient(145deg,#172033,#080c16) !important;
+  overflow:hidden;
+}
+.brand-mark img,.signal-core img{
+  width:82% !important;
+  height:82% !important;
+  object-fit:contain !important;
+}
+
 </style>
 </head>
 <body>
@@ -853,7 +865,7 @@
 <div class="page">
   <header class="topbar">
     <div class="brand">
-      <div class="brand-mark"><img src="/static/icons/vigzone-icon.svg?v=logo1-clean" alt="" width="24" height="24" /></div>
+      <div class="brand-mark"><img src="/static/icons/vigzone-icon.svg?v=logo1-simple" alt="" width="24" height="24" /></div>
       <div class="brand-name">Vigzone AI</div>
     </div>
     <div class="top-actions">
@@ -879,7 +891,7 @@
         <span class="node two"></span>
         <span class="node three"></span>
         <span class="node four"></span>
-        <div class="signal-core"><img src="/static/icons/vigzone-icon.svg?v=logo1-clean" alt="" /></div>
+        <div class="signal-core"><img src="/static/icons/vigzone-icon.svg?v=logo1-simple" alt="" /></div>
         <div class="intel-card top">
           <div class="intel-label">Reasoning stream</div>
           <div class="intel-bars"><span></span><span></span><span></span></div>

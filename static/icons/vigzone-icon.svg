@@ -1,32 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-label="Vigzone AI">
   <defs>
-    <linearGradient id="v" x1="14" y1="10" x2="49" y2="55" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FF9A6A"/>
-      <stop offset="0.48" stop-color="#FF6F4D"/>
-      <stop offset="1" stop-color="#FF4F2E"/>
+    <linearGradient id="v" x1="14" y1="12" x2="50" y2="52" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF9C6D"/>
+      <stop offset="0.52" stop-color="#FF7250"/>
+      <stop offset="1" stop-color="#FF512F"/>
     </linearGradient>
-    <linearGradient id="bg" x1="6" y1="4" x2="58" y2="60" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#172033"/>
-      <stop offset="1" stop-color="#0A0E19"/>
-    </linearGradient>
-    <filter id="glow" x="-10" y="-10" width="84" height="84" filterUnits="userSpaceOnUse">
-      <feGaussianBlur stdDeviation="1.2" result="b"/>
-      <feMerge>
-        <feMergeNode in="b"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
+    <filter id="s" x="4" y="3" width="56" height="58" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#FF6B4A" flood-opacity=".28"/>
     </filter>
   </defs>
-  <rect x="2" y="2" width="60" height="60" rx="17" fill="url(#bg)"/>
-  <rect x="2.75" y="2.75" width="58.5" height="58.5" rx="16.25" stroke="#FFFFFF" stroke-opacity=".10" stroke-width="1.5"/>
-  <g filter="url(#glow)">
-    <path d="M14.7 17.2c-.85-1.5.25-3.35 1.97-3.35h8.1c.86 0 1.65.49 2.02 1.27l7.15 15.05c.48 1.02 1.92 1.02 2.4 0l7.15-15.05a2.25 2.25 0 0 1 2.03-1.27h8.08c1.73 0 2.82 1.85 1.97 3.35L38.1 48.05c-.87 1.54-3.09 1.54-3.96 0L14.7 17.2Z" fill="url(#v)"/>
-    <path d="M23.4 16.7 35.2 42.4c.34.74 1.39.74 1.73 0l12-25.7" stroke="#FFD5C7" stroke-opacity=".32" stroke-width="2.2" stroke-linecap="round"/>
-    <path d="M32 14v9" stroke="#3E455D" stroke-width="3" stroke-linecap="round"/>
-    <path d="M32 21.5 25.8 27.5M32 21.5l6.2 6" stroke="#3E455D" stroke-width="3" stroke-linecap="round"/>
-    <circle cx="32" cy="13.4" r="4.2" fill="#FF7858"/>
-    <circle cx="25.3" cy="28" r="3" fill="#3E455D"/>
-    <circle cx="38.7" cy="28" r="3" fill="#3E455D"/>
-    <circle cx="32" cy="24.2" r="3" fill="#3E455D"/>
+  <g filter="url(#s)">
+    <path d="M13.8 17.2c-.74-1.34.23-2.98 1.76-2.98h7.2c.76 0 1.46.43 1.8 1.11L34.2 35c.55 1.13 2.17 1.13 2.72 0l9.64-19.67c.34-.68 1.04-1.11 1.8-1.11h7.08c1.54 0 2.5 1.65 1.76 2.98L39.13 49.62c-.88 1.58-3.14 1.58-4.02 0L13.8 17.2Z" fill="url(#v)"/>
+    <path d="M24.5 16.9 34.9 40.1c.42.94 1.76.94 2.18 0L47.8 16.9" stroke="#FFD7CB" stroke-opacity=".38" stroke-width="2.1" stroke-linecap="round"/>
+    <path d="M32 13.8v10.3" stroke="#2F354A" stroke-width="3.1" stroke-linecap="round"/>
+    <path d="M32 22.7 25.4 28.7M32 22.7l6.6 6" stroke="#2F354A" stroke-width="3.1" stroke-linecap="round"/>
+    <circle cx="32" cy="12.8" r="4.35" fill="#FF7A58"/>
+    <circle cx="25" cy="29.1" r="3.05" fill="#2F354A"/>
+    <circle cx="39" cy="29.1" r="3.05" fill="#2F354A"/>
+    <circle cx="32" cy="25.4" r="3.05" fill="#2F354A"/>
   </g>
 </svg>
