@@ -1701,6 +1701,133 @@
     .export-menu button{pointer-events:auto;position:relative;z-index:1;}
     @media (max-width:760px){.file-intel-grid{grid-template-columns:1fr}.mode-menu{width:220px}}
 
+
+    /* ---------- Composer redesign: ChatGPT-style compact pill ---------- */
+    .composer.compact-composer{
+      max-width:780px;
+      width:min(780px, calc(100vw - 28px));
+      min-height:52px;
+      border-radius:999px;
+      padding:6px 8px;
+      gap:7px;
+      flex-wrap:nowrap;
+      align-items:center;
+      background:var(--composer-bg);
+    }
+    .composer.compact-composer textarea{
+      min-width:0;
+      flex:1 1 auto;
+      min-height:34px;
+      max-height:96px;
+      padding:6px 2px;
+      margin:0;
+      order:0;
+      font-size:14.5px;
+      line-height:1.45;
+    }
+    .composer.compact-composer .attach-btn,
+    .composer.compact-composer .mic-btn,
+    .composer.compact-composer .send-btn,
+    .composer.compact-composer .pause-btn{
+      width:38px;
+      height:38px;
+      min-width:38px;
+      border-radius:14px;
+      margin:0;
+      flex:0 0 auto;
+    }
+    .composer.compact-composer .mode-menu-wrap,
+    .composer.compact-composer .mic-wrapper{
+      flex:0 0 auto;
+      margin:0;
+    }
+    .composer.compact-composer .pause-btn:not(.active){
+      display:none !important;
+    }
+    .composer.compact-composer #goToBottomBtn{
+      display:none !important;
+    }
+    .plus-menu-btn .plus-icon{
+      width:18px;
+      height:18px;
+      display:block;
+    }
+    .plus-menu-btn .mode-dot{
+      display:none !important;
+    }
+    .plus-menu-btn .mode-menu-current{
+      position:absolute;
+      right:-3px;
+      top:-5px;
+      min-width:16px;
+      height:16px;
+      padding:0 4px;
+      border-radius:999px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background:var(--surface);
+      border:1px solid var(--border);
+      color:var(--accent);
+      font-size:9px;
+      font-weight:800;
+      line-height:1;
+    }
+    .mode-menu .mode-menu-title:not(:first-child){
+      margin-top:6px;
+      padding-top:8px;
+      border-top:1px solid var(--border-subtle);
+    }
+    .mode-menu-item#attachBtn,
+    .mode-menu-item#imageModeBtn{
+      color:var(--text);
+    }
+    .mode-menu-item#imageModeBtn.active{
+      color:var(--accent);
+      background:var(--accent-dim);
+    }
+    .voice-lang-select{
+      display:none !important;
+    }
+    @media (max-width:560px){
+      .composer-wrap{
+        padding:10px 10px 12px;
+      }
+      .composer.compact-composer{
+        width:calc(100vw - 20px);
+        min-height:50px;
+        padding:6px;
+        gap:5px;
+        border-radius:999px;
+        flex-wrap:nowrap !important;
+        justify-content:flex-start !important;
+      }
+      .composer.compact-composer textarea{
+        flex:1 1 auto !important;
+        order:0 !important;
+        margin:0 !important;
+        min-width:0;
+        font-size:14px;
+      }
+      .composer.compact-composer .attach-btn,
+      .composer.compact-composer .mic-btn,
+      .composer.compact-composer .send-btn,
+      .composer.compact-composer .pause-btn{
+        width:36px;
+        height:36px;
+        min-width:36px;
+        border-radius:13px;
+      }
+      .composer.compact-composer .mode-menu{
+        left:0;
+        bottom:calc(100% + 10px);
+        width:min(280px, calc(100vw - 32px));
+      }
+      .chat-inner{
+        padding-bottom:132px !important;
+      }
+    }
+
   </style>
 </head>
 <body style="display: none;">
@@ -1971,18 +2098,22 @@
     <div id="imageModeHintSlot"></div>
     <div class="attachments-bar" id="attachmentsBar"></div>
     <div class="quote-preview-bar" id="quotePreviewBar"></div>
-    <div class="composer">
+    <div class="composer compact-composer">
       <input type="file" id="fileInput" multiple hidden
              accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/tiff,image/svg+xml,.png,.jpg,.jpeg,.webp,.gif,.bmp,.tiff,.ico,.svg,.pdf,.docx,.doc,.odt,.rtf,.xlsx,.xlsm,.xls,.csv,.tsv,.pptx,.ppt,.txt,.md,.log,.json,.jsonl,.xml,.yaml,.yml,.toml,.zip,.tar,.gz,.tgz,.py,.js,.ts,.jsx,.tsx,.java,.c,.cpp,.h,.cs,.go,.rs,.rb,.php,.swift,.kt,.sh,.sql,.mp3,.wav,.mp4,.mov" />
-      <button class="attach-btn" id="attachBtn" aria-label="Attach file" title="Attach any file — images, PDFs, Word, Excel, PowerPoint, code, JSON, ZIP, audio and more">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
-      </button>
       <div class="mode-menu-wrap" id="modeMenuWrap">
-        <button class="attach-btn mode-menu-btn" id="modeMenuBtn" aria-label="Smart modes" title="Smart modes" type="button">
-          <span class="mode-dot" aria-hidden="true"></span>
-          <span class="mode-menu-current" id="modeMenuCurrent">G</span>
+        <button class="attach-btn mode-menu-btn plus-menu-btn" id="modeMenuBtn" aria-label="Open tools" title="Tools and smart modes" type="button">
+          <svg class="plus-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          <span class="mode-menu-current" id="modeMenuCurrent" aria-hidden="true">G</span>
         </button>
-        <div class="mode-menu" id="modeMenu" role="menu" aria-label="Choose smart mode">
+        <div class="mode-menu" id="modeMenu" role="menu" aria-label="Vigzone tools and smart modes">
+          <div class="mode-menu-title">Actions</div>
+          <button class="mode-menu-item" id="attachBtn" type="button" role="menuitem">
+            <span><b>Attach file</b><div class="mode-menu-sub">Images, PDFs, docs, code, ZIPs</div></span>
+          </button>
+          <button class="mode-menu-item" id="imageModeBtn" type="button" role="menuitem" aria-pressed="false">
+            <span><b>Generate image</b><div class="mode-menu-sub">Create or edit images</div></span>
+          </button>
           <div class="mode-menu-title">Smart mode</div>
           <button class="mode-menu-item" data-mode="general" type="button" role="menuitem"><span><b>General</b><div class="mode-menu-sub">Normal AI chat</div></span></button>
           <button class="mode-menu-item" data-mode="website" type="button" role="menuitem"><span><b>Website Studio</b><div class="mode-menu-sub">Modern websites</div></span></button>
@@ -1993,10 +2124,7 @@
           <button class="mode-menu-item" data-mode="voice" type="button" role="menuitem"><span><b>Voice</b><div class="mode-menu-sub">Voice-first responses</div></span></button>
         </div>
       </div>
-      <button class="attach-btn" id="imageModeBtn" aria-label="Generate an image" title="Generate an image from a text prompt">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="M21 15l-5-5L5 21"></path></svg>
-      </button>
-      <textarea id="input" placeholder="Message Vigzone AI, or attach any file…" rows="1"></textarea>
+      <textarea id="input" placeholder="Ask anything" rows="1"></textarea>
       <button class="pause-btn" id="pauseBtn" aria-label="Pause" title="Pause response">
         <svg class="pause-icon" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
         <svg class="play-icon" viewBox="0 0 24 24" fill="currentColor" style="display: none;"><path d="M8 5v14l11-7z"></path></svg>
@@ -2005,23 +2133,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10v4"/><path d="M6 6v12"/><path d="M10 3v18"/><path d="M14 6v12"/><path d="M18 9v6"/><path d="M22 11v2"/></svg>
       </button>
       <div class="mic-wrapper" id="micWrapper">
-        <div class="mic-tooltip" id="micTooltip">Tap &amp; hold to record</div>
-        <select class="voice-lang-select" id="voiceLangSelect" aria-label="Voice input language" title="Voice input language — pick the language you'll speak">
-          <option value="">🌐 Auto</option>
-          <option value="en-US">English</option>
-          <option value="si-LK">සිංහල — Sinhala</option>
-          <option value="ta-IN">தமிழ் — Tamil</option>
-          <option value="hi-IN">हिन्दी — Hindi</option>
-          <option value="ar-SA">العربية — Arabic</option>
-          <option value="es-ES">Español — Spanish</option>
-          <option value="fr-FR">Français — French</option>
-          <option value="de-DE">Deutsch — German</option>
-          <option value="pt-BR">Português — Portuguese</option>
-          <option value="ru-RU">Русский — Russian</option>
-          <option value="zh-CN">中文 — Chinese</option>
-          <option value="ja-JP">日本語 — Japanese</option>
-          <option value="ko-KR">한국어 — Korean</option>
-        </select>
+        <div class="mic-tooltip" id="micTooltip">Hold to record</div>
         <button class="mic-btn" id="micBtn" aria-label="Voice message" title="Hold to record voice message">
           <svg class="mic-icon-idle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
           <svg class="mic-icon-recording" viewBox="0 0 24 24" fill="currentColor" style="display:none"><circle cx="12" cy="12" r="8" opacity="0.2"/><circle cx="12" cy="12" r="4"/></svg>
@@ -2030,7 +2142,7 @@
       <button class="send-btn" id="sendBtn" aria-label="Send">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
       </button>
-      <button class="go-to-bottom-btn" id="goToBottomBtn" aria-label="Go to bottom">
+      <button class="go-to-bottom-btn" id="goToBottomBtn" aria-label="Go to bottom" hidden>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg>
       </button>
     </div>
@@ -3092,7 +3204,7 @@
     localStorage.setItem('vigzone_ai_mode', activeAiMode);
     if (aiModeSelect) aiModeSelect.value = activeAiMode;
     if (modeMenuCurrent) modeMenuCurrent.textContent = MODE_BADGES[activeAiMode] || 'G';
-    if (modeMenuBtn) modeMenuBtn.title = `Smart mode: ${MODE_LABELS[activeAiMode] || 'General'}`;
+    if (modeMenuBtn) modeMenuBtn.title = `Tools • Smart mode: ${MODE_LABELS[activeAiMode] || 'General'}`;
     modeMenu?.querySelectorAll('[data-mode]').forEach(btn => btn.classList.toggle('active', btn.dataset.mode === activeAiMode));
   }
   if (aiModeSelect) {
@@ -4375,11 +4487,11 @@
 
   function setImageMode(on){
     imageMode = on;
-    imageModeBtn.classList.toggle('active', imageMode);
-    imageModeBtn.setAttribute('aria-pressed', imageMode ? 'true' : 'false');
+    imageModeBtn?.classList.toggle('active', imageMode);
+    imageModeBtn?.setAttribute('aria-pressed', imageMode ? 'true' : 'false');
     input.placeholder = imageMode
-            ? 'Describe the image to generate, or attach a photo + describe a change…'
-            : 'Message Vigzone AI, or attach an image/document…';
+            ? 'Describe the image to generate or edit…'
+            : 'Ask anything';
     updateImageModeHint();
   }
 
@@ -4484,7 +4596,7 @@
     }
   }
 
-  imageModeBtn.addEventListener('click', () => setImageMode(!imageMode));
+  imageModeBtn?.addEventListener('click', () => { setImageMode(!imageMode); modeMenu?.classList.remove('visible'); input?.focus(); });
 
 
   async function pauseStream(){
@@ -4668,7 +4780,7 @@
     renderAttachmentsBar();
   }
 
-  attachBtn.addEventListener('click', () => fileInput.click());
+  attachBtn?.addEventListener('click', () => { modeMenu?.classList.remove('visible'); fileInput.click(); });
   fileInput.addEventListener('change', (e) => {
     handleFiles(e.target.files);
     fileInput.value = '';
@@ -4755,19 +4867,14 @@
   const VOICE_LANG_KEY = 'vigzone_voice_lang';
 
   function getVoiceInputLang() {
-    try {
-      const saved = localStorage.getItem(VOICE_LANG_KEY);
-      if (saved) return saved;
-    } catch {}
     return navigator.language || 'en-US';
   }
 
   function getExplicitVoiceInputLang() {
-    try {
-      return (voiceLangSelect && voiceLangSelect.value) ? voiceLangSelect.value : '';
-    } catch {
-      return '';
-    }
+    // No manual selector anymore: Groq Whisper can auto-detect language when
+    // no language is sent. Browser SpeechRecognition still uses the device
+    // language for the quick local pass, then Groq fallback handles auto-detect.
+    return '';
   }
 
   async function transcribeVoiceBlob(blob) {
