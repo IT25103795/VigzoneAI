@@ -1756,22 +1756,7 @@
       display:none !important;
     }
     .plus-menu-btn .mode-menu-current{
-      position:absolute;
-      right:-3px;
-      top:-5px;
-      min-width:16px;
-      height:16px;
-      padding:0 4px;
-      border-radius:999px;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      background:var(--surface);
-      border:1px solid var(--border);
-      color:var(--accent);
-      font-size:9px;
-      font-weight:800;
-      line-height:1;
+      display:none !important;
     }
     .mode-menu .mode-menu-title:not(:first-child){
       margin-top:6px;
@@ -1825,6 +1810,376 @@
       }
       .chat-inner{
         padding-bottom:132px !important;
+      }
+    }
+
+
+    /* ---------- Gemini-style + menu redesign ---------- */
+    .plus-tools-menu{
+      left:0 !important;
+      bottom:calc(100% + 12px) !important;
+      width:310px !important;
+      padding:10px !important;
+      border-radius:24px !important;
+      background:color-mix(in srgb, var(--surface) 94%, #000 6%) !important;
+      border:1px solid var(--border-subtle) !important;
+      box-shadow:0 24px 70px -26px var(--composer-shadow), 0 10px 28px rgba(0,0,0,.20) !important;
+      gap:0 !important;
+      max-height:min(74vh, 620px);
+      overflow-y:auto;
+      scrollbar-width:thin;
+    }
+    [data-theme="dark"] .plus-tools-menu{
+      background:#202020 !important;
+      border-color:rgba(255,255,255,.08) !important;
+      box-shadow:0 24px 70px -18px rgba(0,0,0,.78) !important;
+    }
+    .plus-tools-menu.visible{
+      display:block !important;
+      animation:usagePopoverIn .14s ease-out;
+    }
+    .plus-tools-menu::after{
+      display:none !important;
+    }
+    .plus-menu-head{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      padding:2px 6px 10px;
+      color:var(--text-muted);
+      font-size:14px;
+      font-weight:700;
+    }
+    .plus-menu-close{
+      width:34px;
+      height:34px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      border:none;
+      border-radius:50%;
+      background:transparent;
+      color:var(--text-muted);
+      cursor:pointer;
+      transition:background .15s ease, color .15s ease;
+    }
+    .plus-menu-close:hover{
+      background:var(--surface-2);
+      color:var(--text);
+    }
+    .plus-menu-close svg{
+      width:20px;
+      height:20px;
+    }
+    .plus-menu-group{
+      display:grid;
+      gap:3px;
+    }
+    .plus-menu-separator{
+      height:1px;
+      background:var(--border);
+      margin:12px 10px;
+    }
+    .plus-menu-title{
+      padding:0 10px 8px;
+      color:var(--text-muted);
+      font-size:11px;
+      text-transform:uppercase;
+      font-weight:800;
+      letter-spacing:.05em;
+    }
+    .plus-menu-row{
+      width:100% !important;
+      min-height:46px;
+      display:flex !important;
+      align-items:center !important;
+      justify-content:flex-start !important;
+      gap:12px !important;
+      padding:9px 12px !important;
+      border-radius:15px !important;
+      background:transparent !important;
+      color:var(--text) !important;
+      border:none !important;
+      text-align:left !important;
+      font-family:'Inter',sans-serif !important;
+      cursor:pointer;
+      position:relative;
+    }
+    .plus-menu-row:hover,
+    .plus-menu-row.primary-row{
+      background:var(--surface-2) !important;
+    }
+    [data-theme="dark"] .plus-menu-row:hover,
+    [data-theme="dark"] .plus-menu-row.primary-row{
+      background:#2f2f2f !important;
+    }
+    .plus-menu-icon{
+      width:26px;
+      height:26px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      flex:0 0 auto;
+      color:var(--text-muted);
+    }
+    .plus-menu-icon svg{
+      width:21px;
+      height:21px;
+    }
+    .plus-menu-text{
+      min-width:0;
+      flex:1;
+      display:flex;
+      flex-direction:column;
+      gap:1px;
+    }
+    .plus-menu-text b{
+      font-size:14px;
+      font-weight:750;
+      color:var(--text);
+      line-height:1.2;
+    }
+    .plus-menu-text small{
+      font-size:11.5px;
+      color:var(--text-muted);
+      line-height:1.25;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .plus-menu-chevron{
+      color:var(--text-muted);
+      font-size:24px;
+      line-height:1;
+      flex:0 0 auto;
+      margin-left:4px;
+    }
+    .plus-tools-menu .disabled-row{
+      opacity:.52;
+      cursor:not-allowed !important;
+    }
+    .plus-tools-menu .disabled-row:hover{
+      background:transparent !important;
+    }
+    .plus-tools-menu #imageModeBtn.active,
+    .plus-tools-menu #imageModeBtn[aria-pressed="true"]{
+      background:var(--accent-dim) !important;
+      color:var(--accent) !important;
+    }
+    .plus-tools-menu #imageModeBtn.active .plus-menu-icon,
+    .plus-tools-menu #imageModeBtn[aria-pressed="true"] .plus-menu-icon,
+    .plus-tools-menu #imageModeBtn.active .plus-menu-text b,
+    .plus-tools-menu #imageModeBtn[aria-pressed="true"] .plus-menu-text b{
+      color:var(--accent) !important;
+    }
+    .plus-mode-grid{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:6px;
+      padding:0 2px 2px;
+    }
+    .plus-mode-chip{
+      width:100% !important;
+      min-height:36px;
+      display:flex !important;
+      align-items:center !important;
+      justify-content:center !important;
+      border-radius:13px !important;
+      background:var(--surface-2) !important;
+      border:1px solid var(--border-subtle) !important;
+      color:var(--text-muted) !important;
+      padding:8px 9px !important;
+      font-size:12px !important;
+      font-weight:750 !important;
+      text-align:center !important;
+      cursor:pointer;
+    }
+    [data-theme="dark"] .plus-mode-chip{
+      background:#2a2a2a !important;
+    }
+    .plus-mode-chip:hover{
+      color:var(--text) !important;
+      border-color:var(--hover-border) !important;
+    }
+    .plus-mode-chip.active{
+      color:var(--accent) !important;
+      background:var(--accent-dim) !important;
+      border-color:color-mix(in srgb, var(--accent) 55%, transparent) !important;
+    }
+    @media (max-width:560px){
+      .plus-tools-menu{
+        width:min(310px, calc(100vw - 24px)) !important;
+        left:0 !important;
+        bottom:calc(100% + 10px) !important;
+        border-radius:22px !important;
+        max-height:min(72vh, 560px);
+      }
+      .plus-menu-head{
+        padding-bottom:8px;
+      }
+      .plus-menu-row{
+        min-height:44px;
+        padding:8px 11px !important;
+      }
+      .plus-menu-text small{
+        display:none;
+      }
+      .plus-mode-grid{
+        grid-template-columns:1fr;
+      }
+    }
+
+
+    /* ---------- Gemini-style + tools menu ---------- */
+    .plus-tools-menu{
+      width:310px !important;
+      padding:10px !important;
+      border-radius:22px !important;
+      background:color-mix(in srgb, var(--surface) 96%, #000 4%) !important;
+      border:1px solid var(--border-subtle) !important;
+      box-shadow:0 24px 60px -20px var(--composer-shadow), 0 10px 28px rgba(0,0,0,.18) !important;
+      gap:4px !important;
+      z-index:2147483647 !important;
+    }
+    .plus-tools-menu.visible{
+      display:flex !important;
+      flex-direction:column;
+      animation:usagePopoverIn .14s ease-out;
+    }
+    .plus-tools-menu::after{display:none !important;}
+    .plus-menu-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding:2px 4px 8px;
+      color:var(--text-muted);
+    }
+    .plus-menu-title{
+      font-size:12px;
+      font-weight:800;
+      letter-spacing:.04em;
+      text-transform:uppercase;
+    }
+    .plus-menu-close{
+      width:28px;
+      height:28px;
+      border-radius:10px;
+      border:none;
+      background:transparent;
+      color:var(--text-muted);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      cursor:pointer;
+    }
+    .plus-menu-close:hover{
+      background:var(--surface-2);
+      color:var(--text);
+    }
+    .plus-menu-close svg{width:16px;height:16px;}
+    .plus-tools-menu .mode-menu-title{display:none;}
+    .plus-tools-menu .mode-menu-item{
+      min-height:46px;
+      width:100%;
+      display:flex;
+      align-items:center;
+      justify-content:flex-start;
+      gap:14px;
+      padding:10px 12px;
+      border-radius:16px;
+      color:var(--text);
+      background:transparent;
+      border:none;
+      font:700 14px 'Inter',sans-serif;
+      text-align:left;
+      cursor:pointer;
+      position:relative;
+    }
+    .plus-tools-menu .mode-menu-item:hover,
+    .plus-tools-menu .mode-menu-item.active{
+      background:var(--surface-2);
+      color:var(--text);
+    }
+    .plus-tools-menu .mode-menu-item.disabled{
+      opacity:.55;
+      cursor:not-allowed;
+    }
+    .plus-tools-menu .mode-menu-item.disabled:hover{
+      background:transparent;
+    }
+    .plus-menu-icon{
+      width:24px;
+      min-width:24px;
+      height:24px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      color:var(--text-muted);
+      font-size:16px;
+    }
+    .plus-menu-icon svg{
+      width:22px;
+      height:22px;
+      display:block;
+    }
+    .plus-menu-label{
+      flex:1;
+      min-width:0;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+    .plus-menu-chevron{
+      margin-left:auto;
+      color:var(--text-muted);
+      font-size:26px;
+      line-height:1;
+      transform:translateY(-1px);
+    }
+    .plus-menu-separator{
+      height:1px;
+      background:var(--border-subtle);
+      margin:10px 10px;
+    }
+    .plus-submenu{
+      display:none;
+      flex-direction:column;
+      gap:3px;
+      margin:0 0 4px 38px;
+      padding-left:10px;
+      border-left:1px solid var(--border-subtle);
+    }
+    .plus-submenu.visible{
+      display:flex;
+    }
+    .plus-submenu .mode-menu-item{
+      min-height:38px;
+      padding:8px 10px;
+      font-size:13px;
+      border-radius:12px;
+      color:var(--text-muted);
+    }
+    .plus-submenu .mode-menu-item:hover,
+    .plus-submenu .mode-menu-item.active{
+      color:var(--text);
+      background:var(--surface-2);
+    }
+    .plus-tools-menu #imageModeBtn.active{
+      background:var(--accent-dim);
+      color:var(--accent);
+    }
+    [data-theme="dark"] .plus-tools-menu{
+      background:#202020 !important;
+      border-color:rgba(255,255,255,.08) !important;
+    }
+    [data-theme="dark"] .plus-tools-menu .mode-menu-item:hover,
+    [data-theme="dark"] .plus-submenu .mode-menu-item:hover{
+      background:rgba(255,255,255,.08);
+    }
+    @media (max-width:560px){
+      .plus-tools-menu{
+        width:min(310px, calc(100vw - 28px)) !important;
+        border-radius:20px !important;
       }
     }
 
@@ -2045,26 +2400,75 @@
               <span>Attach files</span>
             </div>
             <div class="starter-item">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="M21 15l-5-5L5 21"></path></svg>
-              <span>Use image mode</span>
-            </div>
-            <div class="starter-item">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a5 5 0 0 0-5 5v2a5 5 0 0 0 0 10 5 5 0 0 0 5 3 5 5 0 0 0 5-3 5 5 0 0 0 0-10V7a5 5 0 0 0-5-5z"></path></svg>
-              <span>Keep context</span>
-            </div>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.<div class="mode-menu plus-tools-menu" id="modeMenu" role="menu" aria-label="Vigzone tools and smart modes">
+          <div class="plus-menu-head">
+            <div class="plus-menu-title">Vigzone tools</div>
+            <button class="plus-menu-close" id="plusMenuCloseBtn" type="button" aria-label="Close tools menu">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
           </div>
-          <div class="suggestions">
-            <div class="suggestion" data-prompt="I need to finish this today: [describe the task]. Help me turn it into a clear plan with the next 3 actions." tabindex="0" role="button" aria-label="Turn a task into a plan">
-              <div class="suggestion-top">
-                <div class="s-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg></div>
-                <div><div class="s-title">Turn a task into a plan</div><div class="s-sub">Get next steps for work you need to finish</div></div>
-              </div>
-            </div>
-            <div class="suggestion" data-prompt="Review this text and make it clearer, more professional, and easier to act on: [paste text here]." tabindex="0" role="button" aria-label="Improve writing">
-              <div class="suggestion-top">
-                <div class="s-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg></div>
-                <div><div class="s-title">Improve writing</div><div class="s-sub">Polish an email, report, or message</div></div>
-              </div>
+
+          <button class="mode-menu-item plus-primary" id="attachBtn" type="button" role="menuitem">
+            <span class="plus-menu-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05 12.25 20.24a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 1 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+            </span>
+            <span class="plus-menu-label">Upload files</span>
+          </button>
+
+          <button class="mode-menu-item plus-primary disabled" type="button" role="menuitem" aria-disabled="true" title="Coming later">
+            <span class="plus-menu-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"></path><path d="M7 9l5-5 5 5"></path><path d="M20 16.5V20a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3.5"></path></svg>
+            </span>
+            <span class="plus-menu-label">Add from Drive</span>
+          </button>
+
+          <button class="mode-menu-item plus-primary has-chevron" data-plus-section="moreUploads" type="button" role="menuitem" aria-expanded="false">
+            <span class="plus-menu-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.7"></circle><circle cx="12" cy="12" r="1.7"></circle><circle cx="19" cy="12" r="1.7"></circle></svg>
+            </span>
+            <span class="plus-menu-label">More uploads</span>
+            <span class="plus-menu-chevron">›</span>
+          </button>
+          <div class="plus-submenu" id="moreUploadsMenu">
+            <button class="mode-menu-item" data-mode="file" type="button" role="menuitem">
+              <span class="plus-menu-icon">📄</span><span class="plus-menu-label">File Analyzer</span>
+            </button>
+            <button class="mode-menu-item" data-mode="study" type="button" role="menuitem">
+              <span class="plus-menu-icon">🎓</span><span class="plus-menu-label">Study Helper</span>
+            </button>
+          </div>
+
+          <div class="plus-menu-separator"></div>
+
+          <button class="mode-menu-item plus-primary" id="imageModeBtn" type="button" role="menuitem" aria-pressed="false">
+            <span class="plus-menu-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"></rect><circle cx="8.5" cy="10" r="1.5"></circle><path d="M21 15l-4.2-4.2a2 2 0 0 0-2.8 0L5 19"></path></svg>
+            </span>
+            <span class="plus-menu-label">Create image</span>
+          </button>
+
+          <button class="mode-menu-item plus-primary disabled" type="button" role="menuitem" aria-disabled="true" title="Coming later">
+            <span class="plus-menu-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"></rect><path d="m10 9 5 3-5 3V9Z"></path></svg>
+            </span>
+            <span class="plus-menu-label">Create video</span>
+          </button>
+
+          <button class="mode-menu-item plus-primary has-chevron" data-plus-section="moreTools" type="button" role="menuitem" aria-expanded="false">
+            <span class="plus-menu-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.7"></circle><circle cx="12" cy="12" r="1.7"></circle><circle cx="19" cy="12" r="1.7"></circle></svg>
+            </span>
+            <span class="plus-menu-label">More tools</span>
+            <span class="plus-menu-chevron">›</span>
+          </button>
+          <div class="plus-submenu" id="moreToolsMenu">
+            <button class="mode-menu-item" data-mode="general" type="button" role="menuitem"><span class="plus-menu-icon">💬</span><span class="plus-menu-label">General</span></button>
+            <button class="mode-menu-item" data-mode="website" type="button" role="menuitem"><span class="plus-menu-icon">🌐</span><span class="plus-menu-label">Website Studio</span></button>
+            <button class="mode-menu-item" data-mode="code" type="button" role="menuitem"><span class="plus-menu-icon">🛠️</span><span class="plus-menu-label">Code Fixer</span></button>
+            <button class="mode-menu-item" data-mode="business" type="button" role="menuitem"><span class="plus-menu-icon">✍️</span><span class="plus-menu-label">Business Writer</span></button>
+            <button class="mode-menu-item" data-mode="voice" type="button" role="menuitem"><span class="plus-menu-icon">🎙️</span><span class="plus-menu-label">Voice</span></button>
+          </div>
+        </div>            </div>
             </div>
             <div class="suggestion" data-prompt="I have a problem in my project: [describe what is happening]. Ask focused questions, then help me find the cause." tabindex="0" role="button" aria-label="Solve a project problem">
               <div class="suggestion-top">
@@ -2169,6 +2573,8 @@
   const modeMenuWrap = $('#modeMenuWrap');
   const modeMenuBtn = $('#modeMenuBtn');
   const modeMenu = $('#modeMenu');
+  const modeMenuCloseBtn = $('#modeMenuCloseBtn');
+  const plusMenuCloseBtn = $('#plusMenuCloseBtn');
   const modeMenuCurrent = $('#modeMenuCurrent');
   const workspacePill = $('#workspacePill');
   const workspaceSidebarBtn = $('#workspaceSidebarBtn');
@@ -3212,17 +3618,62 @@
     aiModeSelect.addEventListener('change', () => setSmartMode(aiModeSelect.value || 'general'));
   }
   setSmartMode(activeAiMode);
+
+  function closePlusMenu(){
+    modeMenu?.classList.remove('visible');
+    modeMenu?.querySelectorAll('.plus-submenu.visible').forEach(el => el.classList.remove('visible'));
+    modeMenu?.querySelectorAll('[data-plus-section][aria-expanded="true"]').forEach(btn => btn.setAttribute('aria-expanded', 'false'));
+  }
+
   modeMenuBtn?.addEventListener('click', (e) => {
     e.stopPropagation();
-    modeMenu?.classList.toggle('visible');
+    const willOpen = !modeMenu?.classList.contains('visible');
+    if (willOpen) {
+      modeMenu?.classList.add('visible');
+    } else {
+      closePlusMenu();
+    }
   });
+
+  modeMenuCloseBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closePlusMenu();
+  });
+  plusMenuCloseBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closePlusMenu();
+  });
+
+  modeMenu?.querySelectorAll('[data-plus-section]').forEach(btn => btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const targetId = btn.dataset.plusSection === 'moreUploads' ? 'moreUploadsMenu' : 'moreToolsMenu';
+    const target = document.getElementById(targetId);
+    const willShow = !target?.classList.contains('visible');
+    modeMenu.querySelectorAll('.plus-submenu.visible').forEach(el => {
+      if (el !== target) el.classList.remove('visible');
+    });
+    modeMenu.querySelectorAll('[data-plus-section]').forEach(other => {
+      if (other !== btn) other.setAttribute('aria-expanded', 'false');
+    });
+    target?.classList.toggle('visible', willShow);
+    btn.setAttribute('aria-expanded', willShow ? 'true' : 'false');
+  }));
+
   modeMenu?.querySelectorAll('[data-mode]').forEach(btn => btn.addEventListener('click', () => {
+    if (btn.classList.contains('disabled-row') || btn.classList.contains('disabled')) return;
     setSmartMode(btn.dataset.mode);
-    modeMenu.classList.remove('visible');
+    closePlusMenu();
     input?.focus();
   }));
+
+  modeMenu?.querySelectorAll('.disabled-row,.disabled').forEach(btn => btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }));
+
   document.addEventListener('click', e => {
-    if (modeMenu?.classList.contains('visible') && modeMenuWrap && !modeMenuWrap.contains(e.target)) modeMenu.classList.remove('visible');
+    if (modeMenu?.classList.contains('visible') && modeMenuWrap && !modeMenuWrap.contains(e.target)) closePlusMenu();
   });
 
   function workspaceName(id){
