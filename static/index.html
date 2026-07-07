@@ -2216,6 +2216,36 @@
       pointer-events:auto !important;
     }
 
+
+    /* ---------- Sidebar overflow fix ---------- */
+    .sidebar-inner{
+      overflow-y:auto !important;
+      overflow-x:hidden !important;
+      scrollbar-width:thin;
+    }
+    .sidebar-footer{
+      flex:0 0 auto !important;
+      padding-bottom:18px !important;
+    }
+    .history-list{
+      min-height:72px;
+    }
+    @media (max-height:720px){
+      .sidebar-inner{
+        padding-bottom:22px !important;
+      }
+      .api-key-box{
+        max-height:190px;
+        overflow-y:auto;
+      }
+      .sidebar-footer{
+        gap:8px !important;
+      }
+      .sidebar-footer-row{
+        min-height:34px;
+      }
+    }
+
   </style>
 </head>
 <body style="display: none;">
@@ -3634,6 +3664,9 @@
   }
 
 
+  // Clear any stale invisible overlays that could block composer/sidebar taps.
+  document.querySelectorAll('.floating-menu-backdrop.visible').forEach(el => el.classList.remove('visible'));
+
   // ---------- Deep Features v3: smart modes, workspaces, file intel, export ----------
   const MODE_LABELS = {general:'General', website:'Website Studio', code:'Code Fixer', study:'Study Helper', file:'File Analyzer', business:'Business Writer', voice:'Voice'};
   const MODE_BADGES = {general:'G', website:'W', code:'C', study:'S', file:'F', business:'B', voice:'V'};
@@ -3664,6 +3697,7 @@
     if (!modeMenu) return;
     modeMenu.classList.add('visible');
     modeMenu.style.display = 'block';
+    modeMenu.style.pointerEvents = 'auto';
   }
 
   function togglePlusMenu(e){
@@ -3677,17 +3711,18 @@
     }
   }
 
-  // Use pointerdown as primary so mobile/overlay issues cannot swallow the click.
-  modeMenuBtn?.addEventListener('pointerdown', togglePlusMenu, true);
-  modeMenuBtn?.addEventListener('click', togglePlusMenu, true);
+  // The + button is handled by the delegated pointerdown listener below.
+  // Do not attach another direct listener here, otherwise it toggles twice.
 
-
-  // Hard fallback for the composer + button. This delegation survives UI rewrites.
+  // Single reliable handler for the composer + button.
+  // Pointerdown opens immediately on mobile/desktop and prevents the old click
+  // event from firing a second toggle.
   document.addEventListener('pointerdown', (e) => {
     const btn = e.target.closest?.('#modeMenuBtn');
     if (!btn) return;
     e.preventDefault();
     e.stopPropagation();
+    e.__vigzonePlusHandled = true;
     if (!modeMenu) return;
     if (modeMenu.classList.contains('visible') || modeMenu.style.display === 'block') closePlusMenu();
     else openPlusMenu();
