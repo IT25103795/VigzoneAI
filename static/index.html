@@ -2687,6 +2687,15 @@
       .empty-state p{ font-size:13.5px !important; }
     }
 
+
+    /* ---------- Remove "You" label from user messages ---------- */
+    .msg.user .avatar{
+      display:none !important;
+    }
+    .msg.user{
+      gap:0 !important;
+    }
+
   </style>
 </head>
 <body style="display: none;">
@@ -5384,11 +5393,10 @@
     if (emptyState && emptyState.isConnected) emptyState.remove();
     const msg = document.createElement('div');
     msg.className = `msg ${role}`;
-    const avatar = document.createElement('div');
-    avatar.className = 'avatar';
-    if (role === 'user') {
-      avatar.textContent = 'You';
-    } else {
+    let avatar = null;
+    if (role !== 'user') {
+      avatar = document.createElement('div');
+      avatar.className = 'avatar';
       avatar.innerHTML = `<img src="${VIGZONE_ICON}" alt="Vigzone AI" width="30" height="30" />`;
     }
     const bubble = document.createElement('div');
@@ -5454,7 +5462,7 @@
       msg.dataset.index = opts.index;
     }
 
-    msg.appendChild(avatar);
+    if (avatar) msg.appendChild(avatar);
     msg.appendChild(bubble);
     chatInner.appendChild(msg);
     scrollToBottom();
