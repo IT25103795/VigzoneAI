@@ -109,11 +109,29 @@ def process_image(data: bytes) -> tuple[str, str]:
 # ── PDF ────────────────────────────────────────────────────────────────────────
 
 def extract_pdf_text(data: bytes) -> tuple[str, bool]:
-    """Extract text from a PDF. Returns (text, was_truncated)."""
+    """Extract text from a PDF. Returns (text, was_truncated).
+
+    Important UX rule:
+    Do not reject a valid PDF just because it has no selectable text. Many PDFs
+    users upload are image/scanned PDFs (labels, posters, screenshots exported as
+    PDF). In that case we accept the file and attach a clear note to the chat
+    instead of turning the upload chip red.
+    """
     try:
         reader = PdfReader(io.BytesIO(data))
+        if getattr(reader, "is_encrypted", False):
+            try:
+                reader.decrypt("")
+            except Exception:
+                pass
     except Exception as e:
-        raise FileProcessingError("Couldn't open that PDF — it may be corrupted.") from e
+        raise FileProcessingError("Couldn't open that PDF — it may be corrupted or password-protected.") from e
+
+    page_count = 0
+    try:
+        page_count = len(reader.pages)
+    except Exception:
+        page_count = 0
 
     pages = []
     for i, page in enumerate(reader.pages, 1):
@@ -122,13 +140,21 @@ def extract_pdf_text(data: bytes) -> tuple[str, bool]:
             if t.strip():
                 pages.append(f"[Page {i}]\n{t}")
         except Exception:
+            # Keep going; one broken page should not reject the whole PDF.
             pass
 
     text = "\n\n".join(pages)
     if not text.strip():
-        raise FileProcessingError(
-            "No extractable text found in that PDF — it may be a scanned image with no text layer."
+        page_word = "page" if page_count == 1 else "pages"
+        fallback = (
+            f"[PDF attached: {page_count or 'unknown'} {page_word}]\n"
+            "Vigzone accepted this PDF, but it does not contain selectable/extractable text. "
+            "It is probably a scanned/image-based PDF or a design/export PDF. "
+            "Ask the user to upload the page as an image if visual analysis is required, "
+            "or use this file name as context for the conversation."
         )
+        return _truncate(fallback)
+
     return _truncate(text)
 
 

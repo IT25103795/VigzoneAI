@@ -112,7 +112,7 @@ app.add_middleware(
 )
 
 # ── Upload config ─────────────────────────────────────────────────────────────
-MAX_UPLOAD_SIZE    = 10 * 1024 * 1024
+MAX_UPLOAD_SIZE    = int(os.getenv("MAX_UPLOAD_SIZE_BYTES", str(25 * 1024 * 1024)))
 IMAGE_EXTENSIONS   = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 IMAGE_CONTENT_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
 DOCUMENT_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".csv"}
@@ -939,7 +939,7 @@ async def upload_file(file: UploadFile = File(...), user: dict = Depends(require
     if not contents:
         raise HTTPException(400, f'"{filename}" is empty.')
     if len(contents) > MAX_UPLOAD_SIZE:
-        raise HTTPException(413, f'"{filename}" is larger than the 10 MB limit.')
+        raise HTTPException(413, f'"{filename}" is larger than the {MAX_UPLOAD_SIZE // (1024 * 1024)} MB limit.')
 
     # ── Virus scan (runs before any processing) ────────────────────────────
     scan = _virus_scan(contents, filename)

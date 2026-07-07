@@ -2361,6 +2361,8 @@
   //   dataUri?, mime?, text?, truncated?, error? }
   let pendingFiles = [];
   const MAX_ATTACHMENTS = 5;
+  const MAX_UPLOAD_SIZE_BYTES = 25 * 1024 * 1024;
+  const MAX_UPLOAD_SIZE_MB = Math.round(MAX_UPLOAD_SIZE_BYTES / (1024 * 1024));
   let activeWorkspaceId = Number(localStorage.getItem('vigzone_active_workspace_id') || 0) || null;
   let workspaces = [];
   let activeAiMode = localStorage.getItem('vigzone_ai_mode') || 'general';
@@ -4631,11 +4633,11 @@
     }
 
     files.slice(0, room).forEach(file => {
-      if (file.size > 10 * 1024 * 1024) {
+      if (file.size > MAX_UPLOAD_SIZE_BYTES) {
         pendingFiles.push({
           id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
           file, name: file.name, kind: 'document',
-          status: 'error', error: 'File is larger than 10 MB.',
+          status: 'error', error: `File is larger than ${MAX_UPLOAD_SIZE_MB} MB.`,
         });
         return;
       }
