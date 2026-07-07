@@ -85,6 +85,12 @@ def _friendly_groq_error(status_code: int, body_text: str) -> str:
             return f"{base} Please try again in about {wait_str}."
         return f"{base} Please wait a bit and try again."
 
+    if "decommissioned" in inner_message.lower() or "no longer supported" in inner_message.lower():
+        return (
+            "Groq says the selected vision model is no longer supported. "
+            "Update GROQ_VISION_MODEL to meta-llama/llama-4-scout-17b-16e-instruct and redeploy."
+        )
+
     return f"Groq API error {status_code}: {inner_message[:300] or body_text[:300]}"
 
 
@@ -139,7 +145,12 @@ _GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 OLLAMA_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1").rstrip("/")
 OLLAMA_API_URL  = f"{OLLAMA_BASE_URL}/chat/completions"
 DEFAULT_MODEL   = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-VISION_MODEL    = os.getenv("GROQ_VISION_MODEL", "llama-3.2-11b-vision-preview")
+VISION_MODEL    = os.getenv("GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
+VISION_FALLBACK_MODELS = [
+    m.strip()
+    for m in os.getenv("GROQ_VISION_FALLBACK_MODELS", "meta-llama/llama-4-scout-17b-16e-instruct").split(",")
+    if m.strip()
+]
 API_KEY         = _GROQ_API_KEY
 
 _AUTH_HEADERS = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
@@ -596,9 +607,11 @@ def _compact_history_for_model(messages: list[dict]) -> tuple[list[dict], str]:
 
 def _model_candidates(requested_model: str, contains_image: bool = False) -> list[str]:
     """Primary model followed by configured backups, with duplicates removed."""
-    if contains_image:
-        return [VISION_MODEL]
-    candidates = [requested_model or DEFAULT_MODEL, *GROQ_BACKUP_MODELS]
+    candidates = (
+        [VISION_MODEL, *VISION_FALLBACK_MODELS]
+        if contains_image
+        else [requested_model or DEFAULT_MODEL, *GROQ_BACKUP_MODELS]
+    )
     seen = set()
     out = []
     for item in candidates:
@@ -606,7 +619,7 @@ def _model_candidates(requested_model: str, contains_image: bool = False) -> lis
         if item and item not in seen:
             out.append(item)
             seen.add(item)
-    return out or [DEFAULT_MODEL]
+    return out or ([VISION_MODEL] if contains_image else [DEFAULT_MODEL])
 
 
 def _should_try_fallback(status_code: int) -> bool:
@@ -617,7 +630,9 @@ def _should_try_fallback(status_code: int) -> bool:
 async def _build_payload(messages: list[dict], model: str, stream: bool, user_name: Optional[str] = None, user_learning_context: str = "") -> dict:
     # Keep latest turns verbatim and compact older turns to reduce token spend.
     messages, history_summary_block = _compact_history_for_model(messages)
-    effective_model = VISION_MODEL if _contains_image(messages) else model
+    # The caller already chooses the correct candidate model. Do not force the
+    # global VISION_MODEL here, otherwise vision fallback models cannot work.
+    effective_model = model
 
     last_user: Optional[str] = None
     for m in reversed(messages):
@@ -953,7 +968,7 @@ async def stream_chat(
                     body_text = body.decode(errors="ignore")
                     err = VigzoneAIError(_friendly_groq_error(resp.status_code, body_text))
                     last_error = err
-                    if _should_try_fallback(resp.status_code) and candidate_model != candidates[-1]:
+                    if (_should_try_fallback(resp.status_code) or ('decommissioned' in resp.text.lower() or 'no longer supported' in resp.text.lower())) and candidate_model != candidates[-1]:
                         logger.warning(
                             "Groq model %s failed with status %s; trying fallback model %s",
                             payload.get("model"), resp.status_code, candidates[candidates.index(candidate_model) + 1],
@@ -1092,7 +1107,7 @@ async def chat_once(
         if resp.status_code != 200:
             err = VigzoneAIError(_friendly_groq_error(resp.status_code, resp.text))
             last_error = err
-            if _should_try_fallback(resp.status_code) and candidate_model != candidates[-1]:
+            if (_should_try_fallback(resp.status_code) or ('decommissioned' in resp.text.lower() or 'no longer supported' in resp.text.lower())) and candidate_model != candidates[-1]:
                 logger.warning(
                     "Groq model %s failed with status %s; trying fallback model %s",
                     payload.get("model"), resp.status_code, candidates[candidates.index(candidate_model) + 1],
