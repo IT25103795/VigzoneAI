@@ -76,14 +76,23 @@ def _friendly_groq_error(status_code: int, body_text: str) -> str:
         wait_match = re.search(r"try again in ([\d.]+m[\d.]+s|[\d.]+s)", inner_message)
         wait_str = wait_match.group(1) if wait_match else None
         if "tokens per day" in inner_message.lower() or "TPD" in inner_message:
-            base = "Vigzone AI has hit Groq's daily free-tier token limit for this model."
+            base = (
+                "Groq's real daily free-tier limit for this model is reached. "
+                "The usage circle is only Vigzone's app-side estimate, not Groq's live quota."
+            )
         elif "tokens per minute" in inner_message.lower() or "TPM" in inner_message:
-            base = "Vigzone AI is sending messages a bit too fast for Groq's free tier."
+            base = (
+                "Groq's real per-minute token limit is reached. "
+                "The usage circle is only Vigzone's app-side estimate, not Groq's live quota."
+            )
         else:
-            base = "Vigzone AI has hit Groq's rate limit."
+            base = (
+                "Groq's real rate limit is reached. "
+                "The usage circle is only Vigzone's app-side estimate, not Groq's live quota."
+            )
         if wait_str:
-            return f"{base} Please try again in about {wait_str}."
-        return f"{base} Please wait a bit and try again."
+            return f"{base} Please try again in about {wait_str}. Vigzone will also try a backup model when available."
+        return f"{base} Please wait a bit and try again. Vigzone will also try a backup model when available."
 
     if "decommissioned" in inner_message.lower() or "no longer supported" in inner_message.lower():
         return (
@@ -191,7 +200,11 @@ USAGE_RESERVE_TOKENS = _env_int("USAGE_RESERVE_TOKENS", 800)
 # Model fallback: if the primary Groq model is temporarily rate-limited or down,
 # try these backup models before failing the user-facing request. Use a comma
 # separated GROQ_BACKUP_MODELS value, or a single GROQ_BACKUP_MODEL.
-_raw_backup_models = os.getenv("GROQ_BACKUP_MODELS", os.getenv("GROQ_BACKUP_MODEL", "")).strip()
+_DEFAULT_GROQ_BACKUP_MODELS = "openai/gpt-oss-20b,llama-3.1-8b-instant,qwen/qwen3-32b"
+_raw_backup_models = os.getenv(
+    "GROQ_BACKUP_MODELS",
+    os.getenv("GROQ_BACKUP_MODEL", _DEFAULT_GROQ_BACKUP_MODELS),
+).strip()
 GROQ_BACKUP_MODELS = [m.strip() for m in _raw_backup_models.split(",") if m.strip()]
 
 # History compaction: keeps chats cheaper and faster by sending the latest turns

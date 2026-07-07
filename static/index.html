@@ -3434,10 +3434,10 @@
     }
     const st = usageStatsFromData(data);
     const ownKey = data.mode === 'own_key' || data.using_own_key;
-    const planName = data.plan_label || (ownKey ? 'Personal Groq key' : 'Vigzone default Groq plan');
+    const planName = data.plan_label || (ownKey ? 'Vigzone app cap • Personal Groq key' : 'Vigzone app cap • Default Groq key');
     usageCyclePercent.textContent = `${st.pctLabel} used`;
     usageCycleNote.innerHTML = `
-      <strong>${escapeHtml(planName)}</strong>
+      <strong>${escapeHtml(planName)}</strong><div class="usage-cycle-pop-note">Groq may block earlier with its own live free-tier/rate limits.</div>
       <div class="usage-cycle-pop-meta"><span>${st.used.toLocaleString()} used</span><span>${st.limit ? st.limit.toLocaleString() : 'No'} limit</span></div>
       <div class="usage-cycle-pop-meta"><span>${Number(st.remaining || 0).toLocaleString()} left</span><span>${escapeHtml(st.resetIn || '')}</span></div>
     `;
@@ -3592,7 +3592,7 @@
       const barClass = pct >= 90 ? 'danger' : (pct >= 65 ? 'warn' : '');
       const resetIn = data.seconds_until_reset ? `Resets in ${formatDuration(data.seconds_until_reset)}` : '';
       const ownKey = data.mode === 'own_key' || data.using_own_key;
-      const planName = data.plan_label || (ownKey ? 'Personal Groq key' : 'Vigzone default Groq plan');
+      const planName = data.plan_label || (ownKey ? 'Vigzone app cap • Personal Groq key' : 'Vigzone app cap • Default Groq key');
       const locked = !!data.is_limited;
       const enforcedText = data.limit_enforced ? 'Limit enforced by Vigzone.' : 'Tracking only — no Vigzone block.';
       const planText = locked
