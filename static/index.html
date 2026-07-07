@@ -663,7 +663,7 @@
     .chat-inner{
       max-width:780px;
       margin:0 auto;
-      padding:28px 20px 140px;
+      padding:28px 20px 28px;
       display:flex;
       flex-direction:column;
       gap:22px;
@@ -1170,11 +1170,12 @@
 
     /* ---------- Composer ---------- */
     .composer-wrap{
-      position:absolute;
-      bottom:0;left:0;right:0;
+      position:relative;
+      flex:0 0 auto;
       padding:18px 20px 22px;
-      background:var(--composer-wrap-fade);
+      background:transparent;
       pointer-events:none;
+      z-index:4;
     }
     .composer{
       max-width:780px;
@@ -1643,7 +1644,7 @@
         margin-right: auto;
       }
       .chat-inner {
-        padding: 20px 14px 160px;
+        padding: 20px 14px 24px;
       }
     }
 
@@ -2464,166 +2465,11 @@
     }
 
 
-    /* ---------- Bottom blur/fade bar removal ----------
-       Let the default theme or custom wallpaper show behind the composer area. */
-    :root,
-    [data-theme="dark"]{
-      --composer-wrap-fade: transparent !important;
-    }
-    [data-theme="light"]{
-      --composer-wrap-fade: transparent !important;
-    }
-    .composer-wrap{
-      background:transparent !important;
-      backdrop-filter:none !important;
-      -webkit-backdrop-filter:none !important;
-      box-shadow:none !important;
-    }
-    .composer-wrap::before,
-    .composer-wrap::after{
-      content:none !important;
-      display:none !important;
-    }
-    .composer-wrap > .hint,
-    .composer-wrap > #setupBannerSlot,
-    .composer-wrap > #imageModeHintSlot,
-    .composer-wrap > .attachments-bar,
-    .composer-wrap > .quote-preview-bar,
-    .composer-wrap > .composer{
-      position:relative;
-      z-index:1;
-    }
-    body.has-chat-wallpaper .composer-wrap{
-      background:transparent !important;
-    }
 
-
-    /* ---------- Roller-door composer shield ----------
-       Chat bubbles no longer scroll under/past the message box.
-       The shield uses the same default theme or custom wallpaper, not a blur bar. */
-    .composer-wrap{
-      isolation:isolate;
-      z-index:3 !important;
-    }
-    .composer-wrap::before{
-      content:'' !important;
-      display:block !important;
-      position:absolute;
-      left:0;
-      right:0;
-      top:-18px;
-      bottom:0;
-      z-index:0;
-      pointer-events:none;
-      background-color:var(--bg);
-      background-image:var(--bg-image);
-      background-attachment:fixed;
-      background-size:cover;
-      background-position:center;
-      background-repeat:no-repeat;
-      box-shadow:none !important;
-      backdrop-filter:none !important;
-      -webkit-backdrop-filter:none !important;
-    }
-    body.has-chat-wallpaper .composer-wrap::before{
-      background-image:var(--chat-wallpaper-image, none);
-      background-size:cover;
-      background-position:center;
-      background-repeat:no-repeat;
-      filter:brightness(var(--chat-wallpaper-brightness, 1)) blur(var(--chat-wallpaper-blur, 0px));
-      transform:scale(1.04);
-    }
-    .composer-wrap > *{
-      position:relative;
-      z-index:1;
-    }
-    .composer-wrap > .composer,
-    .composer-wrap > .hint,
-    .composer-wrap > #setupBannerSlot,
-    .composer-wrap > #imageModeHintSlot,
-    .composer-wrap > .attachments-bar,
-    .composer-wrap > .quote-preview-bar{
-      position:relative;
-      z-index:1;
-    }
-    main{
-      z-index:1;
-    }
-
-
-    .chat-inner{
-      padding-bottom:180px !important;
-    }
-    @media (max-width:560px){
-      .chat-inner{
-        padding-bottom:160px !important;
-      }
-    }
-
-
-    /* ---------- Roller-door double-layer fix ----------
-       Use only ONE shield layer behind the composer. */
-    .composer-wrap{
-      position:relative !important;
-      isolation:isolate !important;
-      overflow:hidden !important;
-      background:transparent !important;
-      border-top:none !important;
-      box-shadow:none !important;
-      backdrop-filter:none !important;
-      -webkit-backdrop-filter:none !important;
-      z-index:3 !important;
-    }
-    .composer-wrap::before{
-      content:'' !important;
-      display:block !important;
-      position:absolute !important;
-      inset:0 !important; /* only the composer area, no extra top strip */
-      z-index:0 !important;
-      pointer-events:none !important;
-      background-color:var(--bg) !important;
-      background-image:var(--bg-image) !important;
-      background-size:cover !important;
-      background-position:center !important;
-      background-repeat:no-repeat !important;
-      background-attachment:fixed !important;
-      box-shadow:none !important;
-      backdrop-filter:none !important;
-      -webkit-backdrop-filter:none !important;
-      transform:none !important;
-      filter:none !important;
-    }
-    body.has-chat-wallpaper .composer-wrap::before{
-      background-image:var(--chat-wallpaper-image, none) !important;
-      background-size:cover !important;
-      background-position:center !important;
-      background-repeat:no-repeat !important;
-      background-attachment:fixed !important;
-      filter:brightness(var(--chat-wallpaper-brightness, 1)) blur(var(--chat-wallpaper-blur, 0px)) !important;
-      transform:scale(1.04) !important;
-    }
-    .composer-wrap::after{
-      content:none !important;
-      display:none !important;
-    }
-    .composer-wrap > *{
-      position:relative !important;
-      z-index:1 !important;
-    }
-    .chat-inner{
-      padding-bottom:150px !important;
-    }
-    @media (max-width:560px){
-      .chat-inner{
-        padding-bottom:140px !important;
-      }
-    }
-
-
-    /* ---------- Final roller-door fix: no visual layer ----------
-       The composer is now a real bottom section in the flex layout, not an
-       absolute overlay. Chat scroll stops above it, so bubbles cannot pass the
-       message box, and there is no second/dark wallpaper strip. */
+    /* ---------- Clean composer dock fix ----------
+       This is the only bottom/composer patch.
+       The composer is a normal flex item below the chat, not an overlay.
+       So bubbles cannot slide behind it and there is no second wallpaper layer. */
     .main-col{
       display:flex !important;
       flex-direction:column !important;
@@ -2641,20 +2487,18 @@
       position:relative !important;
       left:auto !important;
       right:auto !important;
-      bottom:auto !important;
       top:auto !important;
-      flex:0 0 auto !important;
+      bottom:auto !important;
       background:transparent !important;
       background-image:none !important;
-      border-top:none !important;
       box-shadow:none !important;
+      border-top:none !important;
       backdrop-filter:none !important;
       -webkit-backdrop-filter:none !important;
-      isolation:auto !important;
       overflow:visible !important;
-      z-index:5 !important;
-      padding:18px 20px 22px !important;
+      isolation:auto !important;
       pointer-events:none !important;
+      z-index:4 !important;
     }
     .composer-wrap::before,
     .composer-wrap::after{
@@ -2668,29 +2512,24 @@
       -webkit-backdrop-filter:none !important;
     }
     .composer-wrap > *{
-      position:relative !important;
-      z-index:1 !important;
+      position:relative;
+      z-index:1;
+      pointer-events:auto;
     }
     .composer-wrap .composer{
-      pointer-events:auto !important;
+      pointer-events:auto;
     }
     .composer-wrap .hint,
     .composer-wrap #setupBannerSlot,
     .composer-wrap #imageModeHintSlot,
     .composer-wrap .attachments-bar,
     .composer-wrap .quote-preview-bar{
-      pointer-events:auto !important;
+      pointer-events:auto;
     }
-    .chat-inner{
-      padding-bottom:28px !important;
-    }
-    @media (max-width:560px){
-      .composer-wrap{
-        padding:10px 10px 12px !important;
-      }
-      .chat-inner{
-        padding-bottom:24px !important;
-      }
+    :root,
+    [data-theme="dark"],
+    [data-theme="light"]{
+      --composer-wrap-fade: transparent !important;
     }
 
   </style>
