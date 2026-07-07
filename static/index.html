@@ -663,7 +663,7 @@
     .chat-inner{
       max-width:780px;
       margin:0 auto;
-      padding:28px 20px 28px;
+      padding:28px 20px 26px;
       display:flex;
       flex-direction:column;
       gap:22px;
@@ -1172,7 +1172,7 @@
     .composer-wrap{
       position:relative;
       flex:0 0 auto;
-      padding:18px 20px 22px;
+      padding:14px 20px 16px;
       background:transparent;
       pointer-events:none;
       z-index:4;
@@ -1811,7 +1811,7 @@
         width:min(280px, calc(100vw - 32px));
       }
       .chat-inner{
-        padding-bottom:132px !important;
+        padding-bottom:24px !important;
       }
     }
 
@@ -2466,33 +2466,68 @@
 
 
 
-    /* ---------- Clean composer dock fix ----------
-       This is the only bottom/composer patch.
-       The composer is a normal flex item below the chat, not an overlay.
-       So bubbles cannot slide behind it and there is no second wallpaper layer. */
+    /* ---------- FINAL single composer layout repair ----------
+       One clean rule-set only:
+       - header, chat, and composer are real grid rows
+       - chat scroll area ends above composer
+       - no overlay shield, no blur strip, no stacked wallpaper layer
+       - compact original composer design is preserved */
     .main-col{
-      display:flex !important;
-      flex-direction:column !important;
+      display:grid !important;
+      grid-template-rows:auto minmax(0, 1fr) auto !important;
+      grid-template-columns:minmax(0, 1fr) !important;
       min-height:0 !important;
+      height:100% !important;
       overflow:hidden !important;
+      position:relative !important;
+      isolation:isolate !important;
     }
-    main{
-      flex:1 1 auto !important;
+    .main-col > header{
+      grid-row:1 !important;
+      grid-column:1 !important;
+      flex:0 0 auto !important;
+    }
+    #main{
+      grid-row:2 !important;
+      grid-column:1 !important;
       min-height:0 !important;
+      height:auto !important;
+      max-height:none !important;
+      overflow-x:hidden !important;
       overflow-y:auto !important;
+      scroll-behavior:smooth !important;
       position:relative !important;
       z-index:1 !important;
+      margin:0 !important;
+      padding:0 !important;
+      /* This forces the browser to clip message bubbles at the chat row. */
+      clip-path:inset(0 0 0 0);
+      overscroll-behavior:contain;
+    }
+    #chatInner,
+    .chat-inner{
+      min-height:auto !important;
+      padding:28px 20px 26px !important;
+      margin:0 auto !important;
+      max-width:780px !important;
+      box-sizing:border-box !important;
     }
     .composer-wrap{
+      grid-row:3 !important;
+      grid-column:1 !important;
       position:relative !important;
       left:auto !important;
       right:auto !important;
       top:auto !important;
       bottom:auto !important;
+      width:100% !important;
+      flex:0 0 auto !important;
+      margin:0 !important;
+      padding:14px 20px calc(14px + env(safe-area-inset-bottom, 0px)) !important;
       background:transparent !important;
       background-image:none !important;
+      border-top:0 !important;
       box-shadow:none !important;
-      border-top:none !important;
       backdrop-filter:none !important;
       -webkit-backdrop-filter:none !important;
       overflow:visible !important;
@@ -2512,24 +2547,33 @@
       -webkit-backdrop-filter:none !important;
     }
     .composer-wrap > *{
-      position:relative;
-      z-index:1;
-      pointer-events:auto;
+      position:relative !important;
+      z-index:1 !important;
     }
-    .composer-wrap .composer{
-      pointer-events:auto;
-    }
+    .composer-wrap .composer,
     .composer-wrap .hint,
     .composer-wrap #setupBannerSlot,
     .composer-wrap #imageModeHintSlot,
     .composer-wrap .attachments-bar,
     .composer-wrap .quote-preview-bar{
-      pointer-events:auto;
+      pointer-events:auto !important;
+    }
+    .composer.compact-composer{
+      margin:0 auto !important;
     }
     :root,
     [data-theme="dark"],
     [data-theme="light"]{
-      --composer-wrap-fade: transparent !important;
+      --composer-wrap-fade:transparent !important;
+    }
+    @media (max-width:560px){
+      .composer-wrap{
+        padding:10px 10px calc(10px + env(safe-area-inset-bottom, 0px)) !important;
+      }
+      #chatInner,
+      .chat-inner{
+        padding:20px 14px 22px !important;
+      }
     }
 
   </style>
