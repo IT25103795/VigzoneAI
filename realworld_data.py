@@ -331,12 +331,11 @@ async def get_realworld_context(user_message: str) -> Tuple[str, str]:
     date_str = now.strftime("%d %B %Y")
     time_str = now.strftime("%I:%M %p %Z")
 
-    user_prefix = f"[SYSTEM: Current date is {date_str}, {time_str}]\n"
+    # Do not inject date/time into every casual message. Only include it
+    # when the request explicitly asks for date/time/day or needs real-world data.
+    user_prefix = ""
 
-    system_lines = [
-        f"[REAL-WORLD DATA - INJECTED {date_str} {time_str}]",
-        f"Timezone: {_get_user_timezone_name()}",
-    ]
+    system_lines: list[str] = []
 
     # Detect what data is needed
     needs_weather = bool(
@@ -352,6 +351,24 @@ async def get_realworld_context(user_message: str) -> Tuple[str, str]:
     needs_exchange = bool(
         re.search(r"\b(exchange rate|convert|currency)\b", user_message, re.IGNORECASE)
     )
+    needs_datetime = bool(
+        re.search(
+            r"\b(what(?:'s| is)?\s+(?:the\s+)?(?:time|date|day)|current\s+(?:time|date|day)|today|tonight|tomorrow|yesterday|now|clock|timezone|time zone|when is)\b",
+            user_message,
+            re.IGNORECASE,
+        )
+    )
+
+    if not (needs_weather or needs_price or needs_exchange or needs_datetime):
+        return "", ""
+
+    system_lines.extend([
+        f"[REAL-WORLD DATA]",
+        f"Timezone: {_get_user_timezone_name()}",
+    ])
+    if needs_datetime:
+        user_prefix = f"[SYSTEM: Current date is {date_str}, {time_str}]\n"
+        system_lines.append(f"Current date/time: {date_str}, {time_str}")
 
     # Fetch weather if needed
     if needs_weather:
@@ -392,7 +409,8 @@ async def get_realworld_context(user_message: str) -> Tuple[str, str]:
 
     system_lines.extend([
         "",
-        "Use the above real-world data to provide accurate, current answers.",
+        "Use the above real-world data only when it directly answers the user.",
+        "Do not mention the current date/time unless the user asked for it or the answer depends on it.",
         "Always cite your data sources when mentioning specific facts, prices, or weather.",
         "Do NOT mention the data block itself — just use the information naturally.",
     ])

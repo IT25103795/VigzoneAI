@@ -5569,7 +5569,10 @@
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error(data.detail || data.error || `Voice transcription failed (${res.status})`);
+      const msg = data.detail || data.error || `Voice transcription failed (${res.status})`;
+      const err = new Error(msg);
+      err.status = res.status;
+      throw err;
     }
     return (data.text || '').trim();
   }
@@ -5784,26 +5787,28 @@
       transcription = (micSpeechTranscript || micSpeechInterimTranscript || '').trim();
     }
 
-    // Always ask Groq Whisper too. Browser speech recognition is fast but it
-    // often mishears Sinhala as Hindi/English. The backend retries Sinhala,
-    // Tamil, English, Hindi and auto-detect, then chooses the best transcript.
+    // Always ask Groq Whisper too. Browser speech recognition is fast but can
+    // mishear Sinhala as Hindi/English. The backend now tries auto-detect first,
+    // then only a few language hints, to avoid burning rate limit.
     const browserTranscript = (transcription || '').trim();
     try {
       const groqTranscript = await transcribeVoiceBlob(blob, firstWords(browserTranscript, 2));
       if (groqTranscript) {
         const browserScript = detectTextScript(browserTranscript);
         const groqScript = detectTextScript(groqTranscript);
-        // Prefer Groq whenever browser output is empty, Hindi/Devanagari, or
-        // Groq found Sinhala/Tamil script. This fixes the common Sinhala→Hindi issue.
         if (!browserTranscript || browserScript === 'hi' || groqScript === 'si' || groqScript === 'ta') {
           transcription = groqTranscript;
         } else {
           transcription = groqTranscript || browserTranscript;
         }
         speechErrorCode = null;
+      } else {
+        transcription = browserTranscript;
       }
     } catch (e) {
       speechErrorCode = (e && e.message) || speechErrorCode || 'unknown';
+      // Important fallback: never fail the voice bubble if the browser already
+      // heard usable text. This makes very short messages like "hi" work.
       transcription = browserTranscript;
     }
 
@@ -5922,6 +5927,8 @@
   let liveRecordChunks = [];
   let liveAudioContext = null;
   let liveSilenceTimer = null;
+  let liveBrowserRecognition = null;
+  let liveBrowserTranscript = '';
 
   function buildLiveVoiceOverlay() {
     const overlay = document.createElement('div');
@@ -5974,6 +5981,10 @@
       try { liveRecorder.stop(); } catch (e) {}
     }
     liveRecorder = null;
+    if (liveBrowserRecognition) {
+      try { liveBrowserRecognition.onresult = null; liveBrowserRecognition.onerror = null; liveBrowserRecognition.onend = null; liveBrowserRecognition.stop(); } catch (e) {}
+      liveBrowserRecognition = null;
+    }
     clearTimeout(liveSilenceTimer);
     liveSilenceTimer = null;
     if (liveMicStream) {
@@ -6012,6 +6023,32 @@
     liveListenLoopWithBrowserSpeech();
   }
 
+  function startLiveBrowserHint(){
+    liveBrowserTranscript = '';
+    if (!micSpeechSupported) return;
+    try {
+      const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const recog = new SpeechRecognitionImpl();
+      liveBrowserRecognition = recog;
+      recog.continuous = true;
+      recog.interimResults = true;
+      recog.lang = getVoiceInputLang();
+      recog.onresult = (event) => {
+        let text = '';
+        for (let i = 0; i < event.results.length; i++) {
+          text += event.results[i][0].transcript + ' ';
+        }
+        liveBrowserTranscript = text.trim();
+        if (liveBrowserTranscript) liveCaptionEl.textContent = liveBrowserTranscript;
+      };
+      recog.onerror = () => {};
+      recog.onend = () => {};
+      recog.start();
+    } catch (e) {
+      liveBrowserRecognition = null;
+    }
+  }
+
   async function liveRecordAndTranscribeTurn() {
     if (!liveVoiceActive) return;
     setLiveVoiceState('listening', 'Vigi is listening…');
@@ -6026,6 +6063,7 @@
     }
 
     liveRecordChunks = [];
+    startLiveBrowserHint();
     const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg';
     try {
       liveRecorder = new MediaRecorder(liveMicStream, { mimeType });
@@ -6046,9 +6084,16 @@
         try { liveAudioContext.close(); } catch (e) {}
         liveAudioContext = null;
       }
+      if (liveBrowserRecognition) {
+        try { liveBrowserRecognition.stop(); } catch (e) {}
+        liveBrowserRecognition = null;
+      }
+      const browserFallbackText = (liveBrowserTranscript || '').trim();
+
       if (!liveVoiceActive) return;
       if (!chunks.length) {
-        liveListenLoop();
+        if (browserFallbackText) sendLiveVoiceTurn(browserFallbackText);
+        else liveListenLoop();
         return;
       }
 
@@ -6060,15 +6105,21 @@
 
       setLiveVoiceState('thinking', 'Detecting language…');
       try {
-        const text = await transcribeVoiceBlob(blob, '');
-        if (text) {
-          liveCaptionEl.textContent = text;
-          sendLiveVoiceTurn(text);
+        const text = await transcribeVoiceBlob(blob, firstWords(browserFallbackText, 2));
+        const finalText = text || browserFallbackText;
+        if (finalText) {
+          liveCaptionEl.textContent = finalText;
+          sendLiveVoiceTurn(finalText);
         } else {
           liveListenLoop();
         }
       } catch (e) {
         console.warn('Vigzone live voice transcription failed:', e);
+        if (browserFallbackText) {
+          liveCaptionEl.textContent = browserFallbackText;
+          sendLiveVoiceTurn(browserFallbackText);
+          return;
+        }
         setLiveVoiceState(null, 'Could not transcribe — listening again');
         setTimeout(() => { if (liveVoiceActive) liveListenLoop(); }, 900);
       }
@@ -6080,8 +6131,8 @@
     const startedAt = Date.now();
     const maxMs = 12000;
     const minMs = 900;
-    const silenceAfterSpeechMs = 1250;
-    const noSpeechTimeoutMs = 4500;
+    const silenceAfterSpeechMs = 1500;
+    const noSpeechTimeoutMs = 6000;
 
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -6102,7 +6153,7 @@
         }
         const rms = Math.sqrt(sum / data.length);
         const now = Date.now();
-        if (rms > 0.025) {
+        if (rms > 0.016) {
           started = true;
           lastSpeechAt = now;
           liveCaptionEl.textContent = 'Listening…';

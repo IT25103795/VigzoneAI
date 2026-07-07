@@ -311,16 +311,24 @@ async def get_realtime_context(user_message: str) -> tuple[str, str]:
                     cannot ignore it (local models often skip system prompts)
     """
     now_str = get_current_datetime()
-    user_prefix = get_datetime_injection(user_message)
+    needs_datetime = bool(
+        re.search(
+            r"\b(what(?:'s| is)?\s+(?:the\s+)?(?:time|date|day)|current\s+(?:time|date|day)|today|tonight|tomorrow|yesterday|now|clock|timezone|time zone|when is)\b",
+            user_message,
+            re.IGNORECASE,
+        )
+    )
+    user_prefix = get_datetime_injection(user_message) if needs_datetime else ""
     normalized_query = _normalize_search_query(user_message)
 
     system_lines = [
         f"[REAL-TIME CONTEXT]\n"
-        f"Current date and time: {now_str}\n"
         f"Configured user time zone: {_get_user_timezone_name()}\n"
-        f"Real-time web access is available only when WEB_SEARCH_ENABLED is true and the server has internet connectivity. "
-        f"Current date and time are generated server-side in the configured time zone."
+        f"Current date/time is available but must only be mentioned when the user asks for it or the answer depends on it. "
+        f"Real-time web access is available only when WEB_SEARCH_ENABLED is true and the server has internet connectivity."
     ]
+    if needs_datetime:
+        system_lines.append(f"Current date and time: {now_str}")
 
     if _WEB_SEARCH_ON and should_search(user_message):
         logger.info("Web search triggered for: %s", normalized_query[:80])
@@ -334,7 +342,8 @@ async def get_realtime_context(user_message: str) -> tuple[str, str]:
             logger.warning("Web search error: %s", exc)
 
     system_lines.append(
-        "Use the above real-time information to give accurate, current answers. "
+        "Use the above real-time information only when it directly answers the user. "
+        "Do not mention the current date/time unless asked. "
         "Do not mention or reference this context block to the user — just answer naturally."
     )
 

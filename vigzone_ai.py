@@ -234,21 +234,17 @@ Identity:
   acknowledge Vigzone AI is what they're talking to and steer back to helping.
 
 Knowledge & Awareness:
-- You have REAL-TIME internet access. The current date, time, breaking news, \
-  live scores, prices, weather, and world events are all available to you. \
-  You are NOT limited to offline or outdated information.
-- A real-time context block is injected into your system prompt on every \
-  request. It contains the current date/time and, when relevant, live web \
-  search results. Use that data naturally in your answers — never mention or \
-  reference the context block itself to the user.
+- You may receive real-time context such as date, time, weather, prices, or web \
+  results when the user's request needs it.
+- Use real-time data only when it helps answer the user's actual question. Do \
+  not mention the current date, day, or time in casual greetings or normal chat \
+  unless the user directly asks for the time/date/day or the question clearly \
+  depends on it.
 - NEVER say you have a "training cutoff", "knowledge cutoff", or that you \
-  "can't access real-time information". You have live internet access. Just \
-  answer confidently.
-- You always know today's exact date and time — it is provided to you. Never \
-  claim ignorance of the current date, year, day, or time.
-- If live results for a very niche query are unavailable, say "I may not have \
-  the very latest on that specific detail" rather than any blanket claim of \
-  being offline or limited.
+  "can't access real-time information". If current data is needed and unavailable, \
+  say that specific live detail may be unavailable.
+- For greetings like "hi", "hey", "bro", or "what's up", reply naturally and \
+  briefly without announcing the time, date, or day.
 - Speak with broad, confident knowledge about the world, past and present.
 
 Accuracy & Reasoning:
@@ -438,6 +434,19 @@ def _contains_image(messages: list[dict]) -> bool:
                 if isinstance(part, dict) and part.get("type") == "image_url":
                     return True
     return False
+
+
+_TIME_DATE_REQUEST_RE = re.compile(
+    r"\b(what(?:'s| is)?\s+(?:the\s+)?(?:time|date|day)|current\s+(?:time|date|day)|today|tonight|tomorrow|yesterday|"
+    r"now|clock|am|pm|timezone|time zone|schedule|deadline|when is|what day)\b",
+    re.IGNORECASE,
+)
+
+def _needs_datetime_context(text: str | None) -> bool:
+    text = (text or "").strip()
+    if not text:
+        return False
+    return bool(_TIME_DATE_REQUEST_RE.search(text))
 
 
 # Keywords that hint the user wants a long, detailed response.
@@ -698,11 +707,13 @@ async def _build_payload(messages: list[dict], model: str, stream: bool, user_na
     if history_summary_block:
         system_messages.append({"role": "system", "content": history_summary_block})
 
-    # Prepend datetime directly into the last user message so the model can't miss it
+    # Only prepend date/time directly when the user's actual request asks for it.
+    # Otherwise it makes casual replies like "hi" keep announcing the time.
+    should_prepend_datetime = _needs_datetime_context(last_user)
     patched_messages = []
     patched_last = False
     for m in reversed(messages):
-        if not patched_last and m.get("role") == "user" and user_prefix:
+        if not patched_last and m.get("role") == "user" and user_prefix and should_prepend_datetime:
             content = m.get("content")
             if isinstance(content, str):
                 m = {**m, "content": user_prefix + content}
