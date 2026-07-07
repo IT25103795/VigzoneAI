@@ -628,7 +628,7 @@
       display:none;
       position:fixed;
       inset:0;
-      z-index:2147483600;
+      z-index:2147483000;
       background:transparent;
       pointer-events:auto;
     }
@@ -1697,7 +1697,8 @@
     .file-intel-stat b{display:block;color:var(--text);font-size:14px;}
     .sidebar-menu-wrap{position:relative;display:flex;align-items:center;}
     .export-menu{position:fixed;left:0;top:0;z-index:2147483647;background:var(--surface);border:1px solid var(--border-subtle);border-radius:12px;box-shadow:0 18px 50px -18px var(--composer-shadow),0 8px 22px rgba(0,0,0,.14);padding:8px;display:none;min-width:150px;}
-    .export-menu.visible{display:grid;gap:6px;}
+    .export-menu.visible{display:grid;gap:6px;pointer-events:auto;}
+    .export-menu button{pointer-events:auto;position:relative;z-index:1;}
     @media (max-width:760px){.file-intel-grid{grid-template-columns:1fr}.mode-menu{width:220px}}
 
   </style>
@@ -3243,6 +3244,9 @@
   });
   exportTxtBtn?.addEventListener('click', (e)=>{ e.stopPropagation(); exportChat('txt'); closeExportMenu(); });
   exportHtmlBtn?.addEventListener('click', (e)=>{ e.stopPropagation(); exportChat('html'); closeExportMenu(); });
+  if (exportTxtBtn) exportTxtBtn.onclick = (e) => { e?.stopPropagation?.(); exportChat('txt'); closeExportMenu(); };
+  if (exportHtmlBtn) exportHtmlBtn.onclick = (e) => { e?.stopPropagation?.(); exportChat('html'); closeExportMenu(); };
+
   exportMenuCloseBtn?.addEventListener('click', (e)=>{ e.stopPropagation(); closeExportMenu(); });
 
   async function analyzeReadyFiles(){
@@ -3408,14 +3412,14 @@
   usageCycleCloseBtn?.addEventListener('click', (e)=>{ e.stopPropagation(); closeUsageCyclePopover(); });
 
   function isInsideFloatingMenuTarget(target){
-    // Only the toggle buttons themselves are protected here (so re-tapping them
-    // still toggles open/closed correctly). Tapping anywhere else - including
-    // inside the popover/menu body - should close it. The actual export option
-    // buttons (exportTxtBtn/exportHtmlBtn) still fire their own click handlers
-    // and run exportChat() regardless of this closing them first.
+    // Keep clicks/taps inside an open floating menu alive, so buttons such as
+    // Export TXT / Export HTML can receive their normal click event. Outside
+    // taps are still caught by handleOutsideFloatingMenuTap() and the backdrop.
     return !!(
       (usageCycleBtn && usageCycleBtn.contains(target)) ||
-      (exportChatBtn && exportChatBtn.contains(target))
+      (usageCyclePopover && usageCyclePopover.contains(target)) ||
+      (exportChatBtn && exportChatBtn.contains(target)) ||
+      (exportMenu && exportMenu.contains(target))
     );
   }
 
