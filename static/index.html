@@ -2183,6 +2183,39 @@
       }
     }
 
+
+    /* ---------- + button click safety fix ---------- */
+    .floating-menu-backdrop{
+      pointer-events:none !important;
+      display:none !important;
+    }
+    .composer-wrap{
+      z-index:120 !important;
+    }
+    .composer.compact-composer{
+      position:relative;
+      z-index:121;
+    }
+    .composer.compact-composer .mode-menu-wrap{
+      position:relative;
+      z-index:130;
+      pointer-events:auto;
+    }
+    .composer.compact-composer #modeMenuBtn{
+      position:relative;
+      z-index:131;
+      pointer-events:auto;
+      touch-action:manipulation;
+    }
+    .composer.compact-composer textarea{
+      position:relative;
+      z-index:1;
+    }
+    .plus-tools-menu{
+      z-index:2147483647 !important;
+      pointer-events:auto !important;
+    }
+
   </style>
 </head>
 <body style="display: none;">
@@ -3620,20 +3653,45 @@
   setSmartMode(activeAiMode);
 
   function closePlusMenu(){
-    modeMenu?.classList.remove('visible');
-    modeMenu?.querySelectorAll('.plus-submenu.visible').forEach(el => el.classList.remove('visible'));
-    modeMenu?.querySelectorAll('[data-plus-section][aria-expanded="true"]').forEach(btn => btn.setAttribute('aria-expanded', 'false'));
+    if (!modeMenu) return;
+    modeMenu.classList.remove('visible');
+    modeMenu.style.display = 'none';
+    modeMenu.querySelectorAll('.plus-submenu.visible').forEach(el => el.classList.remove('visible'));
+    modeMenu.querySelectorAll('[data-plus-section][aria-expanded="true"]').forEach(btn => btn.setAttribute('aria-expanded', 'false'));
   }
 
-  modeMenuBtn?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const willOpen = !modeMenu?.classList.contains('visible');
-    if (willOpen) {
-      modeMenu?.classList.add('visible');
-    } else {
+  function openPlusMenu(){
+    if (!modeMenu) return;
+    modeMenu.classList.add('visible');
+    modeMenu.style.display = 'block';
+  }
+
+  function togglePlusMenu(e){
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
+    if (!modeMenu) return;
+    if (modeMenu.classList.contains('visible') || modeMenu.style.display === 'block') {
       closePlusMenu();
+    } else {
+      openPlusMenu();
     }
-  });
+  }
+
+  // Use pointerdown as primary so mobile/overlay issues cannot swallow the click.
+  modeMenuBtn?.addEventListener('pointerdown', togglePlusMenu, true);
+  modeMenuBtn?.addEventListener('click', togglePlusMenu, true);
+
+
+  // Hard fallback for the composer + button. This delegation survives UI rewrites.
+  document.addEventListener('pointerdown', (e) => {
+    const btn = e.target.closest?.('#modeMenuBtn');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (!modeMenu) return;
+    if (modeMenu.classList.contains('visible') || modeMenu.style.display === 'block') closePlusMenu();
+    else openPlusMenu();
+  }, true);
 
   modeMenuCloseBtn?.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -3673,7 +3731,7 @@
   }));
 
   document.addEventListener('click', e => {
-    if (modeMenu?.classList.contains('visible') && modeMenuWrap && !modeMenuWrap.contains(e.target)) closePlusMenu();
+    if ((modeMenu?.classList.contains('visible') || modeMenu?.style.display === 'block') && modeMenuWrap && !modeMenuWrap.contains(e.target)) closePlusMenu();
   });
 
   function workspaceName(id){
