@@ -139,3 +139,11 @@ API endpoints:
 
 ## Website Studio V3 Upgrade
 Vigzone now uses an upgraded Website Studio prompt for modern website generation. It detects natural requests like "write a website for a hotel", applies industry-specific section guidance, requires complete self-contained code, and adds a browser Preview button for generated HTML blocks.
+
+
+## Voice language detection fix
+
+- Voice recorder now always asks server-side Groq transcription too, because browser SpeechRecognition can mishear Sinhala as Hindi.
+- Hands-free mode now records each turn and sends it to `/api/transcribe` for language-aware transcription.
+- Backend tries the first words plus language candidates and scores Sinhala/Tamil/Hindi/English output.
+- Optional Railway variable: `VOICE_TRANSCRIPTION_LANG_PRIORITY=si,ta,en,hi`.

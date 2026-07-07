@@ -1095,6 +1095,11 @@ async def admin_reset_user_usage(user_id: int, admin: dict = Depends(require_adm
 # ── Voice transcription endpoint ──────────────────────────────────────────────
 GROQ_TRANSCRIPTION_MODEL = os.getenv("GROQ_TRANSCRIPTION_MODEL", "whisper-large-v3-turbo")
 MAX_VOICE_UPLOAD_SIZE = int(os.getenv("MAX_VOICE_UPLOAD_SIZE_BYTES", str(25 * 1024 * 1024)))
+VOICE_TRANSCRIPTION_LANG_PRIORITY = [
+    item.strip().lower()
+    for item in os.getenv("VOICE_TRANSCRIPTION_LANG_PRIORITY", "si,ta,en,hi").split(",")
+    if item.strip()
+]
 
 
 def _groq_audio_transcriptions_url(api_url: str) -> str:
@@ -1116,11 +1121,158 @@ def _normalize_transcription_language(language: Optional[str]) -> Optional[str]:
     return primary if _re.fullmatch(r"[a-z]{2,3}", primary) else None
 
 
+def _voice_candidate_languages(
+    explicit_language: Optional[str],
+    browser_language: Optional[str] = None,
+    browser_languages: Optional[str] = None,
+    browser_hint: Optional[str] = None,
+) -> list[Optional[str]]:
+    """Build a small ordered list of language hints to try for Whisper.
+
+    For Sri Lankan users, Whisper/browser auto-detect may confuse Sinhala with
+    Hindi. We therefore try Sinhala and Tamil explicitly before falling back to
+    English/Hindi/auto. Admin can change order with VOICE_TRANSCRIPTION_LANG_PRIORITY.
+    """
+    candidates: list[Optional[str]] = []
+    explicit = _normalize_transcription_language(explicit_language)
+    if explicit:
+        candidates.append(explicit)
+
+    # Scripts from any quick browser hint. This uses the first one/two words
+    # when available, but never trusts it fully because Web Speech can be wrong.
+    hint = (browser_hint or "")[:80]
+    if re.search(r"[\u0D80-\u0DFF]", hint):
+        candidates.append("si")
+    if re.search(r"[\u0B80-\u0BFF]", hint):
+        candidates.append("ta")
+    if re.search(r"[\u0900-\u097F]", hint):
+        candidates.append("hi")
+
+    # Browser languages can still help for English/Tamil/Sinhala users.
+    raw_langs = ",".join([browser_language or "", browser_languages or ""])
+    for part in re.split(r"[,;\s]+", raw_langs.lower()):
+        lang = _normalize_transcription_language(part)
+        if lang:
+            candidates.append(lang)
+
+    candidates.extend(VOICE_TRANSCRIPTION_LANG_PRIORITY)
+    # Auto detect as final fallback.
+    candidates.append(None)
+
+    # Keep valid unique items, preserving order.
+    out: list[Optional[str]] = []
+    seen: set[str] = set()
+    for item in candidates:
+        key = item or "auto"
+        if item is not None and not re.fullmatch(r"[a-z]{2,3}", item):
+            continue
+        if key not in seen:
+            out.append(item)
+            seen.add(key)
+    return out[:6]
+
+
+def _voice_script_counts(text: str) -> dict[str, int]:
+    return {
+        "si": len(re.findall(r"[\u0D80-\u0DFF]", text or "")),
+        "ta": len(re.findall(r"[\u0B80-\u0BFF]", text or "")),
+        "hi": len(re.findall(r"[\u0900-\u097F]", text or "")),
+        "latin": len(re.findall(r"[A-Za-z]", text or "")),
+        "digits": len(re.findall(r"\d", text or "")),
+    }
+
+
+def _score_transcription_candidate(text: str, lang: Optional[str], browser_hint: str = "") -> float:
+    """Heuristic scorer for multiple Whisper attempts.
+
+    The first spoken words often expose the writing system. We prefer Sinhala
+    when Sinhala letters are present, Tamil for Tamil letters, and penalize
+    Devanagari/Hindi when Sinhala/Tamil candidates exist because Sinhala speech
+    is commonly misdetected as Hindi in browser/auto transcription.
+    """
+    clean = (text or "").strip()
+    if not clean:
+        return -1_000_000
+
+    counts = _voice_script_counts(clean)
+    words = re.findall(r"\S+", clean)
+    score = min(len(clean), 240) * 0.45 + min(len(words), 30) * 2.0
+
+    # Strong script/language agreement bonuses.
+    if lang == "si":
+        score += counts["si"] * 14
+        score -= counts["hi"] * 10
+    elif lang == "ta":
+        score += counts["ta"] * 14
+        score -= counts["hi"] * 5
+    elif lang == "hi":
+        score += counts["hi"] * 6
+        # If Hindi is only slightly better than Sinhala, don't let it win for SL users.
+        score -= 18
+    elif lang == "en":
+        score += counts["latin"] * 1.2
+
+    # Script present even when auto language was used.
+    score += counts["si"] * 12
+    score += counts["ta"] * 11
+    score += counts["latin"] * 0.25
+    score -= counts["hi"] * 2.5
+
+    # Extremely short outputs are often mis-detections.
+    if len(words) <= 1:
+        score -= 15
+
+    # Browser hint can nudge but not decide.
+    hint_counts = _voice_script_counts(browser_hint or "")
+    if hint_counts["si"] and counts["si"]:
+        score += 20
+    if hint_counts["ta"] and counts["ta"]:
+        score += 20
+    if hint_counts["hi"] and counts["hi"]:
+        score += 3
+
+    # Penalize obvious junk repetition.
+    if len(set(words)) <= 2 and len(words) >= 6:
+        score -= 25
+
+    return score
+
+
+async def _groq_transcribe_once(
+    client: httpx.AsyncClient,
+    transcribe_url: str,
+    api_key: str,
+    audio: bytes,
+    filename: str,
+    content_type: str,
+    lang: Optional[str],
+) -> tuple[str, dict]:
+    data = {"model": GROQ_TRANSCRIPTION_MODEL, "response_format": "json"}
+    if lang:
+        data["language"] = lang
+    resp = await client.post(
+        transcribe_url,
+        headers={"Authorization": f"Bearer {api_key}"},
+        data=data,
+        files={"file": (filename or "voice.webm", audio, content_type)},
+    )
+    if resp.status_code != 200:
+        return "", {"status_code": resp.status_code, "body": resp.text[:500], "language": lang}
+    try:
+        payload = resp.json()
+    except Exception:
+        payload = {}
+    return (payload.get("text") or "").strip(), payload
+
+
 @app.post("/api/transcribe", tags=["Voice"])
 async def transcribe_voice(
     request: Request,
     file: UploadFile = File(...),
     language: Optional[str] = Form(default=None),
+    browser_language: Optional[str] = Form(default=None),
+    browser_languages: Optional[str] = Form(default=None),
+    browser_hint: Optional[str] = Form(default=None),
     user: dict = Depends(require_current_user),
 ):
     """Transcribe a recorded voice message with Groq Whisper.
@@ -1154,24 +1306,47 @@ async def transcribe_voice(
     api_key = provider_override["api_key"] if using_override else API_KEY
     transcribe_url = _groq_audio_transcriptions_url(api_url)
 
-    data = {"model": GROQ_TRANSCRIPTION_MODEL, "response_format": "json"}
-    lang = _normalize_transcription_language(language)
-    if lang:
-        data["language"] = lang
+    candidates = _voice_candidate_languages(language, browser_language, browser_languages, browser_hint)
+    attempts: list[dict] = []
+    best_text = ""
+    best_lang: Optional[str] = None
+    best_score = -1_000_000.0
+    last_error: Optional[dict] = None
 
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(connect=8.0, read=90.0, write=30.0, pool=5.0)) as client:
-            resp = await client.post(
-                transcribe_url,
-                headers={"Authorization": f"Bearer {api_key}"},
-                data=data,
-                files={"file": (file.filename or "voice.webm", audio, content_type)},
-            )
+            for lang in candidates:
+                text, payload = await _groq_transcribe_once(
+                    client,
+                    transcribe_url,
+                    api_key,
+                    audio,
+                    file.filename or "voice.webm",
+                    content_type,
+                    lang,
+                )
+                if not text:
+                    last_error = payload
+                    # Do not burn more attempts if the key is invalid/rate-limited.
+                    if payload.get("status_code") in (401, 429):
+                        break
+                    continue
+                score = _score_transcription_candidate(text, lang, browser_hint or "")
+                attempts.append({"language": lang or "auto", "text": text[:80], "score": round(score, 2)})
+                if score > best_score:
+                    best_score = score
+                    best_text = text
+                    best_lang = lang
+
+                # Early accept: Sinhala/Tamil script is very strong evidence.
+                counts = _voice_script_counts(text)
+                if (lang == "si" and counts["si"] >= 2) or (lang == "ta" and counts["ta"] >= 2):
+                    break
     except httpx.RequestError as e:
         logger.warning("Groq transcription request failed: %s", e)
         raise HTTPException(status_code=502, detail="Couldn't reach Groq to transcribe the voice message.")
 
-    if resp.status_code == 401:
+    if last_error and last_error.get("status_code") == 401 and not best_text:
         raise HTTPException(
             status_code=401,
             detail=(
@@ -1179,17 +1354,13 @@ async def transcribe_voice(
                 + ("Check the key you entered." if using_override else "Check GROQ_API_KEY in your deployment variables.")
             ),
         )
-    if resp.status_code == 429:
+    if last_error and last_error.get("status_code") == 429 and not best_text:
         raise HTTPException(status_code=429, detail="Groq voice transcription is rate-limited right now. Please try again soon.")
-    if resp.status_code != 200:
-        logger.warning("Groq transcription error %s: %s", resp.status_code, resp.text[:500])
-        raise HTTPException(status_code=502, detail=f"Groq couldn't transcribe that voice message (status {resp.status_code}).")
+    if last_error and last_error.get("status_code") and last_error.get("status_code") != 200 and not best_text:
+        logger.warning("Groq transcription error %s: %s", last_error.get("status_code"), last_error.get("body"))
+        raise HTTPException(status_code=502, detail=f"Groq couldn't transcribe that voice message (status {last_error.get('status_code')}).")
 
-    try:
-        payload = resp.json()
-    except Exception:
-        payload = {}
-    text = (payload.get("text") or "").strip()
+    text = best_text.strip()
     if not text:
         raise HTTPException(status_code=422, detail="I couldn't detect speech in that recording.")
 
@@ -1204,7 +1375,7 @@ async def transcribe_voice(
     except Exception:
         logger.debug("Voice transcription usage tracking failed", exc_info=True)
 
-    return JSONResponse({"text": text, "provider": "groq", "model": GROQ_TRANSCRIPTION_MODEL})
+    return JSONResponse({"text": text, "provider": "groq", "model": GROQ_TRANSCRIPTION_MODEL, "language": best_lang or "auto"})
 
 
 # ── Chat endpoints ────────────────────────────────────────────────────────────

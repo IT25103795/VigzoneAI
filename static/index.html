@@ -4877,12 +4877,30 @@
     return '';
   }
 
-  async function transcribeVoiceBlob(blob) {
+  function detectTextScript(text) {
+    const t = text || '';
+    if (/[\u0D80-\u0DFF]/.test(t)) return 'si';
+    if (/[\u0B80-\u0BFF]/.test(t)) return 'ta';
+    if (/[\u0900-\u097F]/.test(t)) return 'hi';
+    if (/[A-Za-z]/.test(t)) return 'latin';
+    return '';
+  }
+
+  function firstWords(text, count = 2) {
+    return String(text || '').trim().split(/\s+/).filter(Boolean).slice(0, count).join(' ');
+  }
+
+  async function transcribeVoiceBlob(blob, browserHint = '') {
     const form = new FormData();
     const ext = (blob.type || '').includes('ogg') ? 'ogg' : 'webm';
     form.append('file', blob, `voice-message.${ext}`);
     const selectedLang = getExplicitVoiceInputLang();
     if (selectedLang) form.append('language', selectedLang);
+    try {
+      form.append('browser_language', navigator.language || '');
+      form.append('browser_languages', (navigator.languages || []).join(','));
+      form.append('browser_hint', browserHint || '');
+    } catch {}
 
     const authToken = localStorage.getItem('vigzone_token') || '';
     const res = await fetch('/api/transcribe', {
@@ -5107,13 +5125,27 @@
       transcription = (micSpeechTranscript || micSpeechInterimTranscript || '').trim();
     }
 
-    if (!transcription) {
-      try {
-        transcription = await transcribeVoiceBlob(blob);
+    // Always ask Groq Whisper too. Browser speech recognition is fast but it
+    // often mishears Sinhala as Hindi/English. The backend retries Sinhala,
+    // Tamil, English, Hindi and auto-detect, then chooses the best transcript.
+    const browserTranscript = (transcription || '').trim();
+    try {
+      const groqTranscript = await transcribeVoiceBlob(blob, firstWords(browserTranscript, 2));
+      if (groqTranscript) {
+        const browserScript = detectTextScript(browserTranscript);
+        const groqScript = detectTextScript(groqTranscript);
+        // Prefer Groq whenever browser output is empty, Hindi/Devanagari, or
+        // Groq found Sinhala/Tamil script. This fixes the common Sinhala→Hindi issue.
+        if (!browserTranscript || browserScript === 'hi' || groqScript === 'si' || groqScript === 'ta') {
+          transcription = groqTranscript;
+        } else {
+          transcription = groqTranscript || browserTranscript;
+        }
         speechErrorCode = null;
-      } catch (e) {
-        speechErrorCode = (e && e.message) || speechErrorCode || 'unknown';
       }
+    } catch (e) {
+      speechErrorCode = (e && e.message) || speechErrorCode || 'unknown';
+      transcription = browserTranscript;
     }
 
     if (!transcription) {
@@ -5226,6 +5258,11 @@
   let liveOrbEl = null;
   let liveStatusEl = null;
   let liveCaptionEl = null;
+  let liveRecorder = null;
+  let liveMicStream = null;
+  let liveRecordChunks = [];
+  let liveAudioContext = null;
+  let liveSilenceTimer = null;
 
   function buildLiveVoiceOverlay() {
     const overlay = document.createElement('div');
@@ -5274,6 +5311,20 @@
       try { liveRecognition.onend = null; liveRecognition.onresult = null; liveRecognition.onerror = null; liveRecognition.stop(); } catch (e) {}
       liveRecognition = null;
     }
+    if (liveRecorder && liveRecorder.state !== 'inactive') {
+      try { liveRecorder.stop(); } catch (e) {}
+    }
+    liveRecorder = null;
+    clearTimeout(liveSilenceTimer);
+    liveSilenceTimer = null;
+    if (liveMicStream) {
+      try { liveMicStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+      liveMicStream = null;
+    }
+    if (liveAudioContext) {
+      try { liveAudioContext.close(); } catch (e) {}
+      liveAudioContext = null;
+    }
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
     if (liveOverlayEl) {
       const el = liveOverlayEl;
@@ -5288,6 +5339,140 @@
   // segments a hands-free conversation into back-and-forth turns.
   function liveListenLoop() {
     if (!liveVoiceActive) return;
+
+    // Prefer server-side Groq transcription for live voice too. Browser Web
+    // Speech needs one fixed language and often hears Sinhala as Hindi. This
+    // recorder path captures one turn, sends the audio to /api/transcribe,
+    // and the backend tries the first-words/language candidates.
+    if (navigator.mediaDevices?.getUserMedia && window.MediaRecorder) {
+      liveRecordAndTranscribeTurn();
+      return;
+    }
+
+    // Fallback for very old browsers.
+    liveListenLoopWithBrowserSpeech();
+  }
+
+  async function liveRecordAndTranscribeTurn() {
+    if (!liveVoiceActive) return;
+    setLiveVoiceState('listening', 'Vigi is listening…');
+    liveCaptionEl.textContent = 'Speak now…';
+
+    try {
+      liveMicStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      if (!liveVoiceActive) return;
+      setLiveVoiceState(null, 'Mic permission needed — tap × and allow microphone');
+      return;
+    }
+
+    liveRecordChunks = [];
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg';
+    try {
+      liveRecorder = new MediaRecorder(liveMicStream, { mimeType });
+    } catch (e) {
+      liveListenLoopWithBrowserSpeech();
+      return;
+    }
+
+    liveRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) liveRecordChunks.push(e.data); };
+    liveRecorder.onstop = async () => {
+      const chunks = liveRecordChunks.slice();
+      liveRecordChunks = [];
+      if (liveMicStream) {
+        try { liveMicStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+        liveMicStream = null;
+      }
+      if (liveAudioContext) {
+        try { liveAudioContext.close(); } catch (e) {}
+        liveAudioContext = null;
+      }
+      if (!liveVoiceActive) return;
+      if (!chunks.length) {
+        liveListenLoop();
+        return;
+      }
+
+      const blob = new Blob(chunks, { type: mimeType });
+      if (blob.size < 900) {
+        liveListenLoop();
+        return;
+      }
+
+      setLiveVoiceState('thinking', 'Detecting language…');
+      try {
+        const text = await transcribeVoiceBlob(blob, '');
+        if (text) {
+          liveCaptionEl.textContent = text;
+          sendLiveVoiceTurn(text);
+        } else {
+          liveListenLoop();
+        }
+      } catch (e) {
+        console.warn('Vigzone live voice transcription failed:', e);
+        setLiveVoiceState(null, 'Could not transcribe — listening again');
+        setTimeout(() => { if (liveVoiceActive) liveListenLoop(); }, 900);
+      }
+    };
+
+    liveRecorder.start();
+    let started = false;
+    let lastSpeechAt = Date.now();
+    const startedAt = Date.now();
+    const maxMs = 12000;
+    const minMs = 900;
+    const silenceAfterSpeechMs = 1250;
+    const noSpeechTimeoutMs = 4500;
+
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      liveAudioContext = new AudioCtx();
+      const source = liveAudioContext.createMediaStreamSource(liveMicStream);
+      const analyser = liveAudioContext.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      const data = new Uint8Array(analyser.fftSize);
+
+      const checkLevel = () => {
+        if (!liveVoiceActive || !liveRecorder || liveRecorder.state === 'inactive') return;
+        analyser.getByteTimeDomainData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) {
+          const v = (data[i] - 128) / 128;
+          sum += v * v;
+        }
+        const rms = Math.sqrt(sum / data.length);
+        const now = Date.now();
+        if (rms > 0.025) {
+          started = true;
+          lastSpeechAt = now;
+          liveCaptionEl.textContent = 'Listening…';
+        }
+        const elapsed = now - startedAt;
+        const silenceMs = now - lastSpeechAt;
+        if ((started && elapsed > minMs && silenceMs > silenceAfterSpeechMs) || elapsed > maxMs || (!started && elapsed > noSpeechTimeoutMs)) {
+          try { liveRecorder.stop(); } catch (e) {}
+          return;
+        }
+        liveSilenceTimer = setTimeout(checkLevel, 110);
+      };
+      checkLevel();
+    } catch (e) {
+      // If audio-level analysis fails, record a short fixed turn.
+      liveSilenceTimer = setTimeout(() => {
+        if (liveRecorder && liveRecorder.state !== 'inactive') {
+          try { liveRecorder.stop(); } catch (err) {}
+        }
+      }, 5200);
+    }
+  }
+
+  function liveListenLoopWithBrowserSpeech() {
+    if (!liveVoiceActive) return;
+    if (!micSpeechSupported) {
+      setLiveVoiceState(null, 'Speech recognition unavailable');
+      return;
+    }
     const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recog = new SpeechRecognitionImpl();
     liveRecognition = recog;
@@ -5311,11 +5496,8 @@
 
     recog.onerror = (e) => {
       if (!liveVoiceActive) return;
-      if (e.error === 'no-speech' || e.error === 'aborted') {
-        liveListenLoop(); // nothing heard — just keep listening
-      } else {
-        setLiveVoiceState(null, 'Mic error — tap × to exit and try again');
-      }
+      if (e.error === 'no-speech' || e.error === 'aborted') liveListenLoop();
+      else setLiveVoiceState(null, 'Mic error — tap × to exit and try again');
     };
 
     recog.onend = () => {
