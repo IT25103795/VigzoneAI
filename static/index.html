@@ -2247,6 +2247,56 @@
       }
     }
 
+
+    /* ---------- ChatGPT-style floating down-arrow button fix ---------- */
+    .scroll-to-bottom{
+      position:fixed !important;
+      left:50%;
+      bottom:calc(92px + env(safe-area-inset-bottom, 0px));
+      top:auto !important;
+      width:38px !important;
+      height:38px !important;
+      border-radius:999px !important;
+      background:var(--surface) !important;
+      border:1px solid var(--border) !important;
+      color:var(--text-muted) !important;
+      cursor:pointer;
+      display:flex !important;
+      align-items:center;
+      justify-content:center;
+      opacity:0;
+      pointer-events:none;
+      transform:translate(-50%, 10px) scale(.96);
+      transition:opacity .16s ease, transform .16s ease, background .15s ease, color .15s ease, box-shadow .15s ease;
+      box-shadow:0 10px 28px -14px var(--composer-shadow), 0 2px 8px -4px var(--composer-shadow) !important;
+      z-index:145 !important;
+    }
+    .scroll-to-bottom.visible{
+      opacity:1 !important;
+      pointer-events:auto;
+      transform:translate(-50%, 0) scale(1);
+    }
+    .scroll-to-bottom:hover{
+      background:var(--surface-2) !important;
+      border-color:var(--hover-border) !important;
+      color:var(--text) !important;
+      box-shadow:0 12px 32px -14px var(--composer-shadow), 0 3px 10px -5px var(--composer-shadow) !important;
+    }
+    .scroll-to-bottom svg{
+      width:18px !important;
+      height:18px !important;
+    }
+    .composer.compact-composer #goToBottomBtn,
+    #goToBottomBtn{
+      display:none !important;
+    }
+    @media (max-width:560px){
+      .scroll-to-bottom{
+        width:36px !important;
+        height:36px !important;
+      }
+    }
+
   </style>
 </head>
 <body style="display: none;">
@@ -4423,8 +4473,10 @@
   input.addEventListener('input', autoResize);
 
   function scrollToBottom(smooth){
+    const bottom = Math.max(0, main.scrollHeight - main.clientHeight);
     if (smooth) {
-      main.scrollTo({ top: main.scrollHeight, behavior: 'smooth' });
+      main.scrollTo({ top: bottom, behavior: 'smooth' });
+      setTimeout(() => { main.scrollTop = Math.max(0, main.scrollHeight - main.clientHeight); updateScrollBtnVisibility(); }, 420);
       return;
     }
     // Force an instant jump regardless of the CSS scroll-behavior:smooth rule.
@@ -4433,27 +4485,65 @@
     // stuck visible even though the user is effectively at the latest message.
     const prevBehavior = main.style.scrollBehavior;
     main.style.scrollBehavior = 'auto';
-    main.scrollTop = main.scrollHeight;
+    main.scrollTop = Math.max(0, main.scrollHeight - main.clientHeight);
     main.style.scrollBehavior = prevBehavior || '';
   }
 
   let scrollBtnRaf = null;
+
+  function positionScrollToBottomBtn(){
+    if (!scrollToBottomBtn) return;
+    const mainRect = main.getBoundingClientRect();
+    const composerWrap = document.querySelector('.composer-wrap');
+    const composerRect = composerWrap ? composerWrap.getBoundingClientRect() : null;
+
+    // Center the arrow in the chat column, not the whole browser window.
+    const x = mainRect.left + (mainRect.width / 2);
+
+    // Place it exactly above the composer/message box, like ChatGPT.
+    // This automatically adapts when attachments/quote preview increase composer height.
+    const composerTop = composerRect ? composerRect.top : (window.innerHeight - 96);
+    const bottom = Math.max(72, Math.round(window.innerHeight - composerTop + 12));
+
+    scrollToBottomBtn.style.left = `${Math.round(x)}px`;
+    scrollToBottomBtn.style.bottom = `${bottom}px`;
+  }
+
   function updateScrollBtnVisibility(){
     if (scrollBtnRaf) return;
     scrollBtnRaf = requestAnimationFrame(() => {
       scrollBtnRaf = null;
-      // Small buffer absorbs sub-pixel rounding so it doesn't flicker,
-      // but still reveals the button as soon as the user scrolls up
-      // past the last message.
+      positionScrollToBottomBtn();
+
       const distanceFromBottom = main.scrollHeight - main.clientHeight - main.scrollTop;
-      scrollToBottomBtn.classList.toggle('visible', distanceFromBottom > 24);
+      const hasScrollableChat = main.scrollHeight > main.clientHeight + 40;
+
+      // Show only when the user has scrolled up away from the latest message.
+      scrollToBottomBtn?.classList.toggle('visible', hasScrollableChat && distanceFromBottom > 72);
     });
   }
+
   main.addEventListener('scroll', updateScrollBtnVisibility, { passive:true });
+  window.addEventListener('resize', updateScrollBtnVisibility, { passive:true });
+  window.addEventListener('orientationchange', updateScrollBtnVisibility, { passive:true });
+
+  try {
+    const composerWrap = document.querySelector('.composer-wrap');
+    if (window.ResizeObserver && composerWrap) {
+      new ResizeObserver(updateScrollBtnVisibility).observe(composerWrap);
+    }
+  } catch {}
+
   updateScrollBtnVisibility();
 
-  scrollToBottomBtn.addEventListener('click', () => scrollToBottom(true));
-  goToBottomBtn.addEventListener('click', () => scrollToBottom(true));
+  scrollToBottomBtn?.addEventListener('click', () => {
+    scrollToBottom(true);
+    setTimeout(updateScrollBtnVisibility, 280);
+  });
+  goToBottomBtn?.addEventListener('click', () => {
+    scrollToBottom(true);
+    setTimeout(updateScrollBtnVisibility, 280);
+  });
 
   // ---------- Quote / reply-to ----------
   function setQuote(role, fullText, index){
