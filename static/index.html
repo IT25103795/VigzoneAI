@@ -2579,6 +2579,114 @@
       }
     }
 
+
+    /* ---------- New chat greeting visibility card ----------
+       Makes the greeting info readable over custom wallpapers/default backgrounds
+       in both light and dark modes. */
+    .empty-state{
+      padding:38px 16px !important;
+    }
+    .empty-shell{
+      position:relative !important;
+      isolation:isolate !important;
+      width:min(720px, calc(100vw - 36px)) !important;
+      padding:26px 28px 24px !important;
+      border-radius:30px !important;
+      border:1px solid color-mix(in srgb, var(--border) 74%, var(--accent) 26%) !important;
+      background:linear-gradient(135deg,
+        color-mix(in srgb, var(--surface) 86%, transparent),
+        color-mix(in srgb, var(--surface-2) 74%, transparent)
+      ) !important;
+      box-shadow:
+        0 28px 80px -42px var(--composer-shadow),
+        0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent),
+        inset 0 1px 0 rgba(255,255,255,.08) !important;
+      backdrop-filter:blur(20px) saturate(1.08) !important;
+      -webkit-backdrop-filter:blur(20px) saturate(1.08) !important;
+      overflow:hidden !important;
+    }
+    .empty-shell::before{
+      content:'' !important;
+      position:absolute !important;
+      inset:-1px !important;
+      z-index:-2 !important;
+      border-radius:inherit !important;
+      background:
+        radial-gradient(520px 220px at 50% -18%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 66%),
+        radial-gradient(420px 220px at 8% 110%, color-mix(in srgb, var(--accent-2) 14%, transparent), transparent 68%) !important;
+      pointer-events:none !important;
+    }
+    .empty-shell::after{
+      content:'' !important;
+      position:absolute !important;
+      inset:0 !important;
+      z-index:-1 !important;
+      border-radius:inherit !important;
+      background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,0) 45%) !important;
+      pointer-events:none !important;
+    }
+    .empty-mark{
+      background:color-mix(in srgb, var(--surface) 68%, var(--accent) 12%) !important;
+      border:1px solid color-mix(in srgb, var(--border) 75%, var(--accent) 25%) !important;
+      box-shadow:
+        0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent),
+        0 16px 40px -18px var(--empty-shadow) !important;
+    }
+    .empty-topline{
+      background:color-mix(in srgb, var(--surface) 78%, var(--accent-2) 10%) !important;
+      border-color:color-mix(in srgb, var(--border) 70%, var(--accent-2) 30%) !important;
+      color:color-mix(in srgb, var(--text) 78%, var(--accent-2) 22%) !important;
+      box-shadow:0 10px 28px -22px var(--composer-shadow) !important;
+    }
+    .empty-state h1{
+      color:var(--text) !important;
+      text-shadow:0 2px 18px color-mix(in srgb, var(--composer-shadow) 35%, transparent) !important;
+    }
+    .empty-state p{
+      color:color-mix(in srgb, var(--text) 72%, var(--text-muted) 28%) !important;
+      text-shadow:0 1px 12px color-mix(in srgb, var(--composer-shadow) 22%, transparent) !important;
+    }
+    [data-theme="light"] .empty-shell{
+      background:linear-gradient(135deg, rgba(255,255,255,.88), rgba(245,247,253,.76)) !important;
+      border-color:rgba(255,107,74,.22) !important;
+      box-shadow:
+        0 30px 80px -48px rgba(21,27,40,.38),
+        0 0 0 1px rgba(255,255,255,.72),
+        inset 0 1px 0 rgba(255,255,255,.9) !important;
+    }
+    [data-theme="light"] .empty-shell::after{
+      background:linear-gradient(180deg, rgba(255,255,255,.70), rgba(255,255,255,0) 48%) !important;
+    }
+    [data-theme="dark"] .empty-shell{
+      background:linear-gradient(135deg,
+        color-mix(in srgb, var(--surface) 82%, #000 18%),
+        color-mix(in srgb, var(--surface-2) 70%, #000 30%)
+      ) !important;
+      border-color:rgba(255,255,255,.12) !important;
+    }
+    body.has-chat-wallpaper .empty-shell{
+      background:linear-gradient(135deg,
+        color-mix(in srgb, var(--surface) 78%, transparent),
+        color-mix(in srgb, var(--surface-2) 68%, transparent)
+      ) !important;
+      border-color:color-mix(in srgb, var(--border) 60%, var(--accent) 40%) !important;
+    }
+    @media (max-width:560px){
+      .empty-state{ padding:26px 12px !important; }
+      .empty-shell{
+        width:min(100%, calc(100vw - 24px)) !important;
+        padding:22px 18px 20px !important;
+        border-radius:24px !important;
+      }
+      .empty-state h1{
+        font-size:22px !important;
+        text-align:center !important;
+        flex-wrap:wrap !important;
+        justify-content:center !important;
+      }
+      .empty-state p{ font-size:13.5px !important; }
+    }
+
   </style>
 </head>
 <body style="display: none;">
