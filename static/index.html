@@ -2497,6 +2497,69 @@
       background:transparent !important;
     }
 
+
+    /* ---------- Roller-door composer shield ----------
+       Chat bubbles no longer scroll under/past the message box.
+       The shield uses the same default theme or custom wallpaper, not a blur bar. */
+    .composer-wrap{
+      isolation:isolate;
+      z-index:3 !important;
+    }
+    .composer-wrap::before{
+      content:'' !important;
+      display:block !important;
+      position:absolute;
+      left:0;
+      right:0;
+      top:-18px;
+      bottom:0;
+      z-index:0;
+      pointer-events:none;
+      background-color:var(--bg);
+      background-image:var(--bg-image);
+      background-attachment:fixed;
+      background-size:cover;
+      background-position:center;
+      background-repeat:no-repeat;
+      box-shadow:none !important;
+      backdrop-filter:none !important;
+      -webkit-backdrop-filter:none !important;
+    }
+    body.has-chat-wallpaper .composer-wrap::before{
+      background-image:var(--chat-wallpaper-image, none);
+      background-size:cover;
+      background-position:center;
+      background-repeat:no-repeat;
+      filter:brightness(var(--chat-wallpaper-brightness, 1)) blur(var(--chat-wallpaper-blur, 0px));
+      transform:scale(1.04);
+    }
+    .composer-wrap > *{
+      position:relative;
+      z-index:1;
+    }
+    .composer-wrap > .composer,
+    .composer-wrap > .hint,
+    .composer-wrap > #setupBannerSlot,
+    .composer-wrap > #imageModeHintSlot,
+    .composer-wrap > .attachments-bar,
+    .composer-wrap > .quote-preview-bar{
+      position:relative;
+      z-index:1;
+    }
+    main{
+      z-index:1;
+    }
+
+
+    .chat-inner{
+      padding-bottom:180px !important;
+    }
+    @media (max-width:560px){
+      .chat-inner{
+        padding-bottom:160px !important;
+      }
+    }
+
   </style>
 </head>
 <body style="display: none;">
