@@ -2463,6 +2463,40 @@
       }
     }
 
+
+    /* ---------- Bottom blur/fade bar removal ----------
+       Let the default theme or custom wallpaper show behind the composer area. */
+    :root,
+    [data-theme="dark"]{
+      --composer-wrap-fade: transparent !important;
+    }
+    [data-theme="light"]{
+      --composer-wrap-fade: transparent !important;
+    }
+    .composer-wrap{
+      background:transparent !important;
+      backdrop-filter:none !important;
+      -webkit-backdrop-filter:none !important;
+      box-shadow:none !important;
+    }
+    .composer-wrap::before,
+    .composer-wrap::after{
+      content:none !important;
+      display:none !important;
+    }
+    .composer-wrap > .hint,
+    .composer-wrap > #setupBannerSlot,
+    .composer-wrap > #imageModeHintSlot,
+    .composer-wrap > .attachments-bar,
+    .composer-wrap > .quote-preview-bar,
+    .composer-wrap > .composer{
+      position:relative;
+      z-index:1;
+    }
+    body.has-chat-wallpaper .composer-wrap{
+      background:transparent !important;
+    }
+
   </style>
 </head>
 <body style="display: none;">
