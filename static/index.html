@@ -2619,6 +2619,80 @@
       }
     }
 
+
+    /* ---------- Final roller-door fix: no visual layer ----------
+       The composer is now a real bottom section in the flex layout, not an
+       absolute overlay. Chat scroll stops above it, so bubbles cannot pass the
+       message box, and there is no second/dark wallpaper strip. */
+    .main-col{
+      display:flex !important;
+      flex-direction:column !important;
+      min-height:0 !important;
+      overflow:hidden !important;
+    }
+    main{
+      flex:1 1 auto !important;
+      min-height:0 !important;
+      overflow-y:auto !important;
+      position:relative !important;
+      z-index:1 !important;
+    }
+    .composer-wrap{
+      position:relative !important;
+      left:auto !important;
+      right:auto !important;
+      bottom:auto !important;
+      top:auto !important;
+      flex:0 0 auto !important;
+      background:transparent !important;
+      background-image:none !important;
+      border-top:none !important;
+      box-shadow:none !important;
+      backdrop-filter:none !important;
+      -webkit-backdrop-filter:none !important;
+      isolation:auto !important;
+      overflow:visible !important;
+      z-index:5 !important;
+      padding:18px 20px 22px !important;
+      pointer-events:none !important;
+    }
+    .composer-wrap::before,
+    .composer-wrap::after{
+      content:none !important;
+      display:none !important;
+      background:none !important;
+      box-shadow:none !important;
+      filter:none !important;
+      transform:none !important;
+      backdrop-filter:none !important;
+      -webkit-backdrop-filter:none !important;
+    }
+    .composer-wrap > *{
+      position:relative !important;
+      z-index:1 !important;
+    }
+    .composer-wrap .composer{
+      pointer-events:auto !important;
+    }
+    .composer-wrap .hint,
+    .composer-wrap #setupBannerSlot,
+    .composer-wrap #imageModeHintSlot,
+    .composer-wrap .attachments-bar,
+    .composer-wrap .quote-preview-bar{
+      pointer-events:auto !important;
+    }
+    .chat-inner{
+      padding-bottom:28px !important;
+    }
+    @media (max-width:560px){
+      .composer-wrap{
+        padding:10px 10px 12px !important;
+      }
+      .chat-inner{
+        padding-bottom:24px !important;
+      }
+    }
+
   </style>
 </head>
 <body style="display: none;">
