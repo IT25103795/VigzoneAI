@@ -4616,8 +4616,21 @@
         else entry.subKind = 'document';
       }
     } catch (err) {
-      entry.status = 'error';
-      entry.error = err.message || 'Upload failed';
+      const isPdf = /\.pdf$/i.test(entry.name || entry.file?.name || '') || entry.file?.type === 'application/pdf';
+      if (isPdf) {
+        // Do not reject PDFs in the UI just because extraction/upload failed.
+        // This prevents the red chip problem for scanned/design/protected PDFs.
+        entry.status = 'ready';
+        entry.kind = 'document';
+        entry.subKind = 'document';
+        entry.text = `[PDF attached: ${entry.name || entry.file?.name || 'upload.pdf'}]\nVigzone accepted this PDF, but text extraction/upload failed in the browser/server path. It may be scanned/image-based, protected, or a design PDF. If you need visual analysis, upload page screenshots/images too.`;
+        entry.truncated = false;
+        entry.pdfFallback = true;
+        entry.error = '';
+      } else {
+        entry.status = 'error';
+        entry.error = err.message || 'Upload failed';
+      }
     }
     renderAttachmentsBar();
   }
@@ -4645,7 +4658,7 @@
         id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
         file,
         name: file.name,
-        kind: file.type.startsWith('image/') ? 'image' : 'document',
+        kind: file.type.startsWith('image/') ? 'image' : (/\.pdf$/i.test(file.name) ? 'document' : 'document'),
         status: 'uploading',
       };
       pendingFiles.push(entry);

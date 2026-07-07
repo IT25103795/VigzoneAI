@@ -956,10 +956,44 @@ async def upload_file(file: UploadFile = File(...), user: dict = Depends(require
     try:
         result = process_file(contents, filename)
     except FileProcessingError as e:
-        raise HTTPException(422, f'"{filename}": {e}')
+        # UX rule for PDFs: never turn the PDF chip red only because extraction
+        # failed. Many real user PDFs are scanned/image-only, protected, or
+        # generated design PDFs. Accept the attachment with a clear note so the
+        # user can still include it in the conversation.
+        if filename.lower().endswith(".pdf"):
+            logger.warning("Accepted PDF with fallback note after processing error for %s: %s", filename, e)
+            result = {
+                "name": filename,
+                "kind": "document",
+                "text": (
+                    f"[PDF attached: {filename}]\n"
+                    "Vigzone accepted this PDF, but the server could not extract readable text from it. "
+                    "It may be scanned/image-based, protected, corrupted, or a design PDF. "
+                    "If you need visual analysis, upload screenshots/images of the PDF pages too."
+                ),
+                "truncated": False,
+                "pdf_fallback": True,
+                "processing_warning": str(e),
+            }
+        else:
+            raise HTTPException(422, f'"{filename}": {e}')
     except Exception as e:
         logger.error("Unexpected error processing upload %s: %s", filename, e, exc_info=True)
-        raise HTTPException(500, f'Couldn\'t process "{filename}".')
+        if filename.lower().endswith(".pdf"):
+            result = {
+                "name": filename,
+                "kind": "document",
+                "text": (
+                    f"[PDF attached: {filename}]\n"
+                    "Vigzone accepted this PDF, but the server could not process it. "
+                    "If you need visual analysis, upload screenshots/images of the PDF pages too."
+                ),
+                "truncated": False,
+                "pdf_fallback": True,
+                "processing_warning": str(e),
+            }
+        else:
+            raise HTTPException(500, f'Couldn\'t process "{filename}".')
 
     # Attach scan metadata so the frontend can show a "scanned ✓" badge
     result["scan_clean"] = scan.clean
