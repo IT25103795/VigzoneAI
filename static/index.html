@@ -2523,7 +2523,10 @@
       width:100% !important;
       flex:0 0 auto !important;
       margin:0 !important;
-      padding:14px 20px calc(14px + env(safe-area-inset-bottom, 0px)) !important;
+      /* Top padding 0: the chat scroll area ends exactly at the top of the
+         visible composer box, so bubbles get clipped by the composer's own
+         background like a roller door — no invisible bar above the box. */
+      padding:0 20px calc(14px + env(safe-area-inset-bottom, 0px)) !important;
       background:transparent !important;
       background-image:none !important;
       border-top:0 !important;
@@ -2568,7 +2571,7 @@
     }
     @media (max-width:560px){
       .composer-wrap{
-        padding:10px 10px calc(10px + env(safe-area-inset-bottom, 0px)) !important;
+        padding:0 10px calc(10px + env(safe-area-inset-bottom, 0px)) !important;
       }
       #chatInner,
       .chat-inner{
