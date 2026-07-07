@@ -2560,6 +2560,65 @@
       }
     }
 
+
+    /* ---------- Roller-door double-layer fix ----------
+       Use only ONE shield layer behind the composer. */
+    .composer-wrap{
+      position:relative !important;
+      isolation:isolate !important;
+      overflow:hidden !important;
+      background:transparent !important;
+      border-top:none !important;
+      box-shadow:none !important;
+      backdrop-filter:none !important;
+      -webkit-backdrop-filter:none !important;
+      z-index:3 !important;
+    }
+    .composer-wrap::before{
+      content:'' !important;
+      display:block !important;
+      position:absolute !important;
+      inset:0 !important; /* only the composer area, no extra top strip */
+      z-index:0 !important;
+      pointer-events:none !important;
+      background-color:var(--bg) !important;
+      background-image:var(--bg-image) !important;
+      background-size:cover !important;
+      background-position:center !important;
+      background-repeat:no-repeat !important;
+      background-attachment:fixed !important;
+      box-shadow:none !important;
+      backdrop-filter:none !important;
+      -webkit-backdrop-filter:none !important;
+      transform:none !important;
+      filter:none !important;
+    }
+    body.has-chat-wallpaper .composer-wrap::before{
+      background-image:var(--chat-wallpaper-image, none) !important;
+      background-size:cover !important;
+      background-position:center !important;
+      background-repeat:no-repeat !important;
+      background-attachment:fixed !important;
+      filter:brightness(var(--chat-wallpaper-brightness, 1)) blur(var(--chat-wallpaper-blur, 0px)) !important;
+      transform:scale(1.04) !important;
+    }
+    .composer-wrap::after{
+      content:none !important;
+      display:none !important;
+    }
+    .composer-wrap > *{
+      position:relative !important;
+      z-index:1 !important;
+    }
+    .chat-inner{
+      padding-bottom:150px !important;
+    }
+    @media (max-width:560px){
+      .chat-inner{
+        padding-bottom:140px !important;
+      }
+    }
+
   </style>
 </head>
 <body style="display: none;">
