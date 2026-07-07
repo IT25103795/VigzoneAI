@@ -2225,7 +2225,7 @@
     }
     .sidebar-footer{
       flex:0 0 auto !important;
-      padding-bottom:18px !important;
+      padding-bottom:32px !important;
     }
     .history-list{
       min-height:72px;
@@ -2463,75 +2463,26 @@
               <span>Attach files</span>
             </div>
             <div class="starter-item">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.<div class="mode-menu plus-tools-menu" id="modeMenu" role="menu" aria-label="Vigzone tools and smart modes">
-          <div class="plus-menu-head">
-            <div class="plus-menu-title">Vigzone tools</div>
-            <button class="plus-menu-close" id="plusMenuCloseBtn" type="button" aria-label="Close tools menu">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-            </button>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="M21 15l-5-5L5 21"></path></svg>
+              <span>Use image mode</span>
+            </div>
+            <div class="starter-item">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a5 5 0 0 0-5 5v2a5 5 0 0 0 0 10 5 5 0 0 0 5 3 5 5 0 0 0 5-3 5 5 0 0 0 0-10V7a5 5 0 0 0-5-5z"></path></svg>
+              <span>Keep context</span>
+            </div>
           </div>
-
-          <button class="mode-menu-item plus-primary" id="attachBtn" type="button" role="menuitem">
-            <span class="plus-menu-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05 12.25 20.24a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 1 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
-            </span>
-            <span class="plus-menu-label">Upload files</span>
-          </button>
-
-          <button class="mode-menu-item plus-primary disabled" type="button" role="menuitem" aria-disabled="true" title="Coming later">
-            <span class="plus-menu-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"></path><path d="M7 9l5-5 5 5"></path><path d="M20 16.5V20a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3.5"></path></svg>
-            </span>
-            <span class="plus-menu-label">Add from Drive</span>
-          </button>
-
-          <button class="mode-menu-item plus-primary has-chevron" data-plus-section="moreUploads" type="button" role="menuitem" aria-expanded="false">
-            <span class="plus-menu-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.7"></circle><circle cx="12" cy="12" r="1.7"></circle><circle cx="19" cy="12" r="1.7"></circle></svg>
-            </span>
-            <span class="plus-menu-label">More uploads</span>
-            <span class="plus-menu-chevron">›</span>
-          </button>
-          <div class="plus-submenu" id="moreUploadsMenu">
-            <button class="mode-menu-item" data-mode="file" type="button" role="menuitem">
-              <span class="plus-menu-icon">📄</span><span class="plus-menu-label">File Analyzer</span>
-            </button>
-            <button class="mode-menu-item" data-mode="study" type="button" role="menuitem">
-              <span class="plus-menu-icon">🎓</span><span class="plus-menu-label">Study Helper</span>
-            </button>
-          </div>
-
-          <div class="plus-menu-separator"></div>
-
-          <button class="mode-menu-item plus-primary" id="imageModeBtn" type="button" role="menuitem" aria-pressed="false">
-            <span class="plus-menu-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"></rect><circle cx="8.5" cy="10" r="1.5"></circle><path d="M21 15l-4.2-4.2a2 2 0 0 0-2.8 0L5 19"></path></svg>
-            </span>
-            <span class="plus-menu-label">Create image</span>
-          </button>
-
-          <button class="mode-menu-item plus-primary disabled" type="button" role="menuitem" aria-disabled="true" title="Coming later">
-            <span class="plus-menu-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"></rect><path d="m10 9 5 3-5 3V9Z"></path></svg>
-            </span>
-            <span class="plus-menu-label">Create video</span>
-          </button>
-
-          <button class="mode-menu-item plus-primary has-chevron" data-plus-section="moreTools" type="button" role="menuitem" aria-expanded="false">
-            <span class="plus-menu-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.7"></circle><circle cx="12" cy="12" r="1.7"></circle><circle cx="19" cy="12" r="1.7"></circle></svg>
-            </span>
-            <span class="plus-menu-label">More tools</span>
-            <span class="plus-menu-chevron">›</span>
-          </button>
-          <div class="plus-submenu" id="moreToolsMenu">
-            <button class="mode-menu-item" data-mode="general" type="button" role="menuitem"><span class="plus-menu-icon">💬</span><span class="plus-menu-label">General</span></button>
-            <button class="mode-menu-item" data-mode="website" type="button" role="menuitem"><span class="plus-menu-icon">🌐</span><span class="plus-menu-label">Website Studio</span></button>
-            <button class="mode-menu-item" data-mode="code" type="button" role="menuitem"><span class="plus-menu-icon">🛠️</span><span class="plus-menu-label">Code Fixer</span></button>
-            <button class="mode-menu-item" data-mode="business" type="button" role="menuitem"><span class="plus-menu-icon">✍️</span><span class="plus-menu-label">Business Writer</span></button>
-            <button class="mode-menu-item" data-mode="voice" type="button" role="menuitem"><span class="plus-menu-icon">🎙️</span><span class="plus-menu-label">Voice</span></button>
-          </div>
-        </div>            </div>
+          <div class="suggestions">
+            <div class="suggestion" data-prompt="I need to finish this today: [describe the task]. Help me turn it into a clear plan with the next 3 actions." tabindex="0" role="button" aria-label="Turn a task into a plan">
+              <div class="suggestion-top">
+                <div class="s-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg></div>
+                <div><div class="s-title">Turn a task into a plan</div><div class="s-sub">Get next steps for work you need to finish</div></div>
+              </div>
+            </div>
+            <div class="suggestion" data-prompt="Review this text and make it clearer, more professional, and easier to act on: [paste text here]." tabindex="0" role="button" aria-label="Improve writing">
+              <div class="suggestion-top">
+                <div class="s-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg></div>
+                <div><div class="s-title">Improve writing</div><div class="s-sub">Polish an email, report, or message</div></div>
+              </div>
             </div>
             <div class="suggestion" data-prompt="I have a problem in my project: [describe what is happening]. Ask focused questions, then help me find the cause." tabindex="0" role="button" aria-label="Solve a project problem">
               <div class="suggestion-top">
