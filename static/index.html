@@ -2297,6 +2297,172 @@
       }
     }
 
+
+    /* ---------- Settings + custom chat wallpaper ---------- */
+    .settings-modal{
+      max-width:520px;
+    }
+    .settings-account-card{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      padding:12px;
+      border:1px solid var(--border);
+      border-radius:13px;
+      background:var(--surface-2);
+      margin:10px 0 14px;
+    }
+    .settings-user-text{
+      min-width:0;
+      display:flex;
+      flex-direction:column;
+      gap:2px;
+    }
+    .settings-user-name{
+      font-weight:700;
+      font-size:13.5px;
+      color:var(--text);
+      word-break:break-word;
+    }
+    .settings-user-sub{
+      font-size:11.5px;
+      color:var(--text-muted);
+    }
+    .settings-section{
+      border:1px solid var(--border);
+      background:var(--surface-2);
+      border-radius:14px;
+      padding:13px;
+    }
+    .settings-section-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin-bottom:12px;
+    }
+    .settings-section-title{
+      font-size:13px;
+      font-weight:800;
+      color:var(--text);
+    }
+    .settings-section-sub{
+      font-size:11.5px;
+      color:var(--text-muted);
+      margin-top:2px;
+      line-height:1.4;
+    }
+    .settings-browse-btn svg{width:15px;height:15px;}
+    .wallpaper-preview{
+      width:100%;
+      height:135px;
+      border-radius:13px;
+      border:1px solid var(--border);
+      background:var(--surface);
+      background-size:cover;
+      background-position:center;
+      overflow:hidden;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      margin-bottom:12px;
+      position:relative;
+    }
+    .wallpaper-preview::after{
+      content:'';
+      position:absolute;
+      inset:0;
+      background:linear-gradient(180deg, transparent, rgba(0,0,0,.18));
+      pointer-events:none;
+    }
+    .wallpaper-preview-empty{
+      position:relative;
+      z-index:1;
+      font-size:12px;
+      color:var(--text-muted);
+      padding:8px 10px;
+      border-radius:999px;
+      background:var(--surface-2);
+      border:1px solid var(--border);
+    }
+    .wallpaper-controls{
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    .wallpaper-control-row{
+      display:grid;
+      grid-template-columns:78px 1fr 46px;
+      align-items:center;
+      gap:10px;
+      color:var(--text-muted);
+      font-size:12px;
+      font-weight:600;
+    }
+    .wallpaper-control-row input[type="range"]{
+      width:100%;
+      accent-color:var(--accent);
+    }
+    .wallpaper-control-row output{
+      text-align:right;
+      font-size:11.5px;
+      color:var(--text);
+      font-variant-numeric:tabular-nums;
+    }
+    .settings-actions-row{
+      display:flex;
+      justify-content:flex-end;
+      margin-top:12px;
+    }
+    .chat-wallpaper-layer{
+      position:absolute !important;
+      inset:-24px;
+      z-index:0 !important;
+      pointer-events:none;
+      background-image:var(--chat-wallpaper-image, none);
+      background-size:cover;
+      background-position:center;
+      background-repeat:no-repeat;
+      filter:brightness(var(--chat-wallpaper-brightness, 1)) blur(var(--chat-wallpaper-blur, 0px));
+      transform:scale(1.04);
+      opacity:0;
+      transition:opacity .22s ease, filter .18s ease, background-image .18s ease;
+    }
+    body.has-chat-wallpaper .chat-wallpaper-layer{
+      opacity:1;
+    }
+    body.has-chat-wallpaper .main-col{
+      background-color:var(--bg);
+    }
+    body.has-chat-wallpaper .main-col::before{
+      background:linear-gradient(180deg, rgba(0,0,0,.08), rgba(0,0,0,.16));
+      z-index:0;
+    }
+    [data-theme="light"] body.has-chat-wallpaper .main-col::before{
+      content:'';
+      position:absolute;
+      inset:0;
+      pointer-events:none;
+      background:linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.18));
+      z-index:0;
+    }
+    .main-col > .chat-wallpaper-layer{
+      position:absolute;
+    }
+    @media (max-width:560px){
+      .settings-account-card{
+        align-items:flex-start;
+        flex-direction:column;
+      }
+      .settings-account-card .edit-name-btn{
+        align-self:flex-end;
+      }
+      .wallpaper-control-row{
+        grid-template-columns:70px 1fr 44px;
+      }
+    }
+
   </style>
 </head>
 <body style="display: none;">
@@ -2352,13 +2518,6 @@
       </div>
 
       <div class="sidebar-footer-row">
-        <div class="sidebar-user">
-          <div class="sidebar-user-dot" id="sidebarUserDot">?</div>
-          <span class="sidebar-user-name" id="sidebarUserName">Add your name</span>
-        </div>
-        <button class="edit-name-btn" id="signOutBtn">Sign out</button>
-      </div>
-      <div class="sidebar-footer-row">
         <span class="history-label" style="padding:0;margin:0;">Appearance</span>
         <button class="sidebar-theme-btn" id="themeToggleBtnSidebar" aria-label="Switch to light theme" title="Toggle theme">
           <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
@@ -2400,6 +2559,12 @@
             <button class="deep-action-btn" id="exportHtmlBtn" type="button">Export HTML</button>
           </div>
         </div>
+      </div>
+      <div class="sidebar-footer-row">
+        <span class="history-label" style="padding:0;margin:0;">Settings</span>
+        <button class="sidebar-teach-btn" id="settingsBtn" aria-label="Open settings" title="Settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-.4-1.1 1.7 1.7 0 0 0-1-.6 1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.1-.4 1.7 1.7 0 0 0 .6-1 1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 .4 1.1 1.7 1.7 0 0 0 1 .6 1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.28.36.6.68 1 .9.33.18.7.3 1.1.3H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.1.4 1.7 1.7 0 0 0-.4.4Z"></path></svg>
+        </button>
       </div>
       <div class="sidebar-footer-row" id="adminPanelRow" style="display:none;">
         <span class="history-label" style="padding:0;margin:0;">Admin</span>
@@ -2459,7 +2624,63 @@
   </div>
 </div>
 
+<div class="usage-modal-overlay" id="settingsModalOverlay">
+  <div class="usage-modal settings-modal">
+    <div class="usage-modal-head">
+      <h3>Settings</h3>
+      <button class="usage-modal-close" id="settingsModalCloseBtn" aria-label="Close">&times;</button>
+    </div>
+
+    <div class="settings-account-card">
+      <div class="sidebar-user">
+        <div class="sidebar-user-dot" id="settingsUserDot">?</div>
+        <div class="settings-user-text">
+          <div class="settings-user-name" id="settingsUserName">Add your name</div>
+          <div class="settings-user-sub">Signed in to Vigzone AI</div>
+        </div>
+      </div>
+      <button class="edit-name-btn" id="signOutBtn">Sign out</button>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-head">
+        <div>
+          <div class="settings-section-title">Chat theme</div>
+          <div class="settings-section-sub">Choose an image from this device only.</div>
+        </div>
+        <button class="sidebar-teach-btn settings-browse-btn" id="chatWallpaperBrowseBtn" aria-label="Browse wallpaper image" title="Browse image">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"></rect><circle cx="8.5" cy="10" r="1.5"></circle><path d="M21 15l-4.2-4.2a2 2 0 0 0-2.8 0L5 19"></path></svg>
+        </button>
+        <input type="file" id="chatWallpaperInput" accept="image/*" hidden />
+      </div>
+
+      <div class="wallpaper-preview" id="wallpaperPreview">
+        <div class="wallpaper-preview-empty" id="wallpaperPreviewEmpty">No custom wallpaper yet</div>
+      </div>
+
+      <div class="wallpaper-controls">
+        <label class="wallpaper-control-row">
+          <span>Blur</span>
+          <input type="range" id="wallpaperBlurRange" min="0" max="20" step="1" value="0" />
+          <output id="wallpaperBlurValue">0px</output>
+        </label>
+        <label class="wallpaper-control-row">
+          <span>Brightness</span>
+          <input type="range" id="wallpaperBrightnessRange" min="35" max="140" step="5" value="100" />
+          <output id="wallpaperBrightnessValue">100%</output>
+        </label>
+      </div>
+
+      <div class="settings-actions-row">
+        <button class="deep-action-btn" id="resetWallpaperBtn" type="button">Remove wallpaper</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
 <div class="main-col">
+  <div class="chat-wallpaper-layer" id="chatWallpaperLayer" aria-hidden="true"></div>
   <header>
     <div class="header-left">
       <button class="sidebar-toggle-btn" id="sidebarToggleBtn" aria-label="Toggle chat history" title="Toggle chat history">
@@ -2714,6 +2935,21 @@
   const signOutBtn = $('#signOutBtn');
   const sidebarUserName = $('#sidebarUserName');
   const sidebarUserDot = $('#sidebarUserDot');
+  const settingsBtn = $('#settingsBtn');
+  const settingsModalOverlay = $('#settingsModalOverlay');
+  const settingsModalCloseBtn = $('#settingsModalCloseBtn');
+  const settingsUserName = $('#settingsUserName');
+  const settingsUserDot = $('#settingsUserDot');
+  const chatWallpaperLayer = $('#chatWallpaperLayer');
+  const chatWallpaperBrowseBtn = $('#chatWallpaperBrowseBtn');
+  const chatWallpaperInput = $('#chatWallpaperInput');
+  const wallpaperPreview = $('#wallpaperPreview');
+  const wallpaperPreviewEmpty = $('#wallpaperPreviewEmpty');
+  const wallpaperBlurRange = $('#wallpaperBlurRange');
+  const wallpaperBrightnessRange = $('#wallpaperBrightnessRange');
+  const wallpaperBlurValue = $('#wallpaperBlurValue');
+  const wallpaperBrightnessValue = $('#wallpaperBrightnessValue');
+  const resetWallpaperBtn = $('#resetWallpaperBtn');
   const teachVigzoneBtn = $('#teachVigzoneBtn');
   const learningModalOverlay = $('#learningModalOverlay');
   const learningModalCloseBtn = $('#learningModalCloseBtn');
@@ -4422,17 +4658,24 @@
   // ---------- Personalized greeting (name comes from the signed-in account) ----------
   const GREETINGS = ['Back at it,', 'Welcome back,', 'Good to see you,', 'Hey there,'];
 
+  function accountInitial(name){
+    const safe = (name || '').trim();
+    return (Array.from(_graphemeSegmenter ? _graphemeSegmenter.segment(safe) : safe, s => s.segment ?? s)[0] || '?').toUpperCase();
+  }
+
   function updateGreeting(){
+    const displayName = userName || 'Signed in';
     if (userName) {
       const g = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
       greetingText.textContent = `${g} ${userName}`;
-      sidebarUserName.textContent = userName;
-      sidebarUserDot.textContent = (Array.from(_graphemeSegmenter ? _graphemeSegmenter.segment(userName.trim()) : userName.trim(), s => s.segment ?? s)[0] || '?').toUpperCase();
     } else {
       greetingText.textContent = 'Welcome to Vigzone AI';
-      sidebarUserName.textContent = 'Signed in';
-      sidebarUserDot.textContent = '?';
     }
+
+    if (sidebarUserName) sidebarUserName.textContent = displayName;
+    if (sidebarUserDot) sidebarUserDot.textContent = userName ? accountInitial(userName) : '?';
+    if (settingsUserName) settingsUserName.textContent = displayName;
+    if (settingsUserDot) settingsUserDot.textContent = userName ? accountInitial(userName) : '?';
   }
 
   async function loadAccount(){
@@ -4457,6 +4700,113 @@
     document.body.style.display = 'flex';
   }
 
+  // ---------- Settings + device-only custom chat wallpaper ----------
+  const WALLPAPER_KEY = 'vigzone_chat_wallpaper_data_url';
+  const WALLPAPER_BLUR_KEY = 'vigzone_chat_wallpaper_blur';
+  const WALLPAPER_BRIGHTNESS_KEY = 'vigzone_chat_wallpaper_brightness';
+
+  function openSettingsModal(){
+    updateGreeting();
+    settingsModalOverlay?.classList.add('visible');
+  }
+
+  function closeSettingsModal(){
+    settingsModalOverlay?.classList.remove('visible');
+  }
+
+  function setWallpaperCss(imageDataUrl, blur = 0, brightness = 100){
+    const hasImage = !!imageDataUrl;
+    document.body.classList.toggle('has-chat-wallpaper', hasImage);
+    document.documentElement.style.setProperty('--chat-wallpaper-image', hasImage ? `url("${imageDataUrl}")` : 'none');
+    document.documentElement.style.setProperty('--chat-wallpaper-blur', `${Number(blur) || 0}px`);
+    document.documentElement.style.setProperty('--chat-wallpaper-brightness', `${(Number(brightness) || 100) / 100}`);
+
+    if (wallpaperPreview) {
+      wallpaperPreview.style.backgroundImage = hasImage ? `url("${imageDataUrl}")` : '';
+      wallpaperPreview.style.filter = hasImage ? `brightness(${(Number(brightness) || 100) / 100})` : '';
+    }
+    if (wallpaperPreviewEmpty) wallpaperPreviewEmpty.style.display = hasImage ? 'none' : '';
+    if (wallpaperBlurRange) wallpaperBlurRange.value = String(Number(blur) || 0);
+    if (wallpaperBrightnessRange) wallpaperBrightnessRange.value = String(Number(brightness) || 100);
+    if (wallpaperBlurValue) wallpaperBlurValue.textContent = `${Number(blur) || 0}px`;
+    if (wallpaperBrightnessValue) wallpaperBrightnessValue.textContent = `${Number(brightness) || 100}%`;
+  }
+
+  function loadChatWallpaper(){
+    let imageDataUrl = '';
+    let blur = 0;
+    let brightness = 100;
+    try {
+      imageDataUrl = localStorage.getItem(WALLPAPER_KEY) || '';
+      blur = Number(localStorage.getItem(WALLPAPER_BLUR_KEY) || 0);
+      brightness = Number(localStorage.getItem(WALLPAPER_BRIGHTNESS_KEY) || 100);
+    } catch {}
+    setWallpaperCss(imageDataUrl, blur, brightness);
+  }
+
+  function saveWallpaperSettings(){
+    const imageDataUrl = (() => {
+      try { return localStorage.getItem(WALLPAPER_KEY) || ''; } catch { return ''; }
+    })();
+    const blur = Number(wallpaperBlurRange?.value || 0);
+    const brightness = Number(wallpaperBrightnessRange?.value || 100);
+    try {
+      localStorage.setItem(WALLPAPER_BLUR_KEY, String(blur));
+      localStorage.setItem(WALLPAPER_BRIGHTNESS_KEY, String(brightness));
+    } catch {}
+    setWallpaperCss(imageDataUrl, blur, brightness);
+  }
+
+  settingsBtn?.addEventListener('click', openSettingsModal);
+  settingsModalCloseBtn?.addEventListener('click', closeSettingsModal);
+  settingsModalOverlay?.addEventListener('click', e => { if (e.target === settingsModalOverlay) closeSettingsModal(); });
+
+  chatWallpaperBrowseBtn?.addEventListener('click', () => chatWallpaperInput?.click());
+
+  chatWallpaperInput?.addEventListener('change', () => {
+    const file = chatWallpaperInput.files && chatWallpaperInput.files[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file.');
+      chatWallpaperInput.value = '';
+      return;
+    }
+    if (file.size > 4 * 1024 * 1024) {
+      alert('Please choose an image smaller than 4 MB so it can be saved on this device.');
+      chatWallpaperInput.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      try {
+        localStorage.setItem(WALLPAPER_KEY, dataUrl);
+      } catch (e) {
+        alert('This image is too large for browser storage. Try a smaller image.');
+        return;
+      }
+      saveWallpaperSettings();
+      chatWallpaperInput.value = '';
+    };
+    reader.onerror = () => alert('Could not read that image. Try another one.');
+    reader.readAsDataURL(file);
+  });
+
+  wallpaperBlurRange?.addEventListener('input', saveWallpaperSettings);
+  wallpaperBrightnessRange?.addEventListener('input', saveWallpaperSettings);
+
+  resetWallpaperBtn?.addEventListener('click', () => {
+    try {
+      localStorage.removeItem(WALLPAPER_KEY);
+      localStorage.removeItem(WALLPAPER_BLUR_KEY);
+      localStorage.removeItem(WALLPAPER_BRIGHTNESS_KEY);
+    } catch {}
+    setWallpaperCss('', 0, 100);
+  });
+
+  loadChatWallpaper();
+
   async function signOut(){
     try {
       await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
@@ -4464,7 +4814,7 @@
     window.location.href = '/';
   }
 
-  signOutBtn.addEventListener('click', signOut);
+  signOutBtn?.addEventListener('click', signOut);
 
   function autoResize(){
     input.style.height = 'auto';
