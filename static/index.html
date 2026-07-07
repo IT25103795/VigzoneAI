@@ -4422,17 +4422,38 @@
   }
   input.addEventListener('input', autoResize);
 
-  function scrollToBottom(){
+  function scrollToBottom(smooth){
+    if (smooth) {
+      main.scrollTo({ top: main.scrollHeight, behavior: 'smooth' });
+      return;
+    }
+    // Force an instant jump regardless of the CSS scroll-behavior:smooth rule.
+    // Without this, rapid auto-scroll calls during streaming fight the smooth
+    // animation and can land short of the true bottom, leaving the button
+    // stuck visible even though the user is effectively at the latest message.
+    const prevBehavior = main.style.scrollBehavior;
+    main.style.scrollBehavior = 'auto';
     main.scrollTop = main.scrollHeight;
+    main.style.scrollBehavior = prevBehavior || '';
   }
 
-  main.addEventListener('scroll', () => {
-    const isScrolledToBottom = main.scrollHeight - main.clientHeight <= main.scrollTop + 1;
-    scrollToBottomBtn.classList.toggle('visible', !isScrolledToBottom);
-  });
+  let scrollBtnRaf = null;
+  function updateScrollBtnVisibility(){
+    if (scrollBtnRaf) return;
+    scrollBtnRaf = requestAnimationFrame(() => {
+      scrollBtnRaf = null;
+      // Small buffer absorbs sub-pixel rounding so it doesn't flicker,
+      // but still reveals the button as soon as the user scrolls up
+      // past the last message.
+      const distanceFromBottom = main.scrollHeight - main.clientHeight - main.scrollTop;
+      scrollToBottomBtn.classList.toggle('visible', distanceFromBottom > 24);
+    });
+  }
+  main.addEventListener('scroll', updateScrollBtnVisibility, { passive:true });
+  updateScrollBtnVisibility();
 
-  scrollToBottomBtn.addEventListener('click', scrollToBottom);
-  goToBottomBtn.addEventListener('click', scrollToBottom);
+  scrollToBottomBtn.addEventListener('click', () => scrollToBottom(true));
+  goToBottomBtn.addEventListener('click', () => scrollToBottom(true));
 
   // ---------- Quote / reply-to ----------
   function setQuote(role, fullText, index){
@@ -4811,7 +4832,7 @@
         renderAll();
         // Scroll to bottom after showing more messages
         requestAnimationFrame(() => {
-          main.scrollTop = main.scrollHeight;
+          scrollToBottom();
         });
       });
     }
