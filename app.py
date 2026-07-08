@@ -11,6 +11,7 @@ Modes (set APP_MODE in .env):
 
 import logging
 import os
+import re
 import time
 import io
 import json
@@ -25,7 +26,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import Cookie, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -219,6 +220,27 @@ class WebsiteExportRequest(BaseModel):
     filename: str = Field(default="vigzone-website.zip", max_length=100)
 
 
+class BrainCloudSyncRequest(BaseModel):
+    data: dict = Field(default_factory=dict)
+    client_updated_at: Optional[str] = Field(default=None, max_length=80)
+
+
+class FeedbackCreateRequest(BaseModel):
+    message_id: Optional[str] = Field(default=None, max_length=120)
+    conversation_id: Optional[str] = Field(default=None, max_length=120)
+    rating: Literal["up", "down"] = "up"
+    reason: Optional[str] = Field(default="", max_length=500)
+    message_text: Optional[str] = Field(default="", max_length=6000)
+    assistant_text: Optional[str] = Field(default="", max_length=12000)
+    context: dict = Field(default_factory=dict)
+
+
+class ShareChatRequest(BaseModel):
+    title: str = Field(default="Vigzone chat", max_length=160)
+    messages: List[dict] = Field(default_factory=list)
+    public: bool = True
+
+
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 def get_current_user(
     request: Request,
@@ -282,6 +304,241 @@ def require_admin(user: dict = Depends(require_current_user)) -> dict:
     if not authmod.is_admin_email(user.get("email", "")):
         raise HTTPException(status_code=403, detail="Admin access required.")
     return user
+
+
+# ── Product Suite / Brain Pro storage ─────────────────────────────────────────
+DATA_DIR = os.getenv("VIGZONE_DATA_DIR", "data")
+APP_VERSION = os.getenv("VIGZONE_VERSION", "v4.0-brain-pro")
+APP_NAME = os.getenv("VIGZONE_APP_NAME", "Vigzone AI")
+APP_SHORT_NAME = os.getenv("VIGZONE_SHORT_NAME", APP_NAME)
+APP_BUILD_NAME = os.getenv("VIGZONE_BUILD_NAME", "Vigzone Brain Pro Suite")
+GROQ_KEYS_URL = os.getenv("GROQ_KEYS_URL", "https://console.groq.com/keys")
+GROQ_DOCS_URL = os.getenv("GROQ_DOCS_URL", "https://console.groq.com/docs/models")
+NEW_CHAT_TOPLINE = os.getenv("VIGZONE_NEW_CHAT_TOPLINE", "Start with a real task")
+NEW_CHAT_SUBTITLE = os.getenv(
+    "VIGZONE_NEW_CHAT_SUBTITLE",
+    "Open a fresh chat for one focused goal. Tell {app_name} what you are trying to finish, attach useful files, or choose a starter below."
+)
+GROQ_HINT_TEXT = os.getenv(
+    "VIGZONE_GROQ_HINT",
+    "Groq is fast and generous on the free tier — cheaper than most alternatives for a project like this."
+)
+GREETING_OPTIONS = [
+    x.strip() for x in os.getenv(
+        "VIGZONE_GREETING_OPTIONS",
+        "Back at it,|Welcome back,|Good to see you,|Hey there,"
+    ).split("|") if x.strip()
+] or ["Welcome back,"]
+
+
+def _ensure_dir(path: str) -> None:
+    os.makedirs(path, exist_ok=True)
+
+
+def _user_data_dir(user_id: Any) -> str:
+    path = os.path.join(DATA_DIR, "users", str(user_id))
+    _ensure_dir(path)
+    return path
+
+
+def _json_load(path: str, default: Any) -> Any:
+    try:
+        if not os.path.exists(path):
+            return default
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.warning("Could not load json %s: %s", path, e)
+        return default
+
+
+def _json_write(path: str, data: Any) -> None:
+    _ensure_dir(os.path.dirname(path) or ".")
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
+
+
+def _safe_share_id() -> str:
+    return _secrets.token_urlsafe(9).replace("-", "").replace("_", "")[:12]
+
+
+def _safe_message_text(value: Any, limit: int = 12000) -> str:
+    if isinstance(value, str):
+        return value[:limit]
+    try:
+        return json.dumps(value, ensure_ascii=False)[:limit]
+    except Exception:
+        return str(value)[:limit]
+
+
+def _render_share_html(title: str, messages: list[dict]) -> str:
+    import html
+    safe_title = html.escape(title or "Vigzone chat")
+    rows = []
+    for m in messages[:200]:
+        role_raw = str(m.get("role", "message"))[:40]
+        role = html.escape(role_raw)
+        text = html.escape(_safe_message_text(m.get("displayText") or m.get("content") or "", 10000))
+        cls = "user" if role_raw == "user" else "assistant"
+        rows.append(f'<article class="msg {cls}"><div class="role">{role}</div><div class="bubble">{text}</div></article>')
+    body = "\n".join(rows) or '<p class="empty">No messages shared.</p>'
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>{safe_title}</title>
+<style>
+:root{{color-scheme:dark;--bg:#090a0f;--card:#161922;--muted:#8f96a8;--text:#eceef4;--accent:#ff6b4a;--border:#ffffff18}}
+body{{margin:0;background:radial-gradient(circle at 50% 0,#ff6b4a22,transparent 42%),var(--bg);color:var(--text);font:15px/1.55 system-ui,-apple-system,Segoe UI,sans-serif}}
+.wrap{{max-width:860px;margin:0 auto;padding:34px 16px 56px}}
+h1{{font-size:28px;margin:0 0 6px}} .meta{{color:var(--muted);margin-bottom:24px}}
+.msg{{margin:14px 0;display:flex;flex-direction:column;gap:5px}} .role{{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:800}}
+.bubble{{white-space:pre-wrap;border:1px solid var(--border);border-radius:18px;padding:14px 16px;background:var(--card);box-shadow:0 18px 50px -34px #000}}
+.user .bubble{{background:#ff6b4a;color:#160b06;border-color:#ff6b4a;margin-left:auto;max-width:78%}} .assistant .bubble{{max-width:86%}}
+.badge{{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:999px;padding:7px 10px;color:var(--muted);font-size:12px}}
+</style>
+</head>
+<body><main class="wrap"><div class="badge">{html.escape(APP_NAME)} shared chat</div><h1>{safe_title}</h1><div class="meta">Exported public read-only view</div>{body}</main></body></html>"""
+
+
+@app.get("/api/app/version", tags=["Product"])
+async def app_version():
+    return JSONResponse({
+        "version": APP_VERSION,
+        "name": APP_BUILD_NAME,
+        "app_name": APP_NAME,
+        "features": [
+            "Brain Pro cloud sync",
+            "Continue where I stopped",
+            "Smart project grouping",
+            "File Studio",
+            "Website Studio",
+            "Feedback learning",
+            "Share chat",
+            "Admin analytics",
+        ],
+    })
+
+
+@app.get("/api/public/config", tags=["Product"])
+async def public_config():
+    """Frontend living config. Keeps branding/text/URLs out of hardcoded HTML."""
+    return JSONResponse({
+        "app_name": APP_NAME,
+        "short_name": APP_SHORT_NAME,
+        "build_name": APP_BUILD_NAME,
+        "version": APP_VERSION,
+        "groq_keys_url": GROQ_KEYS_URL,
+        "groq_docs_url": GROQ_DOCS_URL,
+        "new_chat_topline": NEW_CHAT_TOPLINE,
+        "new_chat_subtitle": NEW_CHAT_SUBTITLE.format(app_name=APP_NAME),
+        "groq_hint": GROQ_HINT_TEXT,
+        "greetings": GREETING_OPTIONS,
+        "labels": {
+            "assistant": APP_NAME,
+            "settings_signed_in": f"Signed in to {APP_NAME}",
+            "share_badge": f"{APP_NAME} shared chat",
+            "api_default": "Groq (default)",
+            "api_own": "Groq (your key)",
+        },
+    })
+
+
+@app.get("/api/brain/cloud", tags=["Brain"])
+async def get_brain_cloud(user: dict = Depends(require_current_user)):
+    path = os.path.join(_user_data_dir(user["id"]), "brain_cloud.json")
+    data = _json_load(path, {"version": 1, "updated_at": None, "payload": {}})
+    return JSONResponse(data)
+
+
+@app.post("/api/brain/cloud", tags=["Brain"])
+async def save_brain_cloud(req: BrainCloudSyncRequest, user: dict = Depends(require_current_user)):
+    path = os.path.join(_user_data_dir(user["id"]), "brain_cloud.json")
+    doc = {
+        "version": 1,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "client_updated_at": req.client_updated_at,
+        "payload": req.data,
+    }
+    _json_write(path, doc)
+    return JSONResponse({"ok": True, "updated_at": doc["updated_at"]})
+
+
+@app.post("/api/feedback", tags=["Feedback"])
+async def save_feedback(req: FeedbackCreateRequest, user: dict = Depends(require_current_user)):
+    path = os.path.join(_user_data_dir(user["id"]), "feedback.json")
+    rows = _json_load(path, [])
+    item = {
+        "id": _safe_share_id(),
+        "user_id": user["id"],
+        "email": user.get("email"),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "message_id": req.message_id,
+        "conversation_id": req.conversation_id,
+        "rating": req.rating,
+        "reason": req.reason or "",
+        "message_text": req.message_text or "",
+        "assistant_text": req.assistant_text or "",
+        "context": req.context or {},
+    }
+    rows.append(item)
+    _json_write(path, rows[-1000:])
+    return JSONResponse({"ok": True, "id": item["id"]})
+
+
+@app.post("/api/share/chat", tags=["Share"])
+async def share_chat(req: ShareChatRequest, user: dict = Depends(require_current_user)):
+    share_id = _safe_share_id()
+    share_dir = os.path.join(DATA_DIR, "shares")
+    _ensure_dir(share_dir)
+    payload = {
+        "id": share_id,
+        "user_id": user["id"],
+        "title": req.title,
+        "messages": req.messages[:200],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "public": req.public,
+    }
+    _json_write(os.path.join(share_dir, f"{share_id}.json"), payload)
+    return JSONResponse({"ok": True, "share_id": share_id, "url": f"/share/{share_id}"})
+
+
+@app.get("/share/{share_id}", response_class=HTMLResponse, tags=["Share"])
+async def public_share_page(share_id: str):
+    share_id = re.sub(r"[^A-Za-z0-9]", "", share_id)[:32]
+    path = os.path.join(DATA_DIR, "shares", f"{share_id}.json")
+    doc = _json_load(path, None)
+    if not doc or not doc.get("public", True):
+        raise HTTPException(status_code=404, detail="Shared chat not found.")
+    return HTMLResponse(_render_share_html(doc.get("title") or "Vigzone chat", doc.get("messages") or []))
+
+
+@app.get("/api/admin/analytics", tags=["Admin"])
+async def admin_analytics(user: dict = Depends(require_admin)):
+    users_dir = os.path.join(DATA_DIR, "users")
+    shares_dir = os.path.join(DATA_DIR, "shares")
+    brain_users = 0
+    feedback_count = 0
+    feedback_down = 0
+    if os.path.isdir(users_dir):
+        for uid in os.listdir(users_dir):
+            udir = os.path.join(users_dir, uid)
+            if os.path.exists(os.path.join(udir, "brain_cloud.json")):
+                brain_users += 1
+            rows = _json_load(os.path.join(udir, "feedback.json"), [])
+            feedback_count += len(rows)
+            feedback_down += sum(1 for r in rows if r.get("rating") == "down")
+    share_count = len([p for p in os.listdir(shares_dir)]) if os.path.isdir(shares_dir) else 0
+    return JSONResponse({
+        "brain_users": brain_users,
+        "feedback_count": feedback_count,
+        "negative_feedback": feedback_down,
+        "share_count": share_count,
+        "version": APP_VERSION,
+    })
 
 
 AI_MODE_PROMPTS = {
@@ -359,13 +616,13 @@ def _set_session_cookie(response: JSONResponse, token: str) -> None:
 
 # ── System endpoints ──────────────────────────────────────────────────────────
 def _backend_label() -> str:
-    return "Groq (hosted)"
+    return os.getenv("VIGZONE_BACKEND_LABEL", "Groq (hosted)")
 
 
 def _setup_message() -> str:
     return (
-        "Groq isn't configured. Add a valid GROQ_API_KEY in your deployment "
-        "environment variables, then redeploy/restart the app."
+        f"{APP_NAME} isn't configured. Add a valid GROQ_API_KEY in your deployment "
+        f"environment variables, then redeploy/restart the app. Get a key at {GROQ_KEYS_URL}."
     )
 
 
@@ -1304,7 +1561,7 @@ async def transcribe_voice(
     if provider_override is None and not await is_configured():
         raise HTTPException(
             status_code=503,
-            detail="Groq isn't configured — set GROQ_API_KEY before using voice transcription.",
+            detail=f"{APP_NAME} isn't configured — set GROQ_API_KEY before using voice transcription.",
         )
 
     audio = await file.read()
@@ -1461,8 +1718,8 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
         raise HTTPException(
             status_code=503,
             detail=(
-                "Groq isn't configured — set GROQ_API_KEY in .env "
-                "or in your deployment Variables (get a free key at https://console.groq.com/keys)."
+                f"{APP_NAME} isn't configured — set GROQ_API_KEY in .env "
+                f"or in your deployment Variables (get a free key at {GROQ_KEYS_URL})."
             ),
         )
 
@@ -1560,8 +1817,8 @@ async def chat_sync(request: Request, chat_request: ChatRequest, user: dict = De
         raise HTTPException(
             status_code=503,
             detail=(
-                "Groq isn't configured — set GROQ_API_KEY in .env "
-                "or in your deployment Variables (get a free key at https://console.groq.com/keys)."
+                f"{APP_NAME} isn't configured — set GROQ_API_KEY in .env "
+                f"or in your deployment Variables (get a free key at {GROQ_KEYS_URL})."
             ),
         )
     messages = [{"role": m.role, "content": m.content} for m in chat_request.messages]

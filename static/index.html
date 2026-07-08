@@ -4874,6 +4874,78 @@
   let workspaces = [];
   let activeAiMode = localStorage.getItem('vigzone_ai_mode') || 'general';
 
+
+  // ---------- Living config: no stale hardcoded product text ----------
+  let liveConfig = {
+    app_name: 'Vigzone AI',
+    short_name: 'Vigzone AI',
+    build_name: 'Vigzone Brain Pro Suite',
+    version: '',
+    groq_keys_url: 'https://console.groq.com/keys',
+    groq_hint: 'Groq is fast and generous on the free tier — cheaper than most alternatives for a project like this.',
+    new_chat_topline: 'Start with a real task',
+    new_chat_subtitle: 'Open a fresh chat for one focused goal. Tell Vigzone AI what you are trying to finish, attach useful files, or choose a starter below.',
+    greetings: ['Back at it,', 'Welcome back,', 'Good to see you,', 'Hey there,'],
+    labels: { assistant: 'Vigzone AI', settings_signed_in: 'Signed in to Vigzone AI', api_default: 'Groq (default)', api_own: 'Groq (your key)' }
+  };
+
+  function applyLiveConfig(cfg = {}){
+    liveConfig = {
+      ...liveConfig,
+      ...cfg,
+      labels: {...(liveConfig.labels || {}), ...((cfg && cfg.labels) || {})}
+    };
+
+    document.title = liveConfig.app_name || 'Vigzone AI';
+
+    document.querySelectorAll('.brand-name').forEach(el => { el.textContent = liveConfig.app_name || 'Vigzone AI'; });
+    document.querySelectorAll('.settings-user-sub').forEach(el => { el.textContent = liveConfig.labels.settings_signed_in || `Signed in to ${liveConfig.app_name}`; });
+
+    const topLine = document.querySelector('.empty-topline');
+    if (topLine) {
+      const icon = topLine.querySelector('svg');
+      topLine.textContent = '';
+      if (icon) topLine.appendChild(icon);
+      topLine.append(document.createTextNode(' ' + (liveConfig.new_chat_topline || 'Start with a real task')));
+    }
+
+    const emptyP = document.querySelector('.empty-state .empty-shell > p');
+    if (emptyP) emptyP.textContent = liveConfig.new_chat_subtitle || '';
+
+    const apiHint = document.querySelector('.api-key-hint');
+    if (apiHint) {
+      const details = apiHint.querySelector('details');
+      apiHint.childNodes.forEach(node => {
+        if (node.nodeType === Node.TEXT_NODE) node.textContent = '';
+      });
+      apiHint.insertBefore(document.createTextNode('💡 ' + (liveConfig.groq_hint || 'Groq is available for API access.') + ' '), details || null);
+      const link = apiHint.querySelector('a[href*="console.groq.com"]');
+      if (link) {
+        link.href = liveConfig.groq_keys_url || 'https://console.groq.com/keys';
+        link.textContent = (liveConfig.groq_keys_url || 'https://console.groq.com/keys').replace(/^https?:\/\//, '');
+      }
+    }
+
+    if (apiKeyModeBadge) {
+      const usingOwn = apiKeyModeBadge.classList.contains('own-key');
+      apiKeyModeBadge.textContent = usingOwn ? (liveConfig.labels.api_own || 'Groq (your key)') : (liveConfig.labels.api_default || 'Groq (default)');
+    }
+
+    const manifestLink = document.querySelector('link[rel="manifest"]');
+    if (manifestLink) manifestLink.setAttribute('data-app-name', liveConfig.app_name || 'Vigzone AI');
+
+    updateGreeting?.();
+  }
+
+  async function loadLiveConfig(){
+    try {
+      const res = await fetch('/api/public/config', { credentials:'same-origin' });
+      if (!res.ok) return;
+      const cfg = await res.json();
+      applyLiveConfig(cfg);
+    } catch {}
+  }
+
   const VIGZONE_ICON = '/static/icons/vigzone-icon.svg?v=logo1-simple';
   const ICON_IMAGE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="M21 15l-5-5L5 21"></path></svg>';
   const ICON_DOC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>';
@@ -6774,7 +6846,7 @@
 
   function setApiKeyBoxMode(usingOwnKey){
     if (apiKeyModeBadge) {
-      apiKeyModeBadge.textContent = usingOwnKey ? 'Groq (your key)' : 'Groq (default)';
+      apiKeyModeBadge.textContent = usingOwnKey ? (liveConfig.labels?.api_own || 'Groq (your key)') : (liveConfig.labels?.api_default || 'Groq (default)');
       apiKeyModeBadge.classList.toggle('own-key', !!usingOwnKey);
     }
     if (apiKeyInputSection) apiKeyInputSection.style.display = usingOwnKey ? 'none' : '';
@@ -6895,7 +6967,7 @@
   }
 
   // ---------- Personalized greeting (name comes from the signed-in account) ----------
-  const GREETINGS = ['Back at it,', 'Welcome back,', 'Good to see you,', 'Hey there,'];
+  function greetingOptions(){ return (liveConfig && Array.isArray(liveConfig.greetings) && liveConfig.greetings.length) ? liveConfig.greetings : ['Welcome back,']; }
 
   function accountInitial(name){
     const safe = (name || '').trim();
@@ -6905,10 +6977,11 @@
   function updateGreeting(){
     const displayName = userName || 'Signed in';
     if (userName) {
-      const g = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
+      const gs = greetingOptions();
+      const g = gs[Math.floor(Math.random() * gs.length)];
       greetingText.textContent = `${g} ${userName}`;
     } else {
-      greetingText.textContent = 'Welcome to Vigzone AI';
+      greetingText.textContent = `Welcome to ${liveConfig.app_name || 'Vigzone AI'}`;
     }
 
     if (sidebarUserName) sidebarUserName.textContent = displayName;
@@ -7371,7 +7444,7 @@
 
     const speakerBtn = document.createElement('button');
     speakerBtn.className = 'speaker-btn';
-    speakerBtn.setAttribute('aria-label', 'Read aloud in Vigi');
+    speakerBtn.setAttribute('aria-label', `Read aloud in ${liveConfig.short_name || liveConfig.app_name || 'Vigzone'}`);
     speakerBtn.innerHTML = ICON_SPEAKER;
     speakerBtn.addEventListener('click', (e) => {
       e.preventDefault();
@@ -7428,7 +7501,7 @@
     if (role !== 'user') {
       avatar = document.createElement('div');
       avatar.className = 'avatar';
-      avatar.innerHTML = `<img src="${VIGZONE_ICON}" alt="Vigzone AI" width="30" height="30" />`;
+      avatar.innerHTML = `<img src="${VIGZONE_ICON}" alt="${liveConfig.app_name || 'Vigzone AI'}" width="30" height="30" />`;
     }
     const bubble = document.createElement('div');
     bubble.className = 'bubble';
@@ -7437,7 +7510,7 @@
     if (opts.quote) {
       const qRef = document.createElement('div');
       qRef.className = 'quoted-ref';
-      const qLabel = opts.quote.role === 'user' ? 'You' : 'Vigzone AI';
+      const qLabel = opts.quote.role === 'user' ? 'You' : (liveConfig.labels?.assistant || liveConfig.app_name || 'Vigzone AI');
       const qLabelEl = document.createElement('span');
       qLabelEl.className = 'quoted-ref-label';
       qLabelEl.textContent = qLabel;
@@ -9448,6 +9521,7 @@ Requirements:
   // Setup keyboard accessibility after initial render
   setupKeyboardAccessibility();
   applyTheme(getTheme(), false);
+  loadLiveConfig();
 
   setSidebarCollapsed(isMobile() ? true : (localStorage.getItem(SIDEBAR_KEY) === '1'));
   renderHistoryList();
