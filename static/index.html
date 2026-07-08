@@ -3725,6 +3725,64 @@
       }
     }
 
+
+    /* ---------- Stable New Chat, unified sidebar scroll below ----------
+       New Chat stays fixed below the sidebar brand.
+       The tools section and Recent Chats scroll together underneath it. */
+    .sidebar-inner{
+      overflow:hidden !important;
+      min-height:0 !important;
+    }
+    .sidebar-top,
+    .new-chat-btn{
+      flex:0 0 auto !important;
+    }
+    .sidebar-scroll-area{
+      flex:1 1 auto !important;
+      min-height:0 !important;
+      overflow-y:auto !important;
+      overflow-x:hidden !important;
+      display:flex !important;
+      flex-direction:column !important;
+      padding-right:2px !important;
+      scrollbar-width:thin;
+    }
+    .sidebar-scroll-area .sidebar-footer{
+      flex:0 0 auto !important;
+      max-height:none !important;
+      overflow:visible !important;
+      overflow-y:visible !important;
+      margin-bottom:12px !important;
+    }
+    .sidebar-scroll-area > .history-label{
+      flex:0 0 auto !important;
+    }
+    .sidebar-scroll-area .history-list{
+      flex:0 0 auto !important;
+      overflow:visible !important;
+      overflow-y:visible !important;
+      min-height:0 !important;
+      max-height:none !important;
+      padding-bottom:18px !important;
+    }
+    @media (max-width:760px){
+      .sidebar-inner{
+        overflow:hidden !important;
+      }
+      .sidebar-scroll-area{
+        overflow-y:auto !important;
+        -webkit-overflow-scrolling:touch;
+      }
+      .new-chat-btn{
+        margin-bottom:10px !important;
+      }
+    }
+    @media (min-width:761px){
+      .sidebar.collapsed .sidebar-scroll-area{
+        display:none !important;
+      }
+    }
+
   </style>
 </head>
 <body style="display: none;">
@@ -3744,6 +3802,7 @@
         <span class="new-chat-btn-sub">Start a focused task</span>
       </span>
     </button>
+    <div class="sidebar-scroll-area" id="sidebarScrollArea">
     <div class="sidebar-footer">
       <div class="api-key-box" id="apiKeyBox">
         <div class="api-key-box-label">
@@ -3845,6 +3904,7 @@
     </div>
     <div class="history-label">Recent chats</div>
     <div class="history-list" id="historyList"></div>
+    </div>
     </div>
 </aside>
 <div class="sidebar-overlay" id="sidebarOverlay"></div>
