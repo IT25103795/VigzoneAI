@@ -2696,6 +2696,371 @@
       gap:0 !important;
     }
 
+
+    /* ---------- Vigzone Brain visual project memory ---------- */
+    .brain-modal{
+      width:min(980px, calc(100vw - 28px));
+      max-width:980px;
+      max-height:88vh;
+      padding:18px;
+    }
+    .brain-head{
+      align-items:flex-start;
+      margin-bottom:12px;
+    }
+    .brain-head h3{
+      font-family:'Sora',sans-serif;
+      font-size:20px;
+      letter-spacing:-.02em;
+    }
+    .brain-subtitle{
+      color:var(--text-muted);
+      font-size:12px;
+      line-height:1.45;
+      margin-top:3px;
+    }
+    .brain-toolbar{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      margin:12px 0;
+    }
+    .brain-search-wrap{
+      flex:1;
+      min-width:0;
+      display:flex;
+      align-items:center;
+      gap:8px;
+      padding:9px 11px;
+      border-radius:12px;
+      border:1px solid var(--border);
+      background:var(--surface-2);
+    }
+    .brain-search-wrap svg{
+      width:15px;height:15px;flex:0 0 auto;color:var(--text-muted);
+    }
+    .brain-search-wrap input{
+      flex:1;
+      min-width:0;
+      background:transparent;
+      border:none;
+      outline:none;
+      color:var(--text);
+      font-family:inherit;
+      font-size:13px;
+    }
+    .brain-search-wrap input::placeholder{color:var(--text-muted);}
+    .brain-tabs{
+      display:flex;
+      gap:6px;
+      padding:5px;
+      border:1px solid var(--border);
+      background:var(--surface-2);
+      border-radius:14px;
+      margin-bottom:14px;
+      overflow-x:auto;
+    }
+    .brain-tab{
+      border:none;
+      background:transparent;
+      color:var(--text-muted);
+      border-radius:10px;
+      padding:8px 12px;
+      font:700 12px 'Inter',sans-serif;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    .brain-tab:hover{color:var(--text);background:var(--surface);}
+    .brain-tab.active{
+      color:var(--on-accent);
+      background:var(--accent);
+    }
+    .brain-body{
+      display:block;
+      min-height:320px;
+    }
+    .brain-stat-grid{
+      display:grid;
+      grid-template-columns:repeat(4,minmax(0,1fr));
+      gap:10px;
+      margin-bottom:14px;
+    }
+    .brain-stat-card{
+      border:1px solid var(--border);
+      border-radius:14px;
+      background:linear-gradient(135deg, var(--surface-2), color-mix(in srgb, var(--surface) 80%, var(--accent-dim)));
+      padding:13px;
+      overflow:hidden;
+      position:relative;
+    }
+    .brain-stat-card::after{
+      content:'';
+      position:absolute;
+      width:80px;height:80px;border-radius:50%;
+      right:-35px;top:-42px;
+      background:color-mix(in srgb, var(--accent) 14%, transparent);
+      pointer-events:none;
+    }
+    .brain-stat-label{
+      font-size:10.5px;
+      color:var(--text-muted);
+      text-transform:uppercase;
+      letter-spacing:.05em;
+      font-weight:800;
+    }
+    .brain-stat-value{
+      font-family:'Sora',sans-serif;
+      font-size:24px;
+      font-weight:800;
+      margin-top:5px;
+      color:var(--text);
+    }
+    .brain-grid{
+      display:grid;
+      grid-template-columns:1.12fr .88fr;
+      gap:12px;
+    }
+    .brain-panel{
+      border:1px solid var(--border);
+      border-radius:16px;
+      background:color-mix(in srgb, var(--surface) 88%, transparent);
+      padding:14px;
+      min-width:0;
+    }
+    .brain-panel-title{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:8px;
+      font-family:'Sora',sans-serif;
+      font-size:13px;
+      font-weight:800;
+      margin-bottom:10px;
+      color:var(--text);
+    }
+    .brain-panel-sub{
+      color:var(--text-muted);
+      font-size:11.5px;
+      font-weight:500;
+    }
+    .brain-card-list{
+      display:flex;
+      flex-direction:column;
+      gap:9px;
+    }
+    .brain-card{
+      border:1px solid var(--border-subtle);
+      background:var(--surface-2);
+      border-radius:13px;
+      padding:11px;
+      display:flex;
+      gap:10px;
+      align-items:flex-start;
+      min-width:0;
+    }
+    .brain-card-icon{
+      width:34px;height:34px;border-radius:11px;
+      display:flex;align-items:center;justify-content:center;
+      flex:0 0 auto;
+      background:var(--accent-dim);
+      color:var(--accent);
+      font-size:16px;
+    }
+    .brain-card-main{
+      flex:1;min-width:0;
+    }
+    .brain-card-title{
+      font-size:13px;
+      font-weight:800;
+      color:var(--text);
+      word-break:break-word;
+    }
+    .brain-card-meta{
+      display:flex;
+      flex-wrap:wrap;
+      gap:5px;
+      margin-top:6px;
+    }
+    .brain-pill{
+      display:inline-flex;
+      align-items:center;
+      gap:4px;
+      padding:3px 7px;
+      border-radius:999px;
+      background:var(--pill-bg);
+      color:var(--text-muted);
+      font-size:10.5px;
+      font-weight:700;
+      border:1px solid var(--border-subtle);
+    }
+    .brain-card-desc{
+      margin-top:6px;
+      color:var(--text-muted);
+      font-size:12px;
+      line-height:1.45;
+      word-break:break-word;
+    }
+    .brain-actions{
+      display:flex;
+      flex-wrap:wrap;
+      gap:6px;
+      margin-top:9px;
+    }
+    .brain-mini-btn{
+      border:1px solid var(--border);
+      background:var(--surface);
+      color:var(--text-muted);
+      border-radius:8px;
+      padding:5px 8px;
+      font:700 11px 'Inter',sans-serif;
+      cursor:pointer;
+    }
+    .brain-mini-btn:hover{
+      color:var(--text);
+      border-color:var(--hover-border);
+    }
+    .brain-mini-btn.primary{
+      background:var(--accent);
+      border-color:var(--accent);
+      color:var(--on-accent);
+    }
+    .brain-mini-btn.done{
+      color:var(--accent-2);
+      border-color:color-mix(in srgb, var(--accent-2) 45%, var(--border));
+    }
+    .brain-category-grid{
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:9px;
+    }
+    .brain-category-card{
+      border:1px solid var(--border);
+      border-radius:14px;
+      background:var(--surface-2);
+      padding:12px;
+      cursor:pointer;
+      transition:transform .14s ease, border-color .14s ease, background .14s ease;
+    }
+    .brain-category-card:hover{
+      transform:translateY(-1px);
+      border-color:var(--accent);
+      background:color-mix(in srgb, var(--surface-2) 86%, var(--accent-dim));
+    }
+    .brain-category-top{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:8px;
+      margin-bottom:8px;
+    }
+    .brain-category-name{
+      font-weight:800;
+      font-size:13px;
+      color:var(--text);
+      display:flex;
+      align-items:center;
+      gap:7px;
+    }
+    .brain-category-count{
+      font-family:'Sora',sans-serif;
+      font-weight:800;
+      color:var(--accent);
+    }
+    .brain-progress{
+      height:7px;
+      border-radius:99px;
+      background:var(--surface);
+      overflow:hidden;
+      border:1px solid var(--border-subtle);
+    }
+    .brain-progress span{
+      display:block;
+      height:100%;
+      width:0;
+      background:linear-gradient(90deg, var(--accent), var(--accent-2));
+      border-radius:inherit;
+    }
+    .brain-timeline{
+      position:relative;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    .brain-timeline-item{
+      display:grid;
+      grid-template-columns:92px 1fr;
+      gap:10px;
+      align-items:flex-start;
+    }
+    .brain-time{
+      color:var(--text-muted);
+      font-size:11px;
+      font-weight:700;
+      padding-top:3px;
+      text-align:right;
+    }
+    .brain-empty{
+      color:var(--text-muted);
+      font-size:13px;
+      line-height:1.55;
+      text-align:center;
+      padding:32px 16px;
+      border:1px dashed var(--border);
+      border-radius:15px;
+      background:var(--surface-2);
+    }
+    .brain-focus-banner{
+      border:1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+      background:linear-gradient(135deg, var(--accent-dim), color-mix(in srgb, var(--surface-2) 84%, transparent));
+      border-radius:16px;
+      padding:13px;
+      margin-bottom:12px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+    }
+    .brain-focus-banner strong{
+      color:var(--text);
+      font-size:13px;
+    }
+    .brain-focus-banner span{
+      display:block;
+      color:var(--text-muted);
+      font-size:12px;
+      margin-top:3px;
+      line-height:1.4;
+    }
+    @media (max-width:760px){
+      .brain-modal{
+        width:calc(100vw - 18px);
+        max-height:90vh;
+        padding:14px;
+      }
+      .brain-toolbar{
+        flex-wrap:wrap;
+      }
+      .brain-search-wrap{
+        flex:1 1 100%;
+      }
+      .brain-stat-grid{
+        grid-template-columns:repeat(2,minmax(0,1fr));
+      }
+      .brain-grid{
+        grid-template-columns:1fr;
+      }
+      .brain-category-grid{
+        grid-template-columns:1fr;
+      }
+      .brain-timeline-item{
+        grid-template-columns:1fr;
+        gap:5px;
+      }
+      .brain-time{
+        text-align:left;
+      }
+    }
+
   </style>
 </head>
 <body style="display: none;">
@@ -2767,6 +3132,16 @@
         <span class="history-label" style="padding:0;margin:0;">Learning</span>
         <button class="sidebar-teach-btn" id="teachVigzoneBtn" aria-label="Teach Vigzone" title="Teach Vigzone about specific topics">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></svg>
+        </button>
+      </div>
+      <div class="sidebar-footer-row">
+        <span class="history-label" style="padding:0;margin:0;">Vigzone Brain</span>
+        <button class="sidebar-teach-btn" id="vigzoneBrainBtn" aria-label="Open Vigzone Brain" title="Open Vigzone Brain">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 3a3 3 0 0 0-3 3v1.2A3 3 0 0 0 4 10v1a3 3 0 0 0 2 2.82V15a3 3 0 0 0 3 3h1V3H9Z"></path>
+            <path d="M15 3a3 3 0 0 1 3 3v1.2A3 3 0 0 1 20 10v1a3 3 0 0 1-2 2.82V15a3 3 0 0 1-3 3h-1V3h1Z"></path>
+            <path d="M10 8H7.5M14 8h2.5M10 13H7.5M14 13h2.5M12 3v18"></path>
+          </svg>
         </button>
       </div>
       <div class="sidebar-footer-row">
@@ -2911,6 +3286,34 @@
   </div>
 </div>
 
+
+
+<div class="usage-modal-overlay" id="brainModalOverlay">
+  <div class="usage-modal brain-modal">
+    <div class="usage-modal-head brain-head">
+      <div>
+        <h3>Vigzone Brain</h3>
+        <div class="brain-subtitle">Your visual project memory, timelines, tasks, files and next steps.</div>
+      </div>
+      <button class="usage-modal-close" id="brainModalCloseBtn" aria-label="Close">&times;</button>
+    </div>
+    <div class="brain-toolbar">
+      <div class="brain-search-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+        <input id="brainSearchInput" type="search" placeholder="Search your brain..." autocomplete="off" />
+      </div>
+      <button class="deep-action-btn" id="brainRefreshBtn" type="button">Refresh</button>
+      <button class="deep-action-btn" id="brainExportBtn" type="button">Export Brain</button>
+    </div>
+    <div class="brain-tabs" id="brainTabs" role="tablist">
+      <button class="brain-tab active" data-brain-tab="overview" type="button">Overview</button>
+      <button class="brain-tab" data-brain-tab="tasks" type="button">Tasks</button>
+      <button class="brain-tab" data-brain-tab="timeline" type="button">Timeline</button>
+      <button class="brain-tab" data-brain-tab="files" type="button">Files</button>
+    </div>
+    <div class="brain-body" id="brainModalBody"></div>
+  </div>
+</div>
 
 <div class="main-col">
   <div class="chat-wallpaper-layer" id="chatWallpaperLayer" aria-hidden="true"></div>
@@ -3169,6 +3572,14 @@
   const sidebarUserName = $('#sidebarUserName');
   const sidebarUserDot = $('#sidebarUserDot');
   const settingsBtn = $('#settingsBtn');
+  const vigzoneBrainBtn = $('#vigzoneBrainBtn');
+  const brainModalOverlay = $('#brainModalOverlay');
+  const brainModalCloseBtn = $('#brainModalCloseBtn');
+  const brainModalBody = $('#brainModalBody');
+  const brainTabs = $('#brainTabs');
+  const brainSearchInput = $('#brainSearchInput');
+  const brainRefreshBtn = $('#brainRefreshBtn');
+  const brainExportBtn = $('#brainExportBtn');
   const settingsModalOverlay = $('#settingsModalOverlay');
   const settingsModalCloseBtn = $('#settingsModalCloseBtn');
   const settingsUserName = $('#settingsUserName');
@@ -3936,6 +4347,7 @@
     if (!conv.title || conv.title === 'New chat') conv.title = titleFromMessages(messages);
     persistStore();
     renderHistoryList();
+    refreshBrainIfOpen();
   }
 
   function renderHistoryList(){
@@ -3985,6 +4397,7 @@
     }
     persistStore();
     renderHistoryList();
+    refreshBrainIfOpen();
   }
 
   historyList.addEventListener('click', (e) => {
@@ -4006,6 +4419,479 @@
     if (isMobile()) setSidebarCollapsed(true);
     input.focus();
   }
+
+
+  // ---------- Vigzone Brain: visual memory room / Life OS ----------
+  const BRAIN_META_KEY = 'vigzone_brain_meta_v1';
+  let brainActiveTab = 'overview';
+
+  function loadBrainMeta(){
+    try {
+      const meta = JSON.parse(localStorage.getItem(BRAIN_META_KEY) || '{}');
+      return {
+        done: meta.done || {},
+        pinned: meta.pinned || {},
+        notes: meta.notes || {},
+      };
+    } catch {
+      return { done: {}, pinned: {}, notes: {} };
+    }
+  }
+
+  function saveBrainMeta(meta){
+    try { localStorage.setItem(BRAIN_META_KEY, JSON.stringify(meta || {done:{}, pinned:{}, notes:{}})); } catch {}
+  }
+
+  function brainMsgText(m){
+    if (!m) return '';
+    if (typeof m.displayText === 'string') return m.displayText;
+    if (typeof m.content === 'string') return m.content;
+    if (Array.isArray(m.content)) {
+      return m.content.map(part => {
+        if (typeof part === 'string') return part;
+        if (part && part.type === 'text') return part.text || '';
+        return '';
+      }).join(' ');
+    }
+    return '';
+  }
+
+  function brainPlainText(text, max = 240){
+    return truncateText(String(text || '').replace(/\s+/g, ' ').trim(), max);
+  }
+
+  function brainAllConversations(){
+    const convs = Object.values((store && store.conversations) || {}).filter(Boolean);
+    return convs.sort((a,b) => {
+      const meta = loadBrainMeta();
+      const pa = meta.pinned?.[a.id] ? 1 : 0;
+      const pb = meta.pinned?.[b.id] ? 1 : 0;
+      if (pa !== pb) return pb - pa;
+      return (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0);
+    });
+  }
+
+  const BRAIN_CATEGORIES = [
+    { id:'projects', icon:'🚀', name:'Projects', terms:/\b(project|vigzone|app|system|feature|implement|build|deploy|railway|dashboard|workspace)\b/i },
+    { id:'code', icon:'💻', name:'Code', terms:/\b(code|bug|error|fix|debug|javascript|python|html|css|api|zip|repo|backend|frontend|function|database)\b/i },
+    { id:'design', icon:'🎨', name:'Designs', terms:/\b(design|logo|image|photo|wallpaper|theme|label|poster|ui|ux|color|pdf|visual|generate image)\b/i },
+    { id:'websites', icon:'🌐', name:'Websites', terms:/\b(website|landing page|web page|portfolio|hotel|hospital|site|navbar|hero|responsive)\b/i },
+    { id:'study', icon:'📚', name:'Study', terms:/\b(study|exam|revision|assignment|lecture|mcq|mock|answers|queue|stack|tree|sliit|university)\b/i },
+    { id:'files', icon:'🧾', name:'Files', terms:/\b(file|upload|pdf|doc|document|spreadsheet|attachment|analyze|extract|zip)\b/i },
+    { id:'business', icon:'💼', name:'Business', terms:/\b(business|money|earn|pricing|customer|market|plan|brand|product|sell|subscription)\b/i },
+    { id:'personal', icon:'❤️', name:'Personal', terms:/\b(girlfriend|whatsapp|cute|personal|photo of|memory|remember)\b/i },
+    { id:'general', icon:'💬', name:'General', terms:/.*/i },
+  ];
+
+  function brainCategoryForConversation(conv){
+    const text = [
+      conv.title || '',
+      ...(conv.messages || []).slice(0, 8).map(brainMsgText),
+      ...(conv.messages || []).slice(-5).map(brainMsgText),
+    ].join(' ');
+    const found = BRAIN_CATEGORIES.find(c => c.id !== 'general' && c.terms.test(text));
+    return found || BRAIN_CATEGORIES[BRAIN_CATEGORIES.length - 1];
+  }
+
+  function brainConversationSummary(conv){
+    const msgs = conv.messages || [];
+    const userMsgs = msgs.filter(m => m.role === 'user').map(brainMsgText).filter(Boolean);
+    const assistantMsgs = msgs.filter(m => m.role === 'assistant').map(brainMsgText).filter(Boolean);
+    const lastUser = userMsgs[userMsgs.length - 1] || '';
+    const lastAssistant = assistantMsgs[assistantMsgs.length - 1] || '';
+    const fileCount = msgs.reduce((sum, m) => sum + ((m.attachments || []).length || 0), 0);
+    const imageCount = msgs.reduce((sum, m) => sum + (m.imageSrc ? 1 : 0), 0);
+    const category = brainCategoryForConversation(conv);
+    const meta = loadBrainMeta();
+    return {
+      id: conv.id,
+      title: conv.title || titleFromMessages(msgs),
+      category,
+      updatedAt: conv.updatedAt || conv.createdAt || Date.now(),
+      createdAt: conv.createdAt || conv.updatedAt || Date.now(),
+      messageCount: msgs.length,
+      fileCount,
+      imageCount,
+      lastUser,
+      lastAssistant,
+      done: !!meta.done?.[conv.id],
+      pinned: !!meta.pinned?.[conv.id],
+      description: brainPlainText(lastUser || lastAssistant || 'No summary yet.', 180),
+    };
+  }
+
+  function brainTimeAgo(ts){
+    if (!ts) return 'unknown';
+    const diff = Date.now() - Number(ts);
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days < 7) return `${days}d ago`;
+    return new Date(ts).toLocaleDateString();
+  }
+
+  function brainTaskPriority(text){
+    const t = (text || '').toLowerCase();
+    if (/\b(error|not working|can't|cannot|failed|rejecting|bug|broken|truncat|limit|issue)\b/.test(t)) return 'High';
+    if (/\b(implement|fix|update|remove|add|create|make|build)\b/.test(t)) return 'Medium';
+    return 'Low';
+  }
+
+  function brainExtractTasks(convs){
+    const meta = loadBrainMeta();
+    const taskTerms = /\b(fix|implement|add|remove|update|create|make|build|need|want|can't|cannot|not working|error|bug|issue|improve|change|move|replace|design)\b/i;
+    const tasks = [];
+
+    convs.forEach(conv => {
+      if (meta.done?.[conv.id]) return;
+      const msgs = conv.messages || [];
+      const users = msgs.map((m, i) => ({ m, i })).filter(x => x.m.role === 'user');
+      const category = brainCategoryForConversation(conv);
+      const lastRelevant = [...users].reverse().find(x => taskTerms.test(brainMsgText(x.m)));
+      if (!lastRelevant) return;
+      const txt = brainPlainText(brainMsgText(lastRelevant.m), 170);
+      if (!txt || txt.length < 4) return;
+      tasks.push({
+        id: `${conv.id}-${lastRelevant.i}`,
+        convId: conv.id,
+        title: txt,
+        convTitle: conv.title || titleFromMessages(msgs),
+        category,
+        priority: brainTaskPriority(txt),
+        updatedAt: conv.updatedAt || conv.createdAt || Date.now(),
+      });
+    });
+
+    return tasks.sort((a,b) => {
+      const pr = {High:3, Medium:2, Low:1};
+      if (pr[a.priority] !== pr[b.priority]) return pr[b.priority] - pr[a.priority];
+      return b.updatedAt - a.updatedAt;
+    });
+  }
+
+  function brainExtractFiles(convs){
+    const files = [];
+    convs.forEach(conv => {
+      const category = brainCategoryForConversation(conv);
+      (conv.messages || []).forEach((m, idx) => {
+        (m.attachments || []).forEach(a => {
+          files.push({
+            id: `${conv.id}-${idx}-${a.name}`,
+            convId: conv.id,
+            convTitle: conv.title || titleFromMessages(conv.messages || []),
+            name: a.name || 'file',
+            kind: a.kind || 'document',
+            category,
+            updatedAt: conv.updatedAt || conv.createdAt || Date.now(),
+          });
+        });
+        if (m.imageSrc) {
+          files.push({
+            id: `${conv.id}-${idx}-generated-image`,
+            convId: conv.id,
+            convTitle: conv.title || titleFromMessages(conv.messages || []),
+            name: brainPlainText(m.displayText || m.content || 'Generated image', 60),
+            kind: 'image',
+            category,
+            updatedAt: conv.updatedAt || conv.createdAt || Date.now(),
+          });
+        }
+      });
+    });
+    return files.sort((a,b) => b.updatedAt - a.updatedAt);
+  }
+
+  function brainBuildData(){
+    const convs = brainAllConversations();
+    const summaries = convs.map(brainConversationSummary);
+    const tasks = brainExtractTasks(convs);
+    const files = brainExtractFiles(convs);
+    const categories = BRAIN_CATEGORIES.map(cat => {
+      const count = summaries.filter(s => s.category.id === cat.id).length;
+      return { ...cat, count };
+    }).filter(c => c.count || c.id !== 'general');
+    return { convs, summaries, tasks, files, categories };
+  }
+
+  function brainMatchesSearch(item, query){
+    if (!query) return true;
+    const q = query.toLowerCase();
+    const blob = [
+      item.title, item.convTitle, item.description, item.name, item.priority,
+      item.category?.name, item.category?.id
+    ].filter(Boolean).join(' ').toLowerCase();
+    return blob.includes(q);
+  }
+
+  function brainCard(summary){
+    const icon = summary.category.icon;
+    return `
+      <div class="brain-card" data-brain-card="${escapeHtml(summary.id)}">
+        <div class="brain-card-icon">${icon}</div>
+        <div class="brain-card-main">
+          <div class="brain-card-title">${summary.pinned ? '📌 ' : ''}${escapeHtml(summary.title)}</div>
+          <div class="brain-card-meta">
+            <span class="brain-pill">${escapeHtml(summary.category.name)}</span>
+            <span class="brain-pill">${summary.messageCount} msgs</span>
+            ${summary.fileCount ? `<span class="brain-pill">${summary.fileCount} files</span>` : ''}
+            ${summary.imageCount ? `<span class="brain-pill">${summary.imageCount} images</span>` : ''}
+            <span class="brain-pill">${brainTimeAgo(summary.updatedAt)}</span>
+            ${summary.done ? '<span class="brain-pill">Done</span>' : ''}
+          </div>
+          <div class="brain-card-desc">${escapeHtml(summary.description)}</div>
+          <div class="brain-actions">
+            <button class="brain-mini-btn primary" data-brain-open="${escapeHtml(summary.id)}" type="button">Open</button>
+            <button class="brain-mini-btn" data-brain-continue="${escapeHtml(summary.id)}" type="button">Continue</button>
+            <button class="brain-mini-btn ${summary.pinned ? 'done' : ''}" data-brain-pin="${escapeHtml(summary.id)}" type="button">${summary.pinned ? 'Pinned' : 'Pin'}</button>
+            <button class="brain-mini-btn ${summary.done ? 'done' : ''}" data-brain-done="${escapeHtml(summary.id)}" type="button">${summary.done ? 'Done ✓' : 'Mark done'}</button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function brainTaskCard(task){
+    return `
+      <div class="brain-card">
+        <div class="brain-card-icon">${task.priority === 'High' ? '🔥' : task.category.icon}</div>
+        <div class="brain-card-main">
+          <div class="brain-card-title">${escapeHtml(task.title)}</div>
+          <div class="brain-card-meta">
+            <span class="brain-pill">${escapeHtml(task.priority)} priority</span>
+            <span class="brain-pill">${escapeHtml(task.category.name)}</span>
+            <span class="brain-pill">${brainTimeAgo(task.updatedAt)}</span>
+          </div>
+          <div class="brain-card-desc">From: ${escapeHtml(task.convTitle)}</div>
+          <div class="brain-actions">
+            <button class="brain-mini-btn primary" data-brain-continue="${escapeHtml(task.convId)}" data-brain-focus="${escapeHtml(task.title)}" type="button">Continue task</button>
+            <button class="brain-mini-btn" data-brain-open="${escapeHtml(task.convId)}" type="button">Open chat</button>
+            <button class="brain-mini-btn" data-brain-done="${escapeHtml(task.convId)}" type="button">Mark done</button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function brainFileCard(file){
+    return `
+      <div class="brain-card">
+        <div class="brain-card-icon">${file.kind === 'image' ? '🖼️' : '📄'}</div>
+        <div class="brain-card-main">
+          <div class="brain-card-title">${escapeHtml(file.name)}</div>
+          <div class="brain-card-meta">
+            <span class="brain-pill">${escapeHtml(file.kind)}</span>
+            <span class="brain-pill">${escapeHtml(file.category.name)}</span>
+            <span class="brain-pill">${brainTimeAgo(file.updatedAt)}</span>
+          </div>
+          <div class="brain-card-desc">Linked chat: ${escapeHtml(file.convTitle)}</div>
+          <div class="brain-actions">
+            <button class="brain-mini-btn primary" data-brain-open="${escapeHtml(file.convId)}" type="button">Open source chat</button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function brainEmpty(text){
+    return `<div class="brain-empty">${escapeHtml(text)}</div>`;
+  }
+
+  function renderBrain(){
+    if (!brainModalBody) return;
+    const q = (brainSearchInput?.value || '').trim();
+    const data = brainBuildData();
+    const summaries = data.summaries.filter(s => brainMatchesSearch(s, q));
+    const tasks = data.tasks.filter(t => brainMatchesSearch(t, q));
+    const files = data.files.filter(f => brainMatchesSearch(f, q));
+
+    brainTabs?.querySelectorAll('.brain-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.brainTab === brainActiveTab));
+
+    const activeTasks = data.tasks.length;
+    const pinned = data.summaries.filter(s => s.pinned).length;
+    const done = data.summaries.filter(s => s.done).length;
+    const recentFocus = tasks[0] || data.tasks[0];
+
+    if (brainActiveTab === 'overview') {
+      const maxCat = Math.max(1, ...data.categories.map(c => c.count));
+      const categoryHtml = data.categories.map(c => `
+        <div class="brain-category-card" data-brain-category="${escapeHtml(c.id)}">
+          <div class="brain-category-top">
+            <div class="brain-category-name"><span>${c.icon}</span>${escapeHtml(c.name)}</div>
+            <div class="brain-category-count">${c.count}</div>
+          </div>
+          <div class="brain-progress"><span style="width:${Math.max(8, Math.round((c.count / maxCat) * 100))}%"></span></div>
+        </div>
+      `).join('');
+
+      brainModalBody.innerHTML = `
+        <div class="brain-stat-grid">
+          <div class="brain-stat-card"><div class="brain-stat-label">Chats mapped</div><div class="brain-stat-value">${data.summaries.length}</div></div>
+          <div class="brain-stat-card"><div class="brain-stat-label">Open tasks</div><div class="brain-stat-value">${activeTasks}</div></div>
+          <div class="brain-stat-card"><div class="brain-stat-label">Files/images</div><div class="brain-stat-value">${data.files.length}</div></div>
+          <div class="brain-stat-card"><div class="brain-stat-label">Pinned / Done</div><div class="brain-stat-value">${pinned}/${done}</div></div>
+        </div>
+        ${recentFocus ? `
+          <div class="brain-focus-banner">
+            <div>
+              <strong>Today’s focus: ${escapeHtml(recentFocus.title || recentFocus.convTitle)}</strong>
+              <span>Vigzone can continue this from where you stopped.</span>
+            </div>
+            <button class="brain-mini-btn primary" data-brain-continue="${escapeHtml(recentFocus.convId || recentFocus.id)}" data-brain-focus="${escapeHtml(recentFocus.title || '')}" type="button">Continue</button>
+          </div>
+        ` : ''}
+        <div class="brain-grid">
+          <div class="brain-panel">
+            <div class="brain-panel-title">Memory cards <span class="brain-panel-sub">Click a category to filter</span></div>
+            <div class="brain-category-grid">${categoryHtml || brainEmpty('No categories yet. Start chatting and Vigzone Brain will organize your work.')}</div>
+          </div>
+          <div class="brain-panel">
+            <div class="brain-panel-title">Unfinished tasks <span class="brain-panel-sub">${tasks.length} found</span></div>
+            <div class="brain-card-list">${tasks.slice(0,5).map(brainTaskCard).join('') || brainEmpty('No obvious unfinished tasks found yet.')}</div>
+          </div>
+        </div>
+        <div class="brain-panel" style="margin-top:12px;">
+          <div class="brain-panel-title">Recent project timeline <span class="brain-panel-sub">Latest activity</span></div>
+          <div class="brain-card-list">${summaries.slice(0,5).map(brainCard).join('') || brainEmpty('No chats found.')}</div>
+        </div>
+      `;
+      return;
+    }
+
+    if (brainActiveTab === 'tasks') {
+      brainModalBody.innerHTML = `
+        <div class="brain-panel">
+          <div class="brain-panel-title">Unfinished task tracker <span class="brain-panel-sub">Auto-detected from your chats</span></div>
+          <div class="brain-card-list">${tasks.map(brainTaskCard).join('') || brainEmpty('No unfinished tasks match your search. When you say “fix”, “implement”, “add”, or “not working”, tasks appear here.')}</div>
+        </div>`;
+      return;
+    }
+
+    if (brainActiveTab === 'timeline') {
+      brainModalBody.innerHTML = `
+        <div class="brain-panel">
+          <div class="brain-panel-title">Project timeline <span class="brain-panel-sub">${summaries.length} chats</span></div>
+          <div class="brain-timeline">
+            ${summaries.map(s => `
+              <div class="brain-timeline-item">
+                <div class="brain-time">${brainTimeAgo(s.updatedAt)}</div>
+                ${brainCard(s)}
+              </div>
+            `).join('') || brainEmpty('No timeline yet.')}
+          </div>
+        </div>`;
+      return;
+    }
+
+    if (brainActiveTab === 'files') {
+      brainModalBody.innerHTML = `
+        <div class="brain-panel">
+          <div class="brain-panel-title">Recent files and generated images <span class="brain-panel-sub">${files.length} items</span></div>
+          <div class="brain-card-list">${files.map(brainFileCard).join('') || brainEmpty('No uploaded files or generated images found yet.')}</div>
+        </div>`;
+    }
+  }
+
+  function openBrainModal(){
+    renderBrain();
+    brainModalOverlay?.classList.add('visible');
+  }
+
+  function closeBrainModal(){
+    brainModalOverlay?.classList.remove('visible');
+  }
+
+  function refreshBrainIfOpen(){
+    if (brainModalOverlay?.classList.contains('visible')) renderBrain();
+  }
+
+  function brainSwitchToConversation(id){
+    if (!store.conversations[id]) return;
+    switchConversation(id);
+    closeBrainModal();
+  }
+
+  function brainContinueConversation(id, focusText=''){
+    if (!store.conversations[id]) return;
+    switchConversation(id);
+    closeBrainModal();
+    const conv = store.conversations[id];
+    const summary = brainConversationSummary(conv);
+    const focus = focusText || summary.description || summary.title;
+    input.value = `Continue this ${summary.category.name.toLowerCase()} from where we stopped. Focus on: ${focus}`;
+    autoResize();
+    input.focus();
+  }
+
+  function brainToggleMeta(kind, id){
+    const meta = loadBrainMeta();
+    if (!meta[kind]) meta[kind] = {};
+    if (meta[kind][id]) delete meta[kind][id];
+    else meta[kind][id] = Date.now();
+    saveBrainMeta(meta);
+    renderBrain();
+  }
+
+  function brainExport(){
+    const data = brainBuildData();
+    const exportData = {
+      exportedAt: new Date().toISOString(),
+      user: userName || '',
+      stats: {
+        conversations: data.summaries.length,
+        tasks: data.tasks.length,
+        files: data.files.length,
+        categories: data.categories.map(c => ({ id:c.id, name:c.name, count:c.count })),
+      },
+      tasks: data.tasks.map(t => ({ title:t.title, chat:t.convTitle, category:t.category.name, priority:t.priority, updatedAt:new Date(t.updatedAt).toISOString() })),
+      timeline: data.summaries.map(s => ({ title:s.title, category:s.category.name, done:s.done, pinned:s.pinned, updatedAt:new Date(s.updatedAt).toISOString(), description:s.description })),
+      files: data.files.map(f => ({ name:f.name, kind:f.kind, chat:f.convTitle, category:f.category.name })),
+    };
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type:'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `vigzone-brain-${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  vigzoneBrainBtn?.addEventListener('click', openBrainModal);
+  brainModalCloseBtn?.addEventListener('click', closeBrainModal);
+  brainModalOverlay?.addEventListener('click', e => { if (e.target === brainModalOverlay) closeBrainModal(); });
+  brainRefreshBtn?.addEventListener('click', renderBrain);
+  brainExportBtn?.addEventListener('click', brainExport);
+  brainSearchInput?.addEventListener('input', renderBrain);
+  brainTabs?.addEventListener('click', e => {
+    const btn = e.target.closest('[data-brain-tab]');
+    if (!btn) return;
+    brainActiveTab = btn.dataset.brainTab || 'overview';
+    renderBrain();
+  });
+
+  brainModalBody?.addEventListener('click', e => {
+    const openBtn = e.target.closest('[data-brain-open]');
+    if (openBtn) { brainSwitchToConversation(openBtn.dataset.brainOpen); return; }
+
+    const continueBtn = e.target.closest('[data-brain-continue]');
+    if (continueBtn) { brainContinueConversation(continueBtn.dataset.brainContinue, continueBtn.dataset.brainFocus || ''); return; }
+
+    const doneBtn = e.target.closest('[data-brain-done]');
+    if (doneBtn) { brainToggleMeta('done', doneBtn.dataset.brainDone); return; }
+
+    const pinBtn = e.target.closest('[data-brain-pin]');
+    if (pinBtn) { brainToggleMeta('pinned', pinBtn.dataset.brainPin); return; }
+
+    const cat = e.target.closest('[data-brain-category]');
+    if (cat && brainSearchInput) {
+      const category = BRAIN_CATEGORIES.find(c => c.id === cat.dataset.brainCategory);
+      brainSearchInput.value = category ? category.name : cat.dataset.brainCategory;
+      brainActiveTab = 'timeline';
+      renderBrain();
+    }
+  });
+
 
   // ---------- Sidebar open/collapse (in-flow on desktop, overlay drawer on mobile) ----------
   function isMobile(){ return window.innerWidth <= 760; }
