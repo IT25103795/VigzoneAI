@@ -1,5 +1,5 @@
 /* Vigzone AI offline service worker */
-const VIGZONE_SW_VERSION = 'offline-v1.0.0';
+const VIGZONE_SW_VERSION = 'offline-v1.2.0-local-knowledge';
 const SHELL_CACHE = `vigzone-shell-${VIGZONE_SW_VERSION}`;
 const RUNTIME_CACHE = `vigzone-runtime-${VIGZONE_SW_VERSION}`;
 

@@ -8042,17 +8042,234 @@
     }
   }
 
+
+  // ---------- Offline Local Knowledge Engine ----------
+  // Runs fully in the browser when there is no internet. This is intentionally
+  // lightweight: it uses saved conversations, attached document text, simple
+  // reasoning/templates, and a built-in mini knowledge base. It does not call
+  // Groq or any server endpoint while offline.
+  const OFFLINE_KB = [
+    {
+      keys:['vigzone','app','features','what can you do','help'],
+      title:'Vigzone offline capabilities',
+      body:`In offline mode I can work from local browser knowledge only:
+- read and search your saved chats
+- answer from cached/saved conversation memory
+- summarize text from files that were already processed before sending
+- create simple plans, checklists, study notes, and code/website templates
+- do basic arithmetic and explain common programming/study concepts
+
+I cannot use Groq, web search, cloud Brain sync, live admin data, image generation, voice transcription, or new file extraction while offline.`
+    },
+    {
+      keys:['stack','queue','circular queue','linked list','tree','binary search tree','bst','data structure'],
+      title:'Data structures quick revision',
+      body:`Stack: LIFO structure. Main operations: push, pop, peek. Used in undo, recursion, browser back, expression parsing.
+Queue: FIFO structure. Main operations: enqueue, dequeue, front. Used in scheduling, buffers, printer queues.
+Circular queue: queue where last position connects back to first. It reuses empty slots efficiently. Full condition is often (rear + 1) % size == front.
+Linked list: nodes connected using pointers. Good for dynamic size and insert/delete, but slower random access.
+Tree: hierarchical structure with root, parent, child, leaf and depth.
+Binary Search Tree: left subtree values are smaller, right subtree values are larger. Average search/insert/delete is O(log n), worst case O(n).`
+    },
+    {
+      keys:['website','html','css','javascript','landing page','hotel','hospital'],
+      title:'Offline website starter',
+      body:`I can create a clean static website starter offline. Use this structure:
+- index.html for content
+- style.css for layout and responsive design
+- script.js for interactions
+
+A strong website should include: hero section, clear navigation, services/features, gallery or cards, CTA buttons, contact section, responsive CSS, accessibility labels, and SEO-friendly headings.`
+    },
+    {
+      keys:['java','servlet','maven','jsp','login','logout'],
+      title:'Java web app checklist',
+      body:`For Java/Maven web apps, check:
+- pom.xml uses compatible Java and servlet versions
+- servlet classes are in the correct package
+- web.xml or annotations map URLs correctly
+- forms use the correct method/action
+- session is created on login and invalidated on logout
+- database credentials are not hardcoded
+- errors are logged instead of silently swallowed.`
+    },
+    {
+      keys:['admin','dashboard','feedback','users','analytics'],
+      title:'Admin dashboard notes',
+      body:`A professional admin dashboard should separate admin from normal chat. It should show users, active users, token usage, requests, feedback, bad feedback reasons, shared chats, Brain usage, system status, and graphs. Admin should not be given the normal AI composer if the product requires admin-only management.`
+    },
+    {
+      keys:['black hole','space','gravity'],
+      title:'Black hole basics',
+      body:`A black hole is a region where gravity is so strong that nothing, not even light, can escape after crossing the event horizon. It forms when a lot of mass is compressed into a very small region. Outside the event horizon, gravity behaves like any other object with the same mass.`
+    },
+    {
+      keys:['sinhala','tamil','label','food label','nutrition','traffic light'],
+      title:'Food label design checklist',
+      body:`For food labels, keep product name, ingredients, nutrition table, net weight, MRP/MFD/EXP, batch number, manufacturer details, and traffic-light indicators readable. Always verify Sinhala/Tamil text manually because font rendering and spelling can break during image/PDF generation.`
+    }
+  ];
+
+  const OFFLINE_STOPWORDS = new Set('a an the and or but if then than this that those these is are was were be been being to of in on for from with without by as at it its into about can could should would will just please broo bro me my you your i we our they their do does did done have has had give make create write fix update app ai vigzone'.split(' '));
+
+  function offlineNormalize(text){
+    return String(text || '').toLowerCase().replace(/[^\p{L}\p{N}\s.+#-]/gu, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function offlineTokens(text){
+    return offlineNormalize(text).split(' ').filter(w => w.length > 2 && !OFFLINE_STOPWORDS.has(w)).slice(0, 80);
+  }
+  function offlineEscapeFence(text){
+    return String(text || '').replace(/```/g, '`‌``');
+  }
+  function offlineTextFromContent(content){
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) return content.map(x => x?.text || '').join('\n');
+    return '';
+  }
+  function offlineCalc(query){
+    const q = String(query || '').trim();
+    if (!/^[\d\s+\-*/().%^]+$/.test(q)) return null;
+    if (!/[+\-*/%^]/.test(q)) return null;
+    try {
+      const expr = q.replace(/\^/g, '**');
+      // Only arithmetic characters passed above.
+      const val = Function(`"use strict"; return (${expr});`)();
+      if (Number.isFinite(val)) return `Answer: **${val}**`;
+    } catch {}
+    return null;
+  }
+  function offlineSummarizeText(text, maxBullets=5){
+    const clean = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!clean) return '';
+    const sentences = clean.match(/[^.!?\n]+[.!?]?/g) || [clean];
+    return sentences.slice(0, maxBullets).map(s => `- ${s.trim().slice(0, 220)}`).join('\n');
+  }
+  function offlineFindLocalMemories(query){
+    const qTokens = offlineTokens(query);
+    if (!qTokens.length) return [];
+    const rows = [];
+    Object.values(store?.conversations || {}).forEach(conv => {
+      (conv.messages || []).forEach((m, idx) => {
+        const text = offlineTextFromContent(m.displayText || m.content);
+        if (!text || text.length < 8) return;
+        const n = offlineNormalize(text);
+        let score = 0;
+        qTokens.forEach(t => { if (n.includes(t)) score += 1; });
+        if (score > 0) rows.push({score, convTitle: conv.title || 'Saved chat', idx, role: m.role, text: text.slice(0, 420)});
+      });
+    });
+    return rows.sort((a,b) => b.score - a.score).slice(0, 5);
+  }
+  function offlineMatchKB(query){
+    const q = offlineNormalize(query);
+    let best = null;
+    for (const item of OFFLINE_KB) {
+      const score = item.keys.reduce((sum, k) => sum + (q.includes(k) ? Math.max(2, k.split(' ').length) : 0), 0);
+      if (score && (!best || score > best.score)) best = {...item, score};
+    }
+    return best;
+  }
+  function offlineWebsiteTemplate(query){
+    const title = (String(query || '').match(/(?:for|about)\s+([a-zA-Z0-9\s]{3,40})/)?.[1] || 'Your Brand').trim();
+    return `Here is an offline static website starter for **${title}**:
+
+\`\`\`html
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${offlineEscapeFence(title)}</title>
+  <style>
+    :root{--bg:#0b1020;--card:#151b2e;--text:#f6f7fb;--muted:#aab1c5;--accent:#ff6b4a}
+    *{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--text)}
+    header{padding:22px 8%;display:flex;justify-content:space-between;align-items:center}
+    nav a{color:var(--muted);margin-left:18px;text-decoration:none}
+    .hero{padding:80px 8%;display:grid;gap:22px;min-height:72vh;align-content:center;background:radial-gradient(circle at top right,#ff6b4a44,transparent 35%)}
+    h1{font-size:clamp(38px,7vw,76px);line-height:.95;margin:0}.hero p{max-width:620px;color:var(--muted);font-size:18px}
+    .btn{display:inline-block;background:var(--accent);color:white;padding:13px 18px;border-radius:14px;text-decoration:none;font-weight:800}
+    .grid{padding:40px 8%;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
+    .card{background:var(--card);border:1px solid #ffffff18;border-radius:18px;padding:22px}
+    footer{padding:28px 8%;color:var(--muted);border-top:1px solid #ffffff18}
+  </style>
+</head>
+<body>
+  <header><strong>${offlineEscapeFence(title)}</strong><nav><a href="#services">Services</a><a href="#contact">Contact</a></nav></header>
+  <section class="hero"><h1>Build something beautiful.</h1><p>A clean responsive landing page generated by Vigzone offline local mode.</p><a class="btn" href="#contact">Get started</a></section>
+  <section class="grid" id="services">
+    <div class="card"><h2>Fast</h2><p>Simple, lightweight, and responsive.</p></div>
+    <div class="card"><h2>Modern</h2><p>Polished spacing, contrast, and mobile layout.</p></div>
+    <div class="card"><h2>Ready</h2><p>Edit the text and deploy anywhere.</p></div>
+  </section>
+  <footer id="contact">Contact: hello@example.com</footer>
+</body>
+</html>
+\`\`\``;
+  }
+  function buildOfflineLocalReply(query, ctx={}){
+    const typed = String(query || '').trim();
+    const docs = ctx.docs || [];
+    const images = ctx.images || [];
+    const shortQ = offlineNormalize(typed);
+
+    if (images.length && !docs.length) {
+      return `**Offline local mode**\n\nI can reply offline, but I cannot analyze new images without the online vision model. I can still help with image-label text, layout suggestions, or continue from saved chat memory.`;
+    }
+
+    if (docs.length) {
+      const combinedDoc = docs.map(d => `[${d.name}]\n${d.text || ''}`).join('\n\n').slice(0, 12000);
+      if (/summari[sz]e|summary|main points|explain|what is/i.test(typed) || !typed) {
+        return `**Offline local summary from attached text**\n\n${offlineSummarizeText(combinedDoc, 7)}\n\n_This was generated locally from the text already available in the browser._`;
+      }
+      const hits = offlineFindLocalMemories(typed);
+      return `**Offline local answer**\n\nI can use the attached text that is already available locally. Closest extracted points:\n\n${offlineSummarizeText(combinedDoc, 5)}${hits.length ? `\n\nRelated saved memory:\n${hits.map(h => `- ${h.convTitle}: ${h.text.slice(0, 160)}...`).join('\n')}` : ''}`;
+    }
+
+    const calc = offlineCalc(typed);
+    if (calc) return `**Offline calculator**\n\n${calc}`;
+
+    if (/website|html|css|landing page|web page|site/i.test(typed) && /create|make|build|write|design/i.test(typed)) {
+      return offlineWebsiteTemplate(typed);
+    }
+
+    if (/continue|last|where.*stopped|unfinished|task/i.test(typed)) {
+      const data = brainBuildData ? brainBuildData() : {tasks:[], summaries:[]};
+      const task = data.tasks?.[0];
+      if (task) return `**Continue where you stopped**\n\nLast likely unfinished task: **${task.title || task.convTitle || 'Untitled task'}**\n\nSuggested next steps:\n- Open the related saved chat from Vigzone Brain or Recent chats.\n- Review the last generated file or instruction.\n- Tell me the exact next change, and I can help locally if it is text/code/planning.\n\n_Source: local browser Brain memory._`;
+    }
+
+    const kb = offlineMatchKB(typed);
+    const memories = offlineFindLocalMemories(typed);
+
+    if (kb && memories.length) {
+      return `**Offline local answer — ${kb.title}**\n\n${kb.body}\n\n**Relevant saved memories found on this device:**\n${memories.map(h => `- **${escapeHtml(h.convTitle)}**: ${h.text.replace(/\s+/g, ' ').slice(0, 180)}...`).join('\n')}`;
+    }
+    if (kb) {
+      return `**Offline local answer — ${kb.title}**\n\n${kb.body}`;
+    }
+    if (memories.length) {
+      return `**Offline local answer from saved chats**\n\nI found these matching memories stored on this device:\n\n${memories.map(h => `- **${h.convTitle}** (${h.role}): ${h.text.replace(/\s+/g, ' ').slice(0, 220)}...`).join('\n')}\n\nAsk me to summarize or continue one of these, and I’ll use the local saved context.`;
+    }
+
+    if (/hi|hello|hey|bro|broo|thanks|thank/i.test(shortQ)) {
+      return `Hey bro ✌️ I’m in **offline local mode** now.\n\nI can still help using saved chats, local Brain memory, simple calculations, study notes, code/website templates, and text already available in the browser. For Groq-level AI, web search, image generation, uploads, and cloud sync, reconnect to the internet.`;
+    }
+
+    return `**Offline local mode**\n\nI can answer without internet, but only from local browser knowledge. I did not find a strong saved memory for this question.\n\nTry asking about:\n- saved chats or unfinished tasks\n- summaries of text already attached/processed\n- data structures, simple code, website templates, checklists, plans\n- basic calculations\n\nWhen internet returns, I can switch back to full Vigzone AI.`;
+  }
+
   function apiMessages(){
     return messages.map(m => ({ role: m.role, content: m.content }));
   }
 
   async function sendMessage(text, opts = {}){
-    if (!navigator.onLine) {
-      suiteToast?.('Offline mode: you can read saved chats, but AI replies need internet.');
-      setOfflineUiState?.();
-      return;
-    }
+    const offlineNow = !navigator.onLine;
     if (imageMode) {
+      if (offlineNow) {
+        suiteToast?.('Image generation/editing needs internet. Offline local text mode is still available.');
+        setOfflineUiState?.();
+        return;
+      }
       if (quotedMessage) clearQuote();
       return sendImageGenRequest(text);
     }
@@ -8120,6 +8337,17 @@
     autoResize();
     pendingFiles = [];
     renderAttachmentsBar();
+
+    if (offlineNow) {
+      const offlineReply = buildOfflineLocalReply(combinedText, { typedText, docs, images, quoteAtSend });
+      const offlineBubble = renderMessage('assistant', offlineReply, { index: messages.length });
+      offlineBubble.appendChild(buildMessageActions(() => offlineReply));
+      messages.push({ role: 'assistant', content: offlineReply, displayText: offlineReply, offlineLocal: true });
+      saveConversation();
+      setOfflineUiState?.();
+      suiteToast?.('Offline local knowledge response generated on this device.');
+      return;
+    }
 
     const assistantBubble = renderMessage('assistant', '', { typing: true, index: messages.length });
     const avatarEl = assistantBubble.parentElement.querySelector('.avatar');
@@ -8209,8 +8437,20 @@
       saveConversation();
 
     } catch (err) {
-      assistantBubble.classList.add('error-bubble');
-      assistantBubble.innerHTML = `⚠ ${escapeHtml(err.message || 'Something went wrong.')}`;
+      if (!navigator.onLine || err?.name === 'TypeError') {
+        const offlineReply = buildOfflineLocalReply(combinedText, { typedText, docs, images, quoteAtSend });
+        assistantBubble.classList.remove('error-bubble');
+        assistantBubble.innerHTML = renderContent(offlineReply);
+        enhanceCodeBlocks(assistantBubble);
+        assistantBubble.appendChild(buildMessageActions(() => offlineReply));
+        messages.push({ role: 'assistant', content: offlineReply, displayText: offlineReply, offlineLocal: true });
+        saveConversation();
+        setOfflineUiState?.();
+        suiteToast?.('Connection failed — answered with local offline knowledge.');
+      } else {
+        assistantBubble.classList.add('error-bubble');
+        assistantBubble.innerHTML = `⚠ ${escapeHtml(err.message || 'Something went wrong.')}`;
+      }
     } finally {
       clearAvatarThinkingState(avatarEl, thinkingTagEl);
       streaming = false;
