@@ -3348,6 +3348,228 @@
       }
     }
 
+
+    /* ---------- Full-screen floating top controls ----------
+       Removes the white/dark top navigation bar and places the controls
+       directly on the chat theme/wallpaper as blurred glass buttons. */
+    .main-col{
+      grid-template-rows:minmax(0, 1fr) auto !important;
+    }
+    .main-col > header{
+      position:absolute !important;
+      top:14px !important;
+      left:18px !important;
+      right:18px !important;
+      grid-row:1 !important;
+      grid-column:1 !important;
+      z-index:90 !important;
+      padding:0 !important;
+      margin:0 !important;
+      border:0 !important;
+      background:transparent !important;
+      background-image:none !important;
+      box-shadow:none !important;
+      backdrop-filter:none !important;
+      -webkit-backdrop-filter:none !important;
+      pointer-events:none !important;
+      gap:12px !important;
+    }
+    .main-col > header::before,
+    .main-col > header::after{
+      content:none !important;
+      display:none !important;
+    }
+    .main-col > header .header-left,
+    .main-col > header .actions{
+      pointer-events:auto !important;
+    }
+    #main{
+      grid-row:1 !important;
+    }
+    .composer-wrap{
+      grid-row:2 !important;
+    }
+    #chatInner,
+    .chat-inner{
+      padding-top:92px !important;
+    }
+
+    .main-col > header .header-left{
+      display:flex !important;
+      align-items:center !important;
+      gap:10px !important;
+      min-width:0 !important;
+    }
+    .main-col > header .actions{
+      display:flex !important;
+      align-items:center !important;
+      justify-content:flex-end !important;
+      gap:10px !important;
+      min-width:0 !important;
+    }
+
+    .main-col > header .sidebar-toggle-btn,
+    .main-col > header .icon-btn,
+    .main-col > header #newChatBtn,
+    .main-col > header .brand{
+      background:color-mix(in srgb, var(--surface) 68%, transparent) !important;
+      border:1px solid color-mix(in srgb, var(--border) 72%, var(--accent) 18%) !important;
+      color:var(--text-muted) !important;
+      backdrop-filter:blur(20px) saturate(1.18) !important;
+      -webkit-backdrop-filter:blur(20px) saturate(1.18) !important;
+      box-shadow:
+        0 18px 50px -30px var(--composer-shadow),
+        inset 0 1px 0 rgba(255,255,255,.10) !important;
+    }
+    .main-col > header .sidebar-toggle-btn,
+    .main-col > header .usage-cycle-btn{
+      width:44px !important;
+      height:44px !important;
+      border-radius:16px !important;
+      flex:0 0 auto !important;
+    }
+    .main-col > header .sidebar-toggle-btn svg{
+      width:18px !important;
+      height:18px !important;
+    }
+    .main-col > header .brand{
+      display:flex !important;
+      align-items:center !important;
+      gap:10px !important;
+      min-height:44px !important;
+      padding:7px 13px 7px 8px !important;
+      border-radius:18px !important;
+      max-width:min(300px, 46vw) !important;
+    }
+    .main-col > header .brand-mark{
+      width:34px !important;
+      height:34px !important;
+      border-radius:12px !important;
+      background:color-mix(in srgb, #0b0f1a 74%, var(--accent) 12%) !important;
+      box-shadow:0 0 0 1px color-mix(in srgb, var(--brand-ring) 70%, var(--accent) 20%), 0 8px 22px -12px var(--brand-shadow) !important;
+    }
+    .main-col > header .brand-name{
+      font-size:16px !important;
+      line-height:1.05 !important;
+      color:var(--text) !important;
+      white-space:nowrap !important;
+    }
+    .main-col > header .brand-sub{
+      font-size:11px !important;
+      color:color-mix(in srgb, var(--text-muted) 88%, var(--text) 12%) !important;
+      white-space:nowrap !important;
+    }
+    .main-col > header #newChatBtn{
+      min-height:44px !important;
+      height:44px !important;
+      padding:0 15px !important;
+      border-radius:16px !important;
+      font-weight:750 !important;
+      color:var(--text-muted) !important;
+      white-space:nowrap !important;
+    }
+    .main-col > header .sidebar-toggle-btn:hover,
+    .main-col > header .icon-btn:hover,
+    .main-col > header #newChatBtn:hover,
+    .main-col > header .brand:hover{
+      color:var(--text) !important;
+      border-color:var(--accent) !important;
+      background:color-mix(in srgb, var(--surface-2) 72%, var(--accent-dim)) !important;
+      transform:translateY(-1px);
+    }
+
+    .main-col > header .usage-cycle-wrap{
+      position:relative !important;
+      display:flex !important;
+      align-items:center !important;
+    }
+    .main-col > header .usage-cycle-btn{
+      position:relative !important;
+      padding:0 !important;
+      overflow:visible !important;
+    }
+    .main-col > header .usage-cycle-btn svg{
+      width:26px !important;
+      height:26px !important;
+    }
+    .main-col > header .usage-cycle-center{
+      font-size:9px !important;
+      font-weight:800 !important;
+      color:var(--accent) !important;
+    }
+
+    [data-theme="light"] .main-col > header .sidebar-toggle-btn,
+    [data-theme="light"] .main-col > header .icon-btn,
+    [data-theme="light"] .main-col > header #newChatBtn,
+    [data-theme="light"] .main-col > header .brand{
+      background:rgba(255,255,255,.72) !important;
+      border-color:rgba(213,219,232,.82) !important;
+      box-shadow:
+        0 18px 52px -34px rgba(21,27,40,.45),
+        inset 0 1px 0 rgba(255,255,255,.88) !important;
+    }
+    [data-theme="light"] .main-col > header .sidebar-toggle-btn:hover,
+    [data-theme="light"] .main-col > header .icon-btn:hover,
+    [data-theme="light"] .main-col > header #newChatBtn:hover,
+    [data-theme="light"] .main-col > header .brand:hover{
+      background:rgba(255,255,255,.86) !important;
+      border-color:color-mix(in srgb, var(--accent) 45%, var(--border)) !important;
+    }
+
+    body.has-chat-wallpaper .main-col > header .sidebar-toggle-btn,
+    body.has-chat-wallpaper .main-col > header .icon-btn,
+    body.has-chat-wallpaper .main-col > header #newChatBtn,
+    body.has-chat-wallpaper .main-col > header .brand{
+      background:color-mix(in srgb, var(--surface) 58%, transparent) !important;
+      border-color:color-mix(in srgb, var(--border) 58%, var(--accent) 28%) !important;
+    }
+
+    @media (max-width:760px){
+      .main-col > header{
+        top:10px !important;
+        left:10px !important;
+        right:10px !important;
+      }
+      .main-col > header .brand{
+        max-width:calc(100vw - 210px) !important;
+        padding-right:10px !important;
+      }
+      .main-col > header .brand-name{
+        font-size:14px !important;
+      }
+      .main-col > header .brand-sub{
+        font-size:10px !important;
+      }
+      .main-col > header #newChatBtn{
+        width:44px !important;
+        min-width:44px !important;
+        padding:0 !important;
+        font-size:0 !important;
+      }
+      .main-col > header #newChatBtn::before{
+        content:'+' !important;
+        font-size:22px !important;
+        line-height:1 !important;
+        color:currentColor !important;
+      }
+      #chatInner,
+      .chat-inner{
+        padding-top:84px !important;
+      }
+    }
+    @media (max-width:520px){
+      .main-col > header .brand{
+        max-width:calc(100vw - 170px) !important;
+      }
+      .main-col > header .brand > div:last-child{
+        display:none !important;
+      }
+      .main-col > header .brand{
+        padding:5px !important;
+        min-height:44px !important;
+      }
+    }
+
   </style>
 </head>
 <body style="display: none;">
