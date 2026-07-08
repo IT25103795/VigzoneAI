@@ -173,13 +173,14 @@ class StreamControlRequest(BaseModel):
 
 
 class ImageRequest(BaseModel):
-    prompt: str = Field(..., min_length=1, max_length=800)
+    # Image prompts often need details for accurate composition/text/layout.
+    prompt: str = Field(..., min_length=1, max_length=3000)
     size: Optional[str] = Field(default="1024x1024")
 
 
 class EditImageRequest(BaseModel):
     image_data_uri: str = Field(..., min_length=1)
-    prompt: str = Field(..., min_length=1, max_length=800)
+    prompt: str = Field(..., min_length=1, max_length=3000)
     size: Optional[str] = Field(default="1024x1024")
 
 

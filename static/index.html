@@ -5723,7 +5723,7 @@
     const hasPhoto = pendingFiles.some(f => f.kind === 'image' && f.status !== 'error');
     slot.innerHTML = hasPhoto
             ? `<div class="mode-hint-banner">✏️ Editing the attached photo — describe the change you want, then send.</div>`
-            : `<div class="mode-hint-banner">🎨 Image mode — type a description and send to generate, or attach a photo (📎) first to edit it instead.</div>`;
+            : `<div class="mode-hint-banner">🎨 High-quality image mode — describe subject, style, colors, layout and exact text. Vigzone will enhance the prompt before generating.</div>`;
   }
 
   function setImageMode(on){
@@ -5791,7 +5791,7 @@
     streaming = true;
     updateSendButtonState();
 
-    const loadingCaption = sourceImage ? `Editing photo: "${prompt}"…` : `Generating "${prompt}"…`;
+    const loadingCaption = sourceImage ? `Editing photo accurately: "${prompt}"…` : `Enhancing prompt and generating a high-quality image: "${prompt}"…`;
     const assistantBubble = renderMessage('assistant', loadingCaption, { imageLoading: true });
     const avatarEl = assistantBubble.parentElement.querySelector('.avatar');
     avatarEl.classList.add('pulsing');
@@ -5820,7 +5820,14 @@
       if (!src) throw new Error('No image was returned.');
 
       assistantBubble.innerHTML = '';
-      assistantBubble.appendChild(buildImageResultEl(src, prompt));
+      const resultEl = buildImageResultEl(src, prompt);
+      if (data.provider || data.model || data.quality_note) {
+        const note = document.createElement('div');
+        note.className = 'gen-image-caption';
+        note.textContent = data.quality_note || `Generated with ${data.provider || 'image provider'}${data.model ? ` · ${data.model}` : ''}`;
+        resultEl.appendChild(note);
+      }
+      assistantBubble.appendChild(resultEl);
 
       const label = sourceImage ? `[Edited photo: ${prompt}]` : `[Generated image: ${prompt}]`;
       messages.push({ role: 'assistant', content: label, displayText: prompt, imageSrc: src });
