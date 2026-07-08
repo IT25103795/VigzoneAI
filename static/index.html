@@ -3783,6 +3783,157 @@
       }
     }
 
+
+    /* ---------- Product Suite: Brain Pro, File Studio, Website Studio ---------- */
+    .suite-modal{
+      width:min(920px, calc(100vw - 28px));
+      max-width:920px;
+      max-height:88vh;
+    }
+    .suite-body{
+      display:grid;
+      gap:10px;
+      margin-top:12px;
+    }
+    .suite-form{
+      display:grid;
+      gap:12px;
+      margin-top:12px;
+    }
+    .suite-form label{
+      display:grid;
+      gap:6px;
+      color:var(--text-muted);
+      font-size:12px;
+      font-weight:800;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+    }
+    .suite-form textarea,
+    .suite-form select,
+    .suite-form input{
+      width:100%;
+      border:1px solid var(--border);
+      background:var(--surface-2);
+      color:var(--text);
+      border-radius:12px;
+      padding:10px 11px;
+      font:500 13px 'Inter',sans-serif;
+      text-transform:none;
+      letter-spacing:0;
+    }
+    .suite-form textarea{
+      min-height:120px;
+      resize:vertical;
+      line-height:1.5;
+    }
+    .suite-actions{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
+    .suite-note{
+      color:var(--text-muted);
+      font-size:12px;
+      line-height:1.5;
+      border:1px dashed var(--border);
+      background:var(--surface-2);
+      border-radius:12px;
+      padding:10px;
+    }
+    .suite-card{
+      border:1px solid var(--border);
+      background:var(--surface-2);
+      border-radius:14px;
+      padding:12px;
+      display:flex;
+      gap:10px;
+      align-items:flex-start;
+    }
+    .suite-card-icon{
+      width:34px;height:34px;border-radius:11px;
+      display:flex;align-items:center;justify-content:center;
+      background:var(--accent-dim);
+      color:var(--accent);
+      flex:0 0 auto;
+    }
+    .suite-card-main{flex:1;min-width:0;}
+    .suite-card-title{
+      color:var(--text);
+      font-weight:800;
+      font-size:13px;
+      word-break:break-word;
+    }
+    .suite-card-desc{
+      color:var(--text-muted);
+      font-size:12px;
+      line-height:1.45;
+      margin-top:5px;
+      word-break:break-word;
+    }
+    .suite-pill-row{
+      display:flex;gap:6px;flex-wrap:wrap;margin-top:7px;
+    }
+    .continue-work-banner{
+      border:1px solid color-mix(in srgb, var(--accent) 38%, var(--border));
+      background:linear-gradient(135deg, color-mix(in srgb, var(--surface) 78%, transparent), color-mix(in srgb, var(--accent-dim) 70%, transparent));
+      border-radius:18px;
+      padding:12px;
+      margin:14px auto 0;
+      max-width:620px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      box-shadow:0 22px 60px -42px var(--composer-shadow);
+    }
+    .continue-work-banner strong{
+      display:block;
+      color:var(--text);
+      font-size:13px;
+    }
+    .continue-work-banner span{
+      display:block;
+      color:var(--text-muted);
+      font-size:12px;
+      margin-top:3px;
+      line-height:1.4;
+    }
+    .feedback-reason-pop{
+      position:fixed;
+      z-index:240;
+      background:var(--surface);
+      border:1px solid var(--border);
+      border-radius:14px;
+      box-shadow:0 24px 60px -24px var(--sidebar-shadow);
+      padding:12px;
+      width:min(320px, calc(100vw - 28px));
+      display:none;
+    }
+    .feedback-reason-pop.visible{display:block;}
+    .feedback-reason-pop textarea{
+      width:100%;
+      min-height:78px;
+      border-radius:10px;
+      border:1px solid var(--border);
+      background:var(--surface-2);
+      color:var(--text);
+      padding:9px;
+      resize:vertical;
+      font:500 13px 'Inter',sans-serif;
+    }
+    .feedback-reason-actions{
+      display:flex;
+      justify-content:flex-end;
+      gap:8px;
+      margin-top:8px;
+    }
+    @media (max-width:760px){
+      .suite-modal{width:calc(100vw - 18px);max-height:90vh;}
+      .continue-work-banner{align-items:flex-start;flex-direction:column;}
+    }
+
   </style>
 </head>
 <body style="display: none;">
@@ -3866,6 +4017,18 @@
         </button>
       </div>
       <div class="sidebar-footer-row">
+        <span class="history-label" style="padding:0;margin:0;">File Studio</span>
+        <button class="sidebar-teach-btn" id="fileStudioBtn" aria-label="Open File Studio" title="Open File Studio">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path><path d="M8 13h8M8 17h5"></path></svg>
+        </button>
+      </div>
+      <div class="sidebar-footer-row">
+        <span class="history-label" style="padding:0;margin:0;">Website Studio</span>
+        <button class="sidebar-teach-btn" id="websiteStudioBtn" aria-label="Open Website Studio" title="Open Website Studio">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M3 9h18"></path><path d="M8 14h4M8 17h8"></path></svg>
+        </button>
+      </div>
+      <div class="sidebar-footer-row">
         <span class="history-label" style="padding:0;margin:0;">My usage</span>
         <button class="sidebar-teach-btn" id="usageTodayBtn" aria-label="View my usage" title="See your AI usage today">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"></line><line x1="18" y1="20" x2="18" y2="4"></line><line x1="6" y1="20" x2="6" y2="16"></line></svg>
@@ -3886,6 +4049,7 @@
             </div>
             <button class="deep-action-btn" id="exportTxtBtn" type="button">Export TXT</button>
             <button class="deep-action-btn" id="exportHtmlBtn" type="button">Export HTML</button>
+            <button class="deep-action-btn" id="shareChatBtn" type="button">Share Link</button>
           </div>
         </div>
       </div>
@@ -4039,6 +4203,7 @@
       </div>
 
       <div class="settings-actions-row">
+        <button class="deep-action-btn" id="versionOpenBtn" type="button">Check updates</button>
         <button class="deep-action-btn" id="resetWallpaperBtn" type="button">Remove wallpaper</button>
       </div>
     </div>
@@ -4062,6 +4227,7 @@
         <input id="brainSearchInput" type="search" placeholder="Search your brain..." autocomplete="off" />
       </div>
       <button class="deep-action-btn" id="brainRefreshBtn" type="button">Refresh</button>
+      <button class="deep-action-btn" id="brainCloudSyncBtn" type="button">Cloud Sync</button>
       <button class="deep-action-btn" id="brainExportBtn" type="button">Export Brain</button>
     </div>
     <div class="brain-tabs" id="brainTabs" role="tablist">
@@ -4071,6 +4237,71 @@
       <button class="brain-tab" data-brain-tab="files" type="button">Files</button>
     </div>
     <div class="brain-body" id="brainModalBody"></div>
+  </div>
+</div>
+
+
+<div class="usage-modal-overlay" id="fileStudioModalOverlay">
+  <div class="usage-modal suite-modal">
+    <div class="usage-modal-head">
+      <div>
+        <h3>File Studio</h3>
+        <div class="brain-subtitle">All uploaded files and generated images found in your chats.</div>
+      </div>
+      <button class="usage-modal-close" id="fileStudioCloseBtn" aria-label="Close">&times;</button>
+    </div>
+    <div class="brain-toolbar">
+      <div class="brain-search-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+        <input id="fileStudioSearchInput" type="search" placeholder="Search files/images..." autocomplete="off" />
+      </div>
+      <button class="deep-action-btn" id="fileStudioRefreshBtn" type="button">Refresh</button>
+    </div>
+    <div class="suite-body" id="fileStudioBody"></div>
+  </div>
+</div>
+
+<div class="usage-modal-overlay" id="websiteStudioModalOverlay">
+  <div class="usage-modal suite-modal">
+    <div class="usage-modal-head">
+      <div>
+        <h3>Website Studio</h3>
+        <div class="brain-subtitle">Plan → generate modern website code → export as a ZIP.</div>
+      </div>
+      <button class="usage-modal-close" id="websiteStudioCloseBtn" aria-label="Close">&times;</button>
+    </div>
+    <div class="suite-form">
+      <label>Website goal
+        <textarea id="websiteStudioPrompt" placeholder="Example: Build a modern hotel website with rooms, booking CTA, gallery, pricing and mobile responsive layout."></textarea>
+      </label>
+      <label>Style
+        <select id="websiteStudioStyle">
+          <option value="modern glass UI">Modern glass UI</option>
+          <option value="minimal clean startup">Minimal clean startup</option>
+          <option value="luxury premium">Luxury premium</option>
+          <option value="dark futuristic">Dark futuristic</option>
+          <option value="colorful playful">Colorful playful</option>
+        </select>
+      </label>
+      <div class="suite-actions">
+        <button class="deep-action-btn" id="websiteStudioGenerateBtn" type="button">Generate in chat</button>
+        <button class="deep-action-btn" id="websiteStudioPlanBtn" type="button">Create plan prompt</button>
+      </div>
+      <div class="suite-note">This switches Vigzone to Website Studio mode and fills the composer with a stronger website-building prompt.</div>
+    </div>
+  </div>
+</div>
+
+<div class="usage-modal-overlay" id="versionModalOverlay">
+  <div class="usage-modal suite-modal">
+    <div class="usage-modal-head">
+      <div>
+        <h3>Vigzone Updates</h3>
+        <div class="brain-subtitle">Current version, installed features and update notes.</div>
+      </div>
+      <button class="usage-modal-close" id="versionModalCloseBtn" aria-label="Close">&times;</button>
+    </div>
+    <div class="suite-body" id="versionModalBody"><div class="usage-modal-loading">Loading version…</div></div>
   </div>
 </div>
 
@@ -5202,6 +5433,7 @@
     store.activeId = null;
     showAllMessages = false;
     renderAll();
+    setTimeout(renderContinueBanner, 80);
     renderAttachmentsBar();
     renderHistoryList();
     if (isMobile()) setSidebarCollapsed(true);
@@ -6482,6 +6714,11 @@
       const res = await fetch('/api/admin/overview', { credentials: 'include' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Could not load admin data.');
+      let productAnalytics = null;
+      try {
+        const ar = await fetch('/api/admin/analytics', { credentials:'include' });
+        if (ar.ok) productAnalytics = await ar.json();
+      } catch {}
       const topRows = (data.top_users || []).map(u => `
         <tr>
           <td>${escapeHtml(u.name || u.email || ('User ' + u.id))}<br><span style="color:var(--text-muted);font-size:10px;">${escapeHtml(u.using_own_key ? 'own key' : 'default Groq')}</span></td>
@@ -6496,8 +6733,11 @@
           <div class="admin-card"><div class="admin-card-label">Active today</div><div class="admin-card-value">${(data.active_today || 0).toLocaleString()}</div></div>
           <div class="admin-card"><div class="admin-card-label">Tokens today</div><div class="admin-card-value">${((data.today && data.today.total_tokens) || 0).toLocaleString()}</div></div>
           <div class="admin-card"><div class="admin-card-label">Requests today</div><div class="admin-card-value">${((data.today && data.today.requests) || 0).toLocaleString()}</div></div>
+          <div class="admin-card"><div class="admin-card-label">Brain users</div><div class="admin-card-value">${((productAnalytics && productAnalytics.brain_users) || 0).toLocaleString()}</div></div>
+          <div class="admin-card"><div class="admin-card-label">Feedback</div><div class="admin-card-value">${((productAnalytics && productAnalytics.feedback_count) || 0).toLocaleString()}</div></div>
+          <div class="admin-card"><div class="admin-card-label">Shares</div><div class="admin-card-value">${((productAnalytics && productAnalytics.share_count) || 0).toLocaleString()}</div></div>
         </div>
-        <div class="usage-modal-note">Default-plan users: ${(data.default_plan_users || 0).toLocaleString()} · Own-key users: ${(data.own_key_users || 0).toLocaleString()}</div>
+        <div class="usage-modal-note">Default-plan users: ${(data.default_plan_users || 0).toLocaleString()} · Own-key users: ${(data.own_key_users || 0).toLocaleString()} · Build: ${escapeHtml((productAnalytics && productAnalytics.version) || 'unknown')}</div>
         <table class="admin-table">
           <thead><tr><th>User</th><th>Tokens</th><th>Req</th><th>Action</th></tr></thead>
           <tbody>${topRows || '<tr><td colspan="4">No usage yet today.</td></tr>'}</tbody>
@@ -7151,6 +7391,31 @@
     downBtn.setAttribute('aria-label', 'Downvote this response');
     downBtn.textContent = '👎';
     row.appendChild(downBtn);
+
+    async function sendFeedback(rating, reason=''){
+      const text = typeof getText === 'function' ? getText() : String(getText || '');
+      upBtn.classList.toggle('done', rating === 'up');
+      downBtn.classList.toggle('done', rating === 'down');
+      try {
+        await fetch('/api/feedback', {
+          method:'POST',
+          headers:suiteAuthHeaders ? suiteAuthHeaders(true) : {'Content-Type':'application/json'},
+          body:JSON.stringify({
+            rating,
+            reason,
+            assistant_text:text,
+            conversation_id:store?.activeId || null,
+            context:{mode:currentMode?.() || 'general'}
+          })
+        });
+      } catch {}
+      suiteToast?.(rating === 'up' ? 'Thanks — feedback saved.' : 'Thanks — I’ll learn from this.');
+    }
+    upBtn.addEventListener('click', () => sendFeedback('up'));
+    downBtn.addEventListener('click', () => {
+      const reason = prompt('What was wrong? (optional)') || '';
+      sendFeedback('down', reason);
+    });
 
     return row;
   }
@@ -8910,6 +9175,276 @@
     draggedMsg = null;
   });
 
+
+  // ---------- Vigzone Product Suite: Brain Pro Sync, Continue, File Studio, Website Studio ----------
+  const fileStudioBtn = $('#fileStudioBtn');
+  const fileStudioModalOverlay = $('#fileStudioModalOverlay');
+  const fileStudioCloseBtn = $('#fileStudioCloseBtn');
+  const fileStudioBody = $('#fileStudioBody');
+  const fileStudioSearchInput = $('#fileStudioSearchInput');
+  const fileStudioRefreshBtn = $('#fileStudioRefreshBtn');
+
+  const websiteStudioBtn = $('#websiteStudioBtn');
+  const websiteStudioModalOverlay = $('#websiteStudioModalOverlay');
+  const websiteStudioCloseBtn = $('#websiteStudioCloseBtn');
+  const websiteStudioPrompt = $('#websiteStudioPrompt');
+  const websiteStudioStyle = $('#websiteStudioStyle');
+  const websiteStudioGenerateBtn = $('#websiteStudioGenerateBtn');
+  const websiteStudioPlanBtn = $('#websiteStudioPlanBtn');
+
+  const brainCloudSyncBtn = $('#brainCloudSyncBtn');
+  const versionOpenBtn = $('#versionOpenBtn');
+  const versionModalOverlay = $('#versionModalOverlay');
+  const versionModalCloseBtn = $('#versionModalCloseBtn');
+  const versionModalBody = $('#versionModalBody');
+
+  function suiteAuthHeaders(json=true){
+    const token = localStorage.getItem('vigzone_token') || '';
+    return {
+      ...(json ? {'Content-Type':'application/json'} : {}),
+      ...(token ? {'Authorization': `Bearer ${token}`} : {})
+    };
+  }
+
+  function suiteToast(text){
+    const el = document.createElement('div');
+    el.className = 'mode-hint-banner';
+    el.textContent = text;
+    el.style.position = 'fixed';
+    el.style.left = '50%';
+    el.style.bottom = '88px';
+    el.style.transform = 'translateX(-50%)';
+    el.style.zIndex = '260';
+    el.style.boxShadow = '0 18px 55px -28px var(--sidebar-shadow)';
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 2600);
+  }
+
+  function productSuitePayload(){
+    const data = brainBuildData ? brainBuildData() : { summaries:[], tasks:[], files:[], categories:[] };
+    return {
+      conversations: store.conversations || {},
+      order: store.order || [],
+      activeId: store.activeId || null,
+      pins: store.pins || {},
+      brainMeta: loadBrainMeta ? loadBrainMeta() : {},
+      modeMemory: JSON.parse(localStorage.getItem('vigzone_mode_memory_v1') || '{}'),
+      brainStats: {
+        chats: data.summaries.length,
+        tasks: data.tasks.length,
+        files: data.files.length,
+        categories: data.categories.map(c => ({id:c.id, name:c.name, count:c.count}))
+      }
+    };
+  }
+
+  async function syncBrainCloud(){
+    if (!brainCloudSyncBtn) return;
+    brainCloudSyncBtn.textContent = 'Syncing…';
+    try {
+      const res = await fetch('/api/brain/cloud', {
+        method:'POST',
+        headers:suiteAuthHeaders(true),
+        body:JSON.stringify({data: productSuitePayload(), client_updated_at:new Date().toISOString()})
+      });
+      if (!res.ok) throw new Error((await res.json().catch(()=>({}))).detail || 'Cloud sync failed');
+      brainCloudSyncBtn.textContent = 'Synced ✓';
+      suiteToast('Vigzone Brain synced to cloud.');
+      setTimeout(() => brainCloudSyncBtn.textContent = 'Cloud Sync', 1500);
+    } catch (e) {
+      brainCloudSyncBtn.textContent = 'Cloud Sync';
+      suiteToast(e.message || 'Could not sync Brain.');
+    }
+  }
+
+  async function loadBrainCloudOnStart(){
+    try {
+      const res = await fetch('/api/brain/cloud', {headers:suiteAuthHeaders(false)});
+      if (!res.ok) return;
+      const cloud = await res.json();
+      const payload = cloud.payload || {};
+      if (!payload.conversations) return;
+      const localCount = Object.keys(store.conversations || {}).length;
+      const cloudCount = Object.keys(payload.conversations || {}).length;
+      if (cloudCount > localCount) {
+        store.conversations = {...payload.conversations, ...(store.conversations || {})};
+        store.order = Array.from(new Set([...(payload.order || []), ...(store.order || [])]));
+        store.pins = {...(payload.pins || {}), ...(store.pins || {})};
+        if (payload.brainMeta) saveBrainMeta(payload.brainMeta);
+        persistStore();
+        renderHistoryList();
+        refreshBrainIfOpen();
+        suiteToast('Cloud Brain restored on this device.');
+      }
+    } catch {}
+  }
+
+  function rememberModeUse(mode, note=''){
+    const key = 'vigzone_mode_memory_v1';
+    let mem = {};
+    try { mem = JSON.parse(localStorage.getItem(key) || '{}'); } catch {}
+    mem[mode] = mem[mode] || {count:0, lastUsed:null, notes:[]};
+    mem[mode].count += 1;
+    mem[mode].lastUsed = new Date().toISOString();
+    if (note && !mem[mode].notes.includes(note)) mem[mode].notes.unshift(note);
+    mem[mode].notes = (mem[mode].notes || []).slice(0, 6);
+    localStorage.setItem(key, JSON.stringify(mem));
+  }
+
+  function renderContinueBanner(){
+    if (!emptyState || !emptyState.isConnected) return;
+    if (emptyState.querySelector('.continue-work-banner')) return;
+    const data = brainBuildData ? brainBuildData() : null;
+    if (!data || !data.summaries.length) return;
+    const focus = data.tasks[0] || data.summaries[0];
+    if (!focus) return;
+    const convId = focus.convId || focus.id;
+    const title = focus.title || focus.convTitle || 'your last task';
+    const banner = document.createElement('div');
+    banner.className = 'continue-work-banner';
+    banner.innerHTML = `
+      <div>
+        <strong>Continue where you stopped</strong>
+        <span>${escapeHtml(truncateText(title, 120))}</span>
+      </div>
+      <button class="deep-action-btn" type="button">Continue</button>`;
+    banner.querySelector('button').addEventListener('click', () => brainContinueConversation(convId, title));
+    const shell = emptyState.querySelector('.empty-shell') || emptyState;
+    shell.appendChild(banner);
+  }
+
+  function renderFileStudio(){
+    if (!fileStudioBody) return;
+    const data = brainBuildData ? brainBuildData() : {files:[]};
+    const q = (fileStudioSearchInput?.value || '').toLowerCase().trim();
+    const files = (data.files || []).filter(f => !q || [f.name, f.kind, f.convTitle, f.category?.name].join(' ').toLowerCase().includes(q));
+    fileStudioBody.innerHTML = files.length ? files.map(f => `
+      <div class="suite-card">
+        <div class="suite-card-icon">${f.kind === 'image' ? '🖼️' : '📄'}</div>
+        <div class="suite-card-main">
+          <div class="suite-card-title">${escapeHtml(f.name || 'file')}</div>
+          <div class="suite-card-desc">Linked to: ${escapeHtml(f.convTitle || 'chat')}</div>
+          <div class="suite-pill-row">
+            <span class="brain-pill">${escapeHtml(f.kind || 'file')}</span>
+            <span class="brain-pill">${escapeHtml(f.category?.name || 'General')}</span>
+            <span class="brain-pill">${brainTimeAgo(f.updatedAt)}</span>
+          </div>
+          <div class="brain-actions"><button class="brain-mini-btn primary" data-suite-open-chat="${escapeHtml(f.convId)}" type="button">Open chat</button></div>
+        </div>
+      </div>`).join('') : `<div class="brain-empty">No files or generated images found yet.</div>`;
+  }
+
+  function openFileStudio(){
+    renderFileStudio();
+    fileStudioModalOverlay?.classList.add('visible');
+  }
+  function closeFileStudio(){ fileStudioModalOverlay?.classList.remove('visible'); }
+
+  function buildWebsiteStudioPrompt(planOnly=false){
+    const goal = (websiteStudioPrompt?.value || '').trim();
+    const style = websiteStudioStyle?.value || 'modern glass UI';
+    return `${planOnly ? 'Create a complete website build plan first, then wait for my approval.' : 'Build a complete production-ready website now.'}
+
+Goal:
+${goal || 'Create a modern responsive website.'}
+
+Style:
+${style}
+
+Requirements:
+- Modern responsive design, mobile-first
+- Strong hero section, clean navigation, sections, CTA buttons
+- Polished CSS with excellent spacing and visual hierarchy
+- Accessibility, SEO basics, semantic HTML
+- Return complete runnable HTML/CSS/JS in organized code blocks
+- Include a short file tree and explain how to run/export it
+- Do not use broken placeholder assets; use gradients or safe placeholders when needed`;
+  }
+
+  function openWebsiteStudio(){
+    websiteStudioModalOverlay?.classList.add('visible');
+    setTimeout(() => websiteStudioPrompt?.focus(), 80);
+  }
+  function closeWebsiteStudio(){ websiteStudioModalOverlay?.classList.remove('visible'); }
+
+  function generateWebsiteFromStudio(planOnly=false){
+    setSmartMode('website');
+    rememberModeUse('website', 'Uses Website Studio for modern responsive sites');
+    input.value = buildWebsiteStudioPrompt(planOnly);
+    autoResize();
+    closeWebsiteStudio();
+    input.focus();
+  }
+
+  async function openVersionModal(){
+    versionModalOverlay?.classList.add('visible');
+    if (!versionModalBody) return;
+    versionModalBody.innerHTML = '<div class="usage-modal-loading">Loading version…</div>';
+    try {
+      const res = await fetch('/api/app/version');
+      const data = await res.json();
+      versionModalBody.innerHTML = `
+        <div class="suite-card">
+          <div class="suite-card-icon">⚡</div>
+          <div class="suite-card-main">
+            <div class="suite-card-title">${escapeHtml(data.name || 'Vigzone AI')}</div>
+            <div class="suite-card-desc">Current version: <strong>${escapeHtml(data.version || 'unknown')}</strong></div>
+            <div class="suite-pill-row">${(data.features || []).map(f => `<span class="brain-pill">${escapeHtml(f)}</span>`).join('')}</div>
+          </div>
+        </div>`;
+    } catch {
+      versionModalBody.innerHTML = '<div class="brain-empty">Could not load version info.</div>';
+    }
+  }
+
+  async function shareCurrentChat(){
+    if (!messages.length) return suiteToast('No chat to share yet.');
+    try {
+      const title = store.activeId && store.conversations[store.activeId] ? store.conversations[store.activeId].title : titleFromMessages(messages);
+      const res = await fetch('/api/share/chat', {
+        method:'POST',
+        headers:suiteAuthHeaders(true),
+        body:JSON.stringify({title, messages, public:true})
+      });
+      if (!res.ok) throw new Error('Share failed');
+      const data = await res.json();
+      const url = new URL(data.url, location.origin).href;
+      await navigator.clipboard?.writeText(url);
+      suiteToast('Public share link copied.');
+    } catch {
+      suiteToast('Could not create share link.');
+    }
+  }
+
+  function attachProductSuiteEvents(){
+    fileStudioBtn?.addEventListener('click', openFileStudio);
+    fileStudioCloseBtn?.addEventListener('click', closeFileStudio);
+    fileStudioModalOverlay?.addEventListener('click', e => { if (e.target === fileStudioModalOverlay) closeFileStudio(); });
+    fileStudioSearchInput?.addEventListener('input', renderFileStudio);
+    fileStudioRefreshBtn?.addEventListener('click', renderFileStudio);
+    fileStudioBody?.addEventListener('click', e => {
+      const btn = e.target.closest('[data-suite-open-chat]');
+      if (btn) {
+        switchConversation(btn.dataset.suiteOpenChat);
+        closeFileStudio();
+      }
+    });
+
+    websiteStudioBtn?.addEventListener('click', openWebsiteStudio);
+    websiteStudioCloseBtn?.addEventListener('click', closeWebsiteStudio);
+    websiteStudioModalOverlay?.addEventListener('click', e => { if (e.target === websiteStudioModalOverlay) closeWebsiteStudio(); });
+    websiteStudioGenerateBtn?.addEventListener('click', () => generateWebsiteFromStudio(false));
+    websiteStudioPlanBtn?.addEventListener('click', () => generateWebsiteFromStudio(true));
+
+    brainCloudSyncBtn?.addEventListener('click', syncBrainCloud);
+    versionOpenBtn?.addEventListener('click', openVersionModal);
+    versionModalCloseBtn?.addEventListener('click', () => versionModalOverlay?.classList.remove('visible'));
+    versionModalOverlay?.addEventListener('click', e => { if (e.target === versionModalOverlay) versionModalOverlay.classList.remove('visible'); });
+    $('#shareChatBtn')?.addEventListener('click', shareCurrentChat);
+  }
+
+  attachProductSuiteEvents();
+
   // Setup keyboard accessibility after initial render
   setupKeyboardAccessibility();
   applyTheme(getTheme(), false);
@@ -8918,6 +9453,8 @@
   renderHistoryList();
 
   renderAll();
+  setTimeout(renderContinueBanner, 80);
+  loadBrainCloudOnStart();
   checkHealth();
   loadAccount();
   autoResize();
