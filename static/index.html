@@ -3678,6 +3678,53 @@
       }
     }
 
+
+    /* ---------- Unified sidebar scroll fix ----------
+       Do not scroll/truncate the Your AI/tools block separately.
+       New Chat, Your AI/tools, Recent Chats and history items now share ONE sidebar scroll. */
+    .sidebar-inner{
+      overflow-y:auto !important;
+      overflow-x:hidden !important;
+      min-height:0 !important;
+      scrollbar-width:thin;
+    }
+    .sidebar-footer{
+      max-height:none !important;
+      overflow:visible !important;
+      overflow-y:visible !important;
+      flex:0 0 auto !important;
+      scrollbar-width:auto !important;
+    }
+    .history-list{
+      flex:0 0 auto !important;
+      overflow:visible !important;
+      overflow-y:visible !important;
+      min-height:0 !important;
+      max-height:none !important;
+    }
+    .api-key-box{
+      overflow:visible !important;
+      max-height:none !important;
+    }
+    @media (max-width:760px){
+      .sidebar-inner{
+        overflow-y:auto !important;
+        overflow-x:hidden !important;
+        padding-bottom:18px !important;
+      }
+      .sidebar-footer{
+        max-height:none !important;
+        overflow:visible !important;
+        margin-bottom:12px !important;
+      }
+      .history-list{
+        overflow:visible !important;
+        min-height:0 !important;
+        max-height:none !important;
+        padding-bottom:14px !important;
+      }
+    }
+
   </style>
 </head>
 <body style="display: none;">
