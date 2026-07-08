@@ -4006,6 +4006,70 @@
     @media(max-width:980px){.admin-pro-kpis{grid-template-columns:repeat(2,minmax(0,1fr));}.admin-pro-grid.two{grid-template-columns:1fr;}.admin-pro-hero{align-items:flex-start;flex-direction:column;}}
     @media(max-width:560px){.admin-pro-topbar{padding:12px}.admin-pro-main{padding:14px 10px 32px}.admin-pro-kpis{grid-template-columns:1fr}.admin-pro-hero{padding:18px;border-radius:20px}.admin-pro-actions{flex-wrap:wrap;justify-content:flex-end}.admin-pro-title{font-size:15px}.admin-pro-logo{width:38px;height:38px;border-radius:14px}}
 
+
+    /* ---------- Admin dashboard scroll fix ----------
+       Admin interface uses its own viewport scroller. The normal chat body stays
+       locked, but the dashboard root scrolls smoothly on desktop and mobile. */
+    html:has(body.admin-only),
+    body.admin-only{
+      width:100% !important;
+      height:100% !important;
+      min-height:100% !important;
+      overflow:hidden !important;
+      display:block !important;
+      overscroll-behavior:none !important;
+    }
+    body.admin-only .admin-pro-root{
+      display:block !important;
+      position:fixed !important;
+      inset:0 !important;
+      width:100vw !important;
+      height:100dvh !important;
+      min-height:0 !important;
+      max-height:100dvh !important;
+      overflow-y:auto !important;
+      overflow-x:hidden !important;
+      -webkit-overflow-scrolling:touch !important;
+      overscroll-behavior:contain !important;
+      scrollbar-width:thin !important;
+    }
+    body.admin-only .admin-pro-main{
+      min-height:calc(100dvh - 80px) !important;
+      padding-bottom:calc(56px + env(safe-area-inset-bottom, 0px)) !important;
+    }
+    body.admin-only .admin-pro-card{
+      min-width:0 !important;
+    }
+    body.admin-only .admin-pro-table-wrap,
+    body.admin-only .admin-pro-card:has(.admin-pro-table){
+      overflow-x:auto !important;
+      -webkit-overflow-scrolling:touch !important;
+    }
+    body.admin-only .admin-pro-table{
+      min-width:680px !important;
+    }
+    body.admin-only .admin-bad-feedback-list,
+    body.admin-only .admin-feedback-text{
+      scrollbar-width:thin !important;
+    }
+    @media(max-width:560px){
+      body.admin-only .admin-pro-root{
+        height:100svh !important;
+        max-height:100svh !important;
+      }
+      body.admin-only .admin-pro-topbar{
+        position:sticky !important;
+        top:0 !important;
+      }
+      body.admin-only .admin-pro-actions{
+        width:100% !important;
+        justify-content:flex-start !important;
+      }
+      body.admin-only .admin-pro-btn{
+        padding:9px 10px !important;
+      }
+    }
+
   </style>
 </head>
 <body style="display: none;">
