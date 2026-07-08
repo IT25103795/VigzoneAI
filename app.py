@@ -2084,6 +2084,26 @@ async def api_edit_image(req: EditImageRequest, user: dict = Depends(require_cur
     return JSONResponse(result)
 
 
+
+
+@app.get("/service-worker.js", tags=["Web"])
+async def service_worker():
+    """Serve the service worker from the root so it can control /chat and /static."""
+    return FileResponse(
+        "static/service-worker.js",
+        media_type="application/javascript",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Service-Worker-Allowed": "/",
+        },
+    )
+
+
+@app.get("/offline", tags=["Web"])
+async def offline_page():
+    return FileResponse("static/offline.html", media_type="text/html")
+
+
 # ── Page routes ───────────────────────────────────────────────────────────────
 @app.get("/", tags=["Web"])
 async def root():

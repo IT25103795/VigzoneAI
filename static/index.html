@@ -4070,9 +4070,70 @@
       }
     }
 
+
+    /* ---------- Offline mode / PWA access ---------- */
+    .offline-status-banner{
+      position:fixed;
+      left:50%;
+      top:14px;
+      transform:translateX(-50%) translateY(-12px);
+      z-index:2147483000;
+      display:flex;
+      align-items:center;
+      gap:9px;
+      max-width:min(620px, calc(100vw - 26px));
+      padding:10px 14px;
+      border-radius:999px;
+      border:1px solid color-mix(in srgb, var(--danger) 35%, var(--border));
+      background:color-mix(in srgb, var(--surface) 74%, transparent);
+      color:var(--text);
+      box-shadow:0 24px 70px -36px var(--sidebar-shadow);
+      backdrop-filter:blur(18px) saturate(1.15);
+      -webkit-backdrop-filter:blur(18px) saturate(1.15);
+      opacity:0;
+      pointer-events:none;
+      transition:opacity .18s ease, transform .18s ease;
+      font-size:12.5px;
+      line-height:1.35;
+    }
+    body.is-offline .offline-status-banner{
+      opacity:1;
+      transform:translateX(-50%) translateY(0);
+      pointer-events:auto;
+    }
+    .offline-dot{
+      width:9px;
+      height:9px;
+      border-radius:999px;
+      background:var(--danger);
+      box-shadow:0 0 0 5px color-mix(in srgb, var(--danger) 16%, transparent);
+      flex:0 0 auto;
+    }
+    body.is-offline .status .dot,
+    body.is-offline .dot{
+      background:var(--danger) !important;
+    }
+    body.is-offline #sendBtn,
+    body.is-offline #voiceBtn,
+    body.is-offline #liveVoiceBtn{
+      opacity:.72;
+    }
+    @media (max-width:560px){
+      .offline-status-banner{
+        top:10px;
+        border-radius:16px;
+        align-items:flex-start;
+      }
+    }
+
   </style>
 </head>
 <body style="display: none;">
+<div class="offline-status-banner" id="offlineStatusBanner" role="status" aria-live="polite">
+  <span class="offline-dot"></span>
+  <span><strong>Offline mode</strong> — saved chats are available, but AI replies, uploads, sync and admin data need internet.</span>
+</div>
+
 
 <div class="admin-pro-root" id="adminProRoot" aria-live="polite">
   <div class="admin-pro-bg"></div>
@@ -4801,6 +4862,7 @@
   document.body.appendChild(floatingMenuBackdrop);
 
   // Keep small floating menus above all chat bubbles by moving them to <body>
+
   // and positioning them with viewport coordinates. This avoids clipping/stacking
   // issues from the chat scroll container and animated message bubbles.
   if (usageCyclePopover && usageCyclePopover.parentElement !== document.body) document.body.appendChild(usageCyclePopover);
@@ -7985,6 +8047,11 @@
   }
 
   async function sendMessage(text, opts = {}){
+    if (!navigator.onLine) {
+      suiteToast?.('Offline mode: you can read saved chats, but AI replies need internet.');
+      setOfflineUiState?.();
+      return;
+    }
     if (imageMode) {
       if (quotedMessage) clearQuote();
       return sendImageGenRequest(text);
@@ -9586,6 +9653,41 @@
   });
 
 
+
+  // ---------- Offline/PWA mode ----------
+  function setOfflineUiState(){
+    const offline = !navigator.onLine;
+    document.body.classList.toggle('is-offline', offline);
+    if (offline) {
+      if (statusDot) statusDot.className = 'dot offline';
+      if (statusText) statusText.textContent = 'Offline';
+    } else {
+      checkHealth?.();
+      refreshUsageCycle?.();
+    }
+  }
+
+  async function registerOfflineServiceWorker(){
+    if (!('serviceWorker' in navigator)) return;
+    try {
+      const reg = await navigator.serviceWorker.register('/service-worker.js', { scope: '/' });
+      if (reg.waiting) reg.waiting.postMessage({type:'SKIP_WAITING'});
+    } catch (e) {
+      console.warn('Offline service worker registration failed:', e);
+    }
+  }
+
+  window.addEventListener('online', () => {
+    setOfflineUiState();
+    suiteToast?.('Back online. Vigzone can sync and reply now.');
+    syncBrainCloud?.();
+  });
+  window.addEventListener('offline', () => {
+    setOfflineUiState();
+    suiteToast?.('Offline mode enabled. Saved chats still work.');
+  });
+
+
   // ---------- Vigzone Product Suite: Brain Pro Sync, Continue, File Studio, Website Studio ----------
   const fileStudioBtn = $('#fileStudioBtn');
   const fileStudioModalOverlay = $('#fileStudioModalOverlay');
@@ -9858,6 +9960,8 @@ Requirements:
   // Setup keyboard accessibility after initial render
   setupKeyboardAccessibility();
   applyTheme(getTheme(), false);
+  registerOfflineServiceWorker();
+  setOfflineUiState();
   loadLiveConfig();
 
   setSidebarCollapsed(isMobile() ? true : (localStorage.getItem(SIDEBAR_KEY) === '1'));

@@ -44,5 +44,14 @@
       "type": "image/png",
       "purpose": "maskable"
     }
+  ],
+  "id": "/chat",
+  "shortcuts": [
+    {
+      "name": "Open Chat",
+      "short_name": "Chat",
+      "url": "/chat",
+      "description": "Open Vigzone AI chat"
+    }
   ]
 }
