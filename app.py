@@ -1337,6 +1337,184 @@ async def admin_overview(admin: dict = Depends(require_admin)):
     })
 
 
+
+
+@app.get("/api/admin/full-dashboard", tags=["Admin"])
+async def admin_full_dashboard(admin: dict = Depends(require_admin)):
+    """Professional all-in-one admin dashboard data: usage, users, feedback, shares, Brain, and trends."""
+    import sqlite3
+    from datetime import timedelta
+
+    db_path = os.getenv("VIGZONE_DB_PATH", os.path.join("data", "vigzone.db"))
+    tz_offset_minutes = int(os.getenv("USAGE_TZ_OFFSET_MINUTES", "330"))
+    local_tz = timezone(timedelta(minutes=tz_offset_minutes))
+    now_local = datetime.now(local_tz)
+    today_start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start_ts = int(today_start_local.timestamp())
+    week_start_ts = int((today_start_local - timedelta(days=6)).timestamp())
+
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        total_users = conn.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"]
+        active_today = conn.execute(
+            "SELECT COUNT(DISTINCT user_id) AS c FROM token_usage WHERE ts >= ?",
+            (today_start_ts,),
+        ).fetchone()["c"]
+        own_key_users = conn.execute(
+            "SELECT COUNT(*) AS c FROM users WHERE use_own_key = 1 AND own_groq_key_enc IS NOT NULL"
+        ).fetchone()["c"]
+        totals_today = conn.execute(
+            """
+            SELECT COALESCE(SUM(prompt_tokens),0) AS prompt_tokens,
+                   COALESCE(SUM(completion_tokens),0) AS completion_tokens,
+                   COALESCE(SUM(total_tokens),0) AS total_tokens,
+                   COUNT(*) AS requests
+            FROM token_usage WHERE ts >= ?
+            """,
+            (today_start_ts,),
+        ).fetchone()
+        totals_week = conn.execute(
+            """
+            SELECT COALESCE(SUM(total_tokens),0) AS total_tokens,
+                   COUNT(*) AS requests,
+                   COUNT(DISTINCT user_id) AS active_users
+            FROM token_usage WHERE ts >= ?
+            """,
+            (week_start_ts,),
+        ).fetchone()
+        top_rows = conn.execute(
+            """
+            SELECT u.id, u.name, u.email, u.use_own_key AS using_own_key,
+                   COALESCE(SUM(t.total_tokens),0) AS total_tokens,
+                   COUNT(t.id) AS requests,
+                   MAX(t.ts) AS last_seen
+            FROM users u
+            LEFT JOIN token_usage t ON t.user_id = u.id AND t.ts >= ?
+            GROUP BY u.id
+            ORDER BY total_tokens DESC, requests DESC, u.id DESC
+            LIMIT 12
+            """,
+            (week_start_ts,),
+        ).fetchall()
+        raw_daily = conn.execute(
+            """
+            SELECT date(ts, 'unixepoch') AS day,
+                   COALESCE(SUM(total_tokens),0) AS tokens,
+                   COUNT(*) AS requests,
+                   COUNT(DISTINCT user_id) AS users
+            FROM token_usage
+            WHERE ts >= ?
+            GROUP BY day
+            ORDER BY day ASC
+            """,
+            (week_start_ts,),
+        ).fetchall()
+        by_provider = conn.execute(
+            """
+            SELECT COALESCE(provider, 'groq') AS provider,
+                   COALESCE(SUM(total_tokens),0) AS tokens,
+                   COUNT(*) AS requests
+            FROM token_usage
+            WHERE ts >= ?
+            GROUP BY provider
+            ORDER BY tokens DESC
+            """,
+            (week_start_ts,),
+        ).fetchall()
+
+    daily_map = {r["day"]: r for r in raw_daily}
+    daily = []
+    for i in range(6, -1, -1):
+        d = (today_start_local - timedelta(days=i)).date().isoformat()
+        r = daily_map.get(d)
+        daily.append({
+            "day": d,
+            "label": (today_start_local - timedelta(days=i)).strftime("%b %d"),
+            "tokens": int(r["tokens"]) if r else 0,
+            "requests": int(r["requests"]) if r else 0,
+            "users": int(r["users"]) if r else 0,
+        })
+
+    users_dir = os.path.join(DATA_DIR, "users")
+    shares_dir = os.path.join(DATA_DIR, "shares")
+    brain_users = 0
+    feedback_rows = []
+    negative_feedback = []
+    if os.path.isdir(users_dir):
+        for uid in os.listdir(users_dir):
+            udir = os.path.join(users_dir, uid)
+            if os.path.exists(os.path.join(udir, "brain_cloud.json")):
+                brain_users += 1
+            rows = _json_load(os.path.join(udir, "feedback.json"), [])
+            for row in rows:
+                row = dict(row)
+                feedback_rows.append(row)
+                if row.get("rating") == "down":
+                    negative_feedback.append(row)
+    feedback_rows.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+    negative_feedback.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+    share_count = len([p for p in os.listdir(shares_dir) if p.endswith(".json")]) if os.path.isdir(shares_dir) else 0
+
+    feedback_total = len(feedback_rows)
+    feedback_bad = len(negative_feedback)
+    feedback_good = max(feedback_total - feedback_bad, 0)
+
+    return JSONResponse({
+        "admin": {"email": admin.get("email"), "name": admin.get("name")},
+        "version": APP_VERSION,
+        "app_name": APP_NAME,
+        "summary": {
+            "total_users": total_users,
+            "active_today": active_today,
+            "default_plan_users": max(total_users - own_key_users, 0),
+            "own_key_users": own_key_users,
+            "brain_users": brain_users,
+            "share_count": share_count,
+            "feedback_total": feedback_total,
+            "negative_feedback": feedback_bad,
+            "positive_feedback": feedback_good,
+            "today_tokens": int(totals_today["total_tokens"]),
+            "today_requests": int(totals_today["requests"]),
+            "week_tokens": int(totals_week["total_tokens"]),
+            "week_requests": int(totals_week["requests"]),
+            "week_active_users": int(totals_week["active_users"]),
+        },
+        "daily": daily,
+        "top_users": [
+            {
+                "id": r["id"],
+                "name": r["name"],
+                "email": r["email"],
+                "using_own_key": bool(r["using_own_key"]),
+                "total_tokens": int(r["total_tokens"]),
+                "requests": int(r["requests"]),
+                "last_seen": r["last_seen"],
+            }
+            for r in top_rows
+        ],
+        "provider_usage": [
+            {"provider": r["provider"], "tokens": int(r["tokens"]), "requests": int(r["requests"])}
+            for r in by_provider
+        ],
+        "feedback_mix": [
+            {"name": "Positive", "value": feedback_good},
+            {"name": "Negative", "value": feedback_bad},
+        ],
+        "bad_feedback": [
+            {
+                "id": r.get("id"),
+                "email": r.get("email"),
+                "created_at": r.get("created_at"),
+                "reason": r.get("reason") or "No reason provided",
+                "assistant_text": _safe_message_text(r.get("assistant_text") or r.get("message_text") or "", 800),
+                "conversation_id": r.get("conversation_id"),
+                "context": r.get("context") or {},
+            }
+            for r in negative_feedback[:30]
+        ],
+    })
+
+
 @app.post("/api/admin/users/{user_id}/usage/reset", tags=["Admin"])
 async def admin_reset_user_usage(user_id: int, admin: dict = Depends(require_admin)):
     """Delete today's tracked usage rows for a user. Groq-side usage is not reset."""

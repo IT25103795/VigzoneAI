@@ -3934,9 +3934,141 @@
       .continue-work-banner{align-items:flex-start;flex-direction:column;}
     }
 
+
+    /* ---------- Admin-only professional dashboard ---------- */
+    .admin-pro-root{
+      display:none;
+      min-height:100vh;
+      width:100%;
+      color:var(--text);
+      background:
+        radial-gradient(900px 520px at 8% -8%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 60%),
+        radial-gradient(760px 520px at 94% 6%, color-mix(in srgb, var(--accent-2) 18%, transparent), transparent 58%),
+        var(--bg);
+      overflow:auto;
+      position:relative;
+    }
+    .admin-pro-bg{position:fixed;inset:0;pointer-events:none;background:linear-gradient(180deg, transparent, color-mix(in srgb, var(--bg) 92%, transparent));}
+    body.admin-only{display:block !important;overflow:hidden;}
+    body.admin-only .sidebar,
+    body.admin-only .sidebar-overlay,
+    body.admin-only .sidebar-quick-launcher,
+    body.admin-only .main-col,
+    body.admin-only > .usage-modal-overlay:not(#versionModalOverlay){display:none !important;}
+    body.admin-only .admin-pro-root{display:block;}
+    .admin-pro-topbar{
+      position:sticky;top:0;z-index:20;
+      display:flex;align-items:center;justify-content:space-between;gap:16px;
+      padding:16px clamp(16px,3vw,36px);
+      background:color-mix(in srgb, var(--surface) 70%, transparent);
+      border-bottom:1px solid var(--border);
+      backdrop-filter:blur(22px) saturate(1.14);
+      -webkit-backdrop-filter:blur(22px) saturate(1.14);
+    }
+    .admin-pro-brand{display:flex;align-items:center;gap:12px;min-width:0;}
+    .admin-pro-logo{width:44px;height:44px;border-radius:16px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb, #0b0f1a 76%, var(--accent) 12%);border:1px solid var(--border);box-shadow:0 18px 48px -30px var(--brand-shadow);}
+    .admin-pro-title{font:800 18px/1 'Sora',sans-serif;color:var(--text);letter-spacing:-.02em;}
+    .admin-pro-subtitle{font-size:12px;color:var(--text-muted);margin-top:3px;}
+    .admin-pro-actions{display:flex;gap:9px;align-items:center;}
+    .admin-pro-btn{border:1px solid var(--border);background:var(--surface-2);color:var(--text);border-radius:12px;padding:10px 13px;font:800 12px 'Inter',sans-serif;cursor:pointer;}
+    .admin-pro-btn:hover{border-color:var(--accent);background:var(--accent-dim);}
+    .admin-pro-btn.danger{color:var(--danger-soft-text);border-color:var(--danger-soft-border);background:var(--danger-soft-bg);}
+    .admin-pro-main{position:relative;z-index:1;max-width:1280px;margin:0 auto;padding:22px clamp(14px,3vw,34px) 46px;}
+    .admin-pro-hero{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;border:1px solid var(--border);background:color-mix(in srgb,var(--surface) 78%,transparent);border-radius:26px;padding:24px;margin-bottom:16px;box-shadow:0 30px 90px -60px var(--sidebar-shadow);}
+    .admin-pro-eyebrow{text-transform:uppercase;color:var(--accent);font:900 11px 'Inter',sans-serif;letter-spacing:.08em;margin-bottom:8px;}
+    .admin-pro-hero h1{font:850 clamp(26px,4vw,44px)/1.05 'Sora',sans-serif;margin:0;color:var(--text);letter-spacing:-.04em;}
+    .admin-pro-hero p{margin:10px 0 0;color:var(--text-muted);max-width:650px;line-height:1.55;}
+    .admin-pro-health{border:1px solid var(--border);border-radius:999px;background:var(--surface-2);padding:10px 13px;color:var(--text-muted);font-weight:800;font-size:12px;white-space:nowrap;}
+    .admin-pro-grid{display:grid;gap:14px;margin-bottom:14px;}
+    .admin-pro-kpis{grid-template-columns:repeat(4,minmax(0,1fr));}
+    .admin-pro-grid.two{grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);}
+    .admin-pro-card{border:1px solid var(--border);background:color-mix(in srgb,var(--surface) 86%,transparent);border-radius:20px;padding:16px;box-shadow:0 26px 70px -58px var(--sidebar-shadow);overflow:hidden;}
+    .admin-pro-kpi{position:relative;min-height:118px;}
+    .admin-pro-kpi:after{content:'';position:absolute;right:-30px;top:-35px;width:110px;height:110px;border-radius:50%;background:color-mix(in srgb,var(--accent) 13%,transparent);}
+    .admin-pro-kpi-label{font-size:11px;color:var(--text-muted);font-weight:900;text-transform:uppercase;letter-spacing:.06em;}
+    .admin-pro-kpi-value{font:850 30px 'Sora',sans-serif;color:var(--text);margin-top:8px;}
+    .admin-pro-kpi-note{font-size:12px;color:var(--text-muted);margin-top:6px;line-height:1.4;}
+    .admin-pro-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px;}
+    .admin-pro-card h2{font:800 16px 'Sora',sans-serif;margin:0;color:var(--text);}
+    .admin-pro-card p{margin:4px 0 0;color:var(--text-muted);font-size:12px;}
+    .admin-chart-wrap{height:220px;position:relative;}
+    .admin-pro-table{width:100%;border-collapse:collapse;font-size:12px;}
+    .admin-pro-table th{text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;padding:8px 6px;border-bottom:1px solid var(--border);}
+    .admin-pro-table td{padding:10px 6px;border-bottom:1px solid var(--border-subtle);vertical-align:top;color:var(--text);}
+    .admin-pro-table td:last-child,.admin-pro-table th:last-child{text-align:right;}
+    .admin-user-sub{color:var(--text-muted);font-size:11px;margin-top:2px;}
+    .admin-bad-feedback-list{display:flex;flex-direction:column;gap:10px;max-height:430px;overflow:auto;padding-right:3px;}
+    .admin-feedback-item{border:1px solid var(--danger-soft-border);background:linear-gradient(135deg,var(--danger-soft-bg),color-mix(in srgb,var(--surface-2) 78%,transparent));border-radius:14px;padding:12px;}
+    .admin-feedback-top{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:var(--text-muted);margin-bottom:7px;}
+    .admin-feedback-reason{color:var(--danger-soft-text);font-weight:850;font-size:13px;line-height:1.45;}
+    .admin-feedback-text{color:var(--text-muted);font-size:12px;line-height:1.48;margin-top:8px;white-space:pre-wrap;max-height:92px;overflow:auto;}
+    .admin-pill{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--border);background:var(--surface-2);color:var(--text-muted);border-radius:999px;padding:4px 7px;font-size:10.5px;font-weight:800;}
+    @media(max-width:980px){.admin-pro-kpis{grid-template-columns:repeat(2,minmax(0,1fr));}.admin-pro-grid.two{grid-template-columns:1fr;}.admin-pro-hero{align-items:flex-start;flex-direction:column;}}
+    @media(max-width:560px){.admin-pro-topbar{padding:12px}.admin-pro-main{padding:14px 10px 32px}.admin-pro-kpis{grid-template-columns:1fr}.admin-pro-hero{padding:18px;border-radius:20px}.admin-pro-actions{flex-wrap:wrap;justify-content:flex-end}.admin-pro-title{font-size:15px}.admin-pro-logo{width:38px;height:38px;border-radius:14px}}
+
   </style>
 </head>
 <body style="display: none;">
+
+<div class="admin-pro-root" id="adminProRoot" aria-live="polite">
+  <div class="admin-pro-bg"></div>
+  <header class="admin-pro-topbar">
+    <div class="admin-pro-brand">
+      <div class="admin-pro-logo"><img src="/static/icons/vigzone-icon.svg?v=logo1-simple" alt="" width="28" height="28" /></div>
+      <div>
+        <div class="admin-pro-title">Vigzone Admin</div>
+        <div class="admin-pro-subtitle" id="adminProSubtitle">System control center</div>
+      </div>
+    </div>
+    <div class="admin-pro-actions">
+      <button class="admin-pro-btn" id="adminProRefreshBtn" type="button">Refresh</button>
+      <button class="admin-pro-btn danger" id="adminProSignOutBtn" type="button">Sign out</button>
+    </div>
+  </header>
+  <main class="admin-pro-main">
+    <section class="admin-pro-hero">
+      <div>
+        <div class="admin-pro-eyebrow">Administrator dashboard</div>
+        <h1>All-in-one system overview</h1>
+        <p>No chat interface here — this view is only for monitoring users, usage, Brain, shares, and feedback quality.</p>
+      </div>
+      <div class="admin-pro-health" id="adminProHealth">Loading system…</div>
+    </section>
+
+    <section class="admin-pro-grid admin-pro-kpis" id="adminProKpis"></section>
+
+    <section class="admin-pro-grid two">
+      <div class="admin-pro-card">
+        <div class="admin-pro-card-head">
+          <div><h2>Usage trend</h2><p>Last 7 days tokens and requests</p></div>
+        </div>
+        <div class="admin-chart-wrap"><canvas id="adminUsageChart" height="170"></canvas></div>
+      </div>
+      <div class="admin-pro-card">
+        <div class="admin-pro-card-head">
+          <div><h2>Feedback quality</h2><p>Positive vs bad feedback</p></div>
+        </div>
+        <div class="admin-chart-wrap"><canvas id="adminFeedbackChart" height="170"></canvas></div>
+      </div>
+    </section>
+
+    <section class="admin-pro-grid two">
+      <div class="admin-pro-card">
+        <div class="admin-pro-card-head">
+          <div><h2>Top users</h2><p>Ranked by weekly token usage</p></div>
+        </div>
+        <div class="admin-pro-table-wrap"><table class="admin-pro-table" id="adminTopUsersTable"></table></div>
+      </div>
+      <div class="admin-pro-card danger-card">
+        <div class="admin-pro-card-head">
+          <div><h2>Bad feedback 👎</h2><p>Latest negative feedbacks with reason/context</p></div>
+        </div>
+        <div class="admin-bad-feedback-list" id="adminBadFeedbackList"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
 
 <aside class="sidebar" id="sidebar">
   <div class="sidebar-inner">
@@ -6778,6 +6910,141 @@
     if (e.target === usageModalOverlay) closeUsageModal();
   });
 
+
+  // ---------- Admin-only professional dashboard JS ----------
+  const adminProRoot = $('#adminProRoot');
+  const adminProKpis = $('#adminProKpis');
+  const adminProHealth = $('#adminProHealth');
+  const adminProSubtitle = $('#adminProSubtitle');
+  const adminTopUsersTable = $('#adminTopUsersTable');
+  const adminBadFeedbackList = $('#adminBadFeedbackList');
+  const adminProRefreshBtn = $('#adminProRefreshBtn');
+  const adminProSignOutBtn = $('#adminProSignOutBtn');
+  let adminLastDailyRows = [];
+  let adminLastFeedbackMix = [];
+
+  function adminFmt(n){ return Number(n || 0).toLocaleString(); }
+  function adminShortDate(value){
+    if (!value) return '—';
+    const d = typeof value === 'number' ? new Date(value * 1000) : new Date(value);
+    return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'});
+  }
+  function adminCanvasPrep(canvas){
+    if (!canvas) return null;
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+    canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    return {ctx, w:rect.width, h:rect.height};
+  }
+  function cssVar(name, fallback){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback; }
+  function drawUsageChart(rows){
+    adminLastDailyRows = rows || [];
+    const prep = adminCanvasPrep($('#adminUsageChart')); if (!prep) return;
+    const {ctx,w,h} = prep;
+    ctx.clearRect(0,0,w,h);
+    const pad = {l:42,r:18,t:18,b:34};
+    const plotW = w-pad.l-pad.r, plotH = h-pad.t-pad.b;
+    const max = Math.max(1, ...rows.map(r => Math.max(r.tokens || 0, r.requests || 0)));
+    const accent = cssVar('--accent','#ff6b4a'), accent2 = cssVar('--accent-2','#1aab94'), muted = cssVar('--text-muted','#8f96a8'), border = cssVar('--border','#ffffff22');
+    ctx.strokeStyle = border; ctx.lineWidth = 1;
+    for(let i=0;i<4;i++){ const y=pad.t+plotH*(i/3); ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(w-pad.r,y); ctx.stroke(); }
+    const barGap = 8;
+    const slot = plotW / Math.max(rows.length,1);
+    rows.forEach((r,i)=>{
+      const x = pad.l + i*slot + barGap;
+      const bw = Math.max(8, slot - barGap*2);
+      const bh = (r.tokens/max)*plotH;
+      const y = pad.t + plotH - bh;
+      const grad = ctx.createLinearGradient(0,y,0,pad.t+plotH);
+      grad.addColorStop(0, accent); grad.addColorStop(1, accent2);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      const rr = 8; const x2=x+bw, y2=pad.t+plotH;
+      ctx.moveTo(x+rr,y); ctx.lineTo(x2-rr,y); ctx.quadraticCurveTo(x2,y,x2,y+rr); ctx.lineTo(x2,y2); ctx.lineTo(x,y2); ctx.lineTo(x,y+rr); ctx.quadraticCurveTo(x,y,x+rr,y); ctx.fill();
+      ctx.fillStyle = muted; ctx.font = '10px Inter, sans-serif'; ctx.textAlign='center'; ctx.fillText(r.label || '', x+bw/2, h-12);
+    });
+    ctx.fillStyle = muted; ctx.font = '11px Inter, sans-serif'; ctx.textAlign='left'; ctx.fillText('Tokens', 6, 14);
+  }
+  function drawFeedbackChart(mix){
+    adminLastFeedbackMix = mix || [];
+    const prep = adminCanvasPrep($('#adminFeedbackChart')); if (!prep) return;
+    const {ctx,w,h} = prep;
+    ctx.clearRect(0,0,w,h);
+    const good = Number((mix.find(x=>/positive/i.test(x.name))||{}).value || 0);
+    const bad = Number((mix.find(x=>/negative/i.test(x.name))||{}).value || 0);
+    const total = Math.max(1, good + bad);
+    const cx = w/2, cy = h/2 - 4, r = Math.min(w,h)*0.33;
+    const colors = [cssVar('--accent-2','#1aab94'), cssVar('--danger','#e84a5a')];
+    let start = -Math.PI/2;
+    [good,bad].forEach((v,i)=>{ const ang = (v/total)*Math.PI*2; ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,start,start+ang); ctx.closePath(); ctx.fillStyle=colors[i]; ctx.fill(); start += ang; });
+    ctx.globalCompositeOperation='destination-out'; ctx.beginPath(); ctx.arc(cx,cy,r*0.62,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='source-over';
+    ctx.fillStyle = cssVar('--text','#fff'); ctx.font='800 24px Sora, sans-serif'; ctx.textAlign='center'; ctx.fillText(String(total === 1 && !good && !bad ? 0 : total), cx, cy+3);
+    ctx.fillStyle = cssVar('--text-muted','#999'); ctx.font='12px Inter, sans-serif'; ctx.fillText('feedbacks', cx, cy+24);
+    ctx.textAlign='left'; ctx.font='12px Inter, sans-serif';
+    ctx.fillStyle=colors[0]; ctx.fillRect(18,h-30,10,10); ctx.fillStyle=cssVar('--text-muted','#999'); ctx.fillText(`Positive ${good}`,34,h-21);
+    ctx.fillStyle=colors[1]; ctx.fillRect(w/2+14,h-30,10,10); ctx.fillStyle=cssVar('--text-muted','#999'); ctx.fillText(`Bad ${bad}`,w/2+30,h-21);
+  }
+  function renderAdminProDashboard(data){
+    const s = data.summary || {};
+    if (adminProSubtitle) adminProSubtitle.textContent = `${data.admin?.email || 'Admin'} · ${data.version || ''}`;
+    if (adminProHealth) adminProHealth.textContent = `Live · ${adminFmt(s.today_requests)} requests today`;
+    const cards = [
+      ['Total users', s.total_users, `${adminFmt(s.active_today)} active today`],
+      ['Tokens today', s.today_tokens, `${adminFmt(s.today_requests)} requests`],
+      ['Brain users', s.brain_users, `${adminFmt(s.share_count)} shared chats`],
+      ['Bad feedback 👎', s.negative_feedback, `${adminFmt(s.positive_feedback)} positive`],
+      ['Weekly tokens', s.week_tokens, `${adminFmt(s.week_active_users)} active users`],
+      ['Own Groq keys', s.own_key_users, `${adminFmt(s.default_plan_users)} default plan users`],
+      ['Feedback total', s.feedback_total, 'learning signals saved'],
+      ['Build', data.version || 'v4', data.app_name || 'Vigzone AI'],
+    ];
+    if (adminProKpis) adminProKpis.innerHTML = cards.map(c => `<div class="admin-pro-card admin-pro-kpi"><div class="admin-pro-kpi-label">${escapeHtml(c[0])}</div><div class="admin-pro-kpi-value">${typeof c[1] === 'number' ? adminFmt(c[1]) : escapeHtml(c[1])}</div><div class="admin-pro-kpi-note">${escapeHtml(c[2] || '')}</div></div>`).join('');
+    if (adminTopUsersTable) {
+      const rows = (data.top_users || []).map(u => `<tr><td><strong>${escapeHtml(u.name || u.email || ('User '+u.id))}</strong><div class="admin-user-sub">${escapeHtml(u.email || '')}</div></td><td>${adminFmt(u.total_tokens)}</td><td>${adminFmt(u.requests)}</td><td><span class="admin-pill">${u.using_own_key ? 'Own key' : 'Default'}</span></td></tr>`).join('');
+      adminTopUsersTable.innerHTML = `<thead><tr><th>User</th><th>Tokens</th><th>Req</th><th>Plan</th></tr></thead><tbody>${rows || '<tr><td colspan="4">No usage yet.</td></tr>'}</tbody>`;
+    }
+    if (adminBadFeedbackList) {
+      adminBadFeedbackList.innerHTML = (data.bad_feedback || []).map(f => `<div class="admin-feedback-item"><div class="admin-feedback-top"><span>${escapeHtml(f.email || 'Unknown user')}</span><span>${escapeHtml(adminShortDate(f.created_at))}</span></div><div class="admin-feedback-reason">${escapeHtml(f.reason || 'No reason provided')}</div><div class="admin-feedback-text">${escapeHtml(f.assistant_text || '')}</div></div>`).join('') || '<div class="brain-empty">No bad feedback yet. Great bro 😁</div>';
+    }
+    requestAnimationFrame(()=>{ drawUsageChart(data.daily || []); drawFeedbackChart(data.feedback_mix || []); });
+  }
+  async function loadAdminProDashboard(){
+    if (adminProHealth) adminProHealth.textContent = 'Loading system…';
+    try{
+      const res = await fetch('/api/admin/full-dashboard', {credentials:'same-origin'});
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.detail || 'Could not load admin dashboard.');
+      renderAdminProDashboard(data);
+    }catch(e){
+      if (adminProHealth) adminProHealth.textContent = 'Dashboard error';
+      if (adminProKpis) adminProKpis.innerHTML = `<div class="brain-empty">${escapeHtml(e.message || 'Could not load admin dashboard.')}</div>`;
+    }
+  }
+  function clearAccountScopedClientState(){
+    try {
+      localStorage.removeItem('vigzone_token');
+      sessionStorage.clear();
+    } catch {}
+  }
+  async function adminProSignOut(){
+    try { await fetch('/api/auth/logout', { method:'POST', credentials:'same-origin' }); } catch {}
+    clearAccountScopedClientState();
+    window.location.href = '/';
+  }
+  function enterAdminOnlyDashboard(user){
+    document.body.classList.add('admin-only');
+    document.body.style.display = 'block';
+    userName = (user && (user.name || user.email)) || 'Admin';
+    clearAccountScopedClientState();
+    loadAdminProDashboard();
+  }
+  adminProRefreshBtn?.addEventListener('click', loadAdminProDashboard);
+  adminProSignOutBtn?.addEventListener('click', adminProSignOut);
+  window.addEventListener('resize', () => { if (document.body.classList.contains('admin-only')) { drawUsageChart(adminLastDailyRows); drawFeedbackChart(adminLastFeedbackMix); } });
+
   // ---------- Admin dashboard ----------
   async function loadAdminDashboard(){
     if (!adminModalBody) return;
@@ -7000,7 +7267,12 @@
       }
       const data = await res.json();
       userName = (data.user && data.user.name) || (data.user && data.user.email) || '';
-      if (adminPanelRow && data.user && data.user.is_admin) adminPanelRow.style.display = '';
+      if (data.user && data.user.is_admin) {
+        enterAdminOnlyDashboard(data.user);
+        return;
+      }
+      document.body.classList.remove('admin-only');
+      if (adminPanelRow) adminPanelRow.style.display = 'none';
       updateGreeting();
       refreshApiKeyBox();
       refreshUsageCycle();
@@ -7123,6 +7395,7 @@
     try {
       await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
     } catch {}
+    clearAccountScopedClientState?.();
     window.location.href = '/';
   }
 
