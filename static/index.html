@@ -3061,6 +3061,115 @@
       }
     }
 
+
+    /* ---------- Collapsed sidebar quick-access icon rail ----------
+       When sidebar is collapsed, keep a slim rail with only the quick action icons. */
+    @media (min-width:761px){
+      .sidebar.collapsed{
+        width:64px !important;
+        min-width:64px !important;
+        border-right:1px solid var(--border-subtle) !important;
+        overflow:hidden !important;
+        background:color-mix(in srgb, var(--sidebar-bg) 94%, transparent) !important;
+        backdrop-filter:blur(14px) !important;
+        -webkit-backdrop-filter:blur(14px) !important;
+      }
+      .sidebar.collapsed .sidebar-inner{
+        width:64px !important;
+        padding:12px 8px !important;
+        align-items:center !important;
+        overflow:hidden !important;
+      }
+      .sidebar.collapsed .sidebar-top{
+        width:100% !important;
+        padding:0 0 10px !important;
+        justify-content:center !important;
+      }
+      .sidebar.collapsed .sidebar-top .brand,
+      .sidebar.collapsed .new-chat-btn,
+      .sidebar.collapsed .history-label,
+      .sidebar.collapsed .history-list,
+      .sidebar.collapsed .api-key-box{
+        display:none !important;
+      }
+      .sidebar.collapsed .sidebar-footer{
+        width:100% !important;
+        margin-top:0 !important;
+        padding:0 !important;
+        border-top:0 !important;
+        gap:12px !important;
+        align-items:center !important;
+      }
+      .sidebar.collapsed .sidebar-footer-row{
+        width:100% !important;
+        min-height:36px !important;
+        display:flex !important;
+        align-items:center !important;
+        justify-content:center !important;
+        gap:0 !important;
+      }
+      .sidebar.collapsed .sidebar-footer-row > .history-label,
+      .sidebar.collapsed .sidebar-footer-row > span{
+        display:none !important;
+      }
+      .sidebar.collapsed .sidebar-menu-wrap{
+        display:flex !important;
+        justify-content:center !important;
+        width:100% !important;
+      }
+      .sidebar.collapsed .sidebar-theme-btn,
+      .sidebar.collapsed .sidebar-teach-btn{
+        width:36px !important;
+        height:36px !important;
+        border-radius:12px !important;
+        display:flex !important;
+        align-items:center !important;
+        justify-content:center !important;
+        background:var(--surface-2) !important;
+        border:1px solid var(--border) !important;
+        box-shadow:0 4px 16px -12px var(--composer-shadow) !important;
+      }
+      .sidebar.collapsed .sidebar-theme-btn:hover,
+      .sidebar.collapsed .sidebar-teach-btn:hover{
+        color:var(--text) !important;
+        border-color:var(--accent) !important;
+        background:var(--accent-dim) !important;
+        transform:translateY(-1px);
+      }
+      .sidebar.collapsed .sidebar-theme-btn svg,
+      .sidebar.collapsed .sidebar-teach-btn svg{
+        width:16px !important;
+        height:16px !important;
+      }
+      .sidebar.collapsed #adminPanelRow[style*="display:none"]{
+        display:none !important;
+      }
+      .sidebar.collapsed #exportMenu{
+        left:calc(100% + 8px) !important;
+        bottom:auto !important;
+        top:0 !important;
+      }
+      .sidebar.collapsed .sidebar-toggle-btn{
+        width:36px !important;
+        height:36px !important;
+        border-radius:12px !important;
+        background:var(--surface-2) !important;
+        border:1px solid var(--border) !important;
+        color:var(--text-muted) !important;
+      }
+      .sidebar.collapsed .sidebar-toggle-btn:hover{
+        color:var(--text) !important;
+        border-color:var(--accent) !important;
+        background:var(--accent-dim) !important;
+      }
+    }
+    @media (max-width:760px){
+      .sidebar.collapsed{
+        width:272px;
+        transform:translateX(-100%);
+      }
+    }
+
   </style>
 </head>
 <body style="display: none;">
