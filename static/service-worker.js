@@ -1,5 +1,5 @@
 /* Vigzone AI offline service worker */
-const VIGZONE_SW_VERSION = 'offline-v1.2.0-local-knowledge';
+const VIGZONE_SW_VERSION = 'offline-v1.4.0-hardcode-cleanup';
 const SHELL_CACHE = `vigzone-shell-${VIGZONE_SW_VERSION}`;
 const RUNTIME_CACHE = `vigzone-runtime-${VIGZONE_SW_VERSION}`;
 
@@ -10,7 +10,7 @@ const APP_SHELL = [
   '/static/index.html',
   '/static/landing.html',
   '/static/offline.html',
-  '/static/manifest.json',
+  '/manifest.json',
   '/static/icons/favicon.svg',
   '/static/icons/vigzone-icon.svg',
   '/static/icons/vigzone-icon-192.png',

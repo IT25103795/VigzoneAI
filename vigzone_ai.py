@@ -147,7 +147,24 @@ if _REQUESTED_AI_PROVIDER != "groq":
     logger.warning("Ignoring AI_PROVIDER=%r; this build is Groq-only.", _REQUESTED_AI_PROVIDER)
 AI_PROVIDER = "groq"
 
-_GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
+def _clean_api_key(value: str) -> str:
+    value = (value or "").strip()
+    placeholders = {
+        "", "your_groq_api_key_here", "your-api-key-here", "replace_me",
+        "changeme", "change_me", "paste_your_key_here", "dummy", "test"
+    }
+    lowered = value.lower()
+    if lowered in placeholders or lowered.startswith("your_") or "placeholder" in lowered:
+        return ""
+    # Groq keys currently start with gsk_. This prevents fake .env placeholders
+    # from making the app look configured in production.
+    if value and not value.startswith("gsk_"):
+        logger.warning("Ignoring GROQ_API_KEY because it does not look like a Groq key.")
+        return ""
+    return value
+
+
+_GROQ_API_KEY = _clean_api_key(os.getenv("GROQ_API_KEY", ""))
 
 # Variable names are kept for backward compatibility with the rest of the code,
 # but these now point to Groq's OpenAI-compatible endpoint.

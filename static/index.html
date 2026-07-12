@@ -7,7 +7,7 @@
   <title>Vigzone AI</title>
   <link rel="icon" href="/static/icons/favicon.svg?v=pwa-icon-real-v2" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/static/icons/vigzone-icon.svg?v=pwa-icon-real-v2" />
-  <link rel="manifest" href="/static/manifest.json?v=pwa-icon-real-v2" />
+  <link rel="manifest" href="/manifest.json?v=live-config" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Sinhala:wght@400;500;600&display=swap" rel="stylesheet">
@@ -4307,11 +4307,26 @@
         </div>
         <div class="admin-pro-table-wrap"><table class="admin-pro-table" id="adminTopUsersTable"></table></div>
       </div>
+      <div class="admin-pro-card">
+        <div class="admin-pro-card-head">
+          <div><h2>Provider usage</h2><p>Default Groq vs BYOK/user-key traffic</p></div>
+        </div>
+        <div class="admin-pro-table-wrap"><table class="admin-pro-table" id="adminProviderUsageTable"></table></div>
+      </div>
+    </section>
+
+    <section class="admin-pro-grid two">
       <div class="admin-pro-card danger-card">
         <div class="admin-pro-card-head">
           <div><h2>Bad feedback 👎</h2><p>Latest negative feedbacks with reason/context</p></div>
         </div>
         <div class="admin-bad-feedback-list" id="adminBadFeedbackList"></div>
+      </div>
+      <div class="admin-pro-card">
+        <div class="admin-pro-card-head">
+          <div><h2>System notes</h2><p>Live backend and configuration signals</p></div>
+        </div>
+        <div class="admin-bad-feedback-list" id="adminSystemNotes"></div>
       </div>
     </section>
   </main>
@@ -4666,6 +4681,7 @@
       <div class="suite-actions">
         <button class="deep-action-btn" id="websiteStudioGenerateBtn" type="button">Generate in chat</button>
         <button class="deep-action-btn" id="websiteStudioPlanBtn" type="button">Create plan prompt</button>
+        <button class="deep-action-btn" id="websiteStudioExportBtn" type="button">Export last HTML ZIP</button>
       </div>
       <div class="suite-note">This switches Vigzone to Website Studio mode and fills the composer with a stronger website-building prompt.</div>
     </div>
@@ -5128,11 +5144,22 @@
   }
 
   // ---------- Multi-conversation store (chat history, like a typical AI chat app) ----------
-  const CONV_STORE_KEY = 'vigzone_conversations_v1';
-  const LEGACY_KEY = 'vigzone_ai_conversation';
+  const CONV_STORE_KEY_BASE = 'vigzone_conversations_v1';
+  const LEGACY_KEY_BASE = 'vigzone_ai_conversation';
+  const LAST_SCOPE_KEY = 'vigzone_last_user_scope';
+  let accountStorageScope = localStorage.getItem(LAST_SCOPE_KEY) || 'guest';
+  let CONV_STORE_KEY = scopedLocalKey(CONV_STORE_KEY_BASE);
+  let LEGACY_KEY = scopedLocalKey(LEGACY_KEY_BASE);
   const NAME_KEY = 'vigzone_user_name';
   const SIDEBAR_KEY = 'vigzone_sidebar_collapsed';
   const THEME_KEY = 'vigzone_theme';
+
+  function safeStorageScope(value){
+    return String(value || 'guest').trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'guest';
+  }
+  function scopedLocalKey(base){
+    return `${base}__${safeStorageScope(accountStorageScope)}`;
+  }
 
   function getTheme(){
     const theme = document.documentElement.getAttribute('data-theme');
@@ -5879,6 +5906,31 @@
     if (item) switchConversation(item.dataset.id);
   });
 
+
+  function switchAccountStorageScope(user){
+    const nextScope = safeStorageScope((user && (user.id || user.email)) || 'guest');
+    if (nextScope === accountStorageScope) return;
+
+    // Save whatever anonymous/previous state exists before switching.
+    try { persistStore(); } catch {}
+
+    accountStorageScope = nextScope;
+    CONV_STORE_KEY = scopedLocalKey(CONV_STORE_KEY_BASE);
+    LEGACY_KEY = scopedLocalKey(LEGACY_KEY_BASE);
+    BRAIN_META_KEY = scopedLocalKey(BRAIN_META_KEY_BASE);
+    localStorage.setItem(LAST_SCOPE_KEY, accountStorageScope);
+
+    store = loadStore();
+    messages = (store.activeId && store.conversations[store.activeId])
+      ? store.conversations[store.activeId].messages
+      : [];
+
+    showAllMessages = false;
+    renderHistoryList();
+    renderAll();
+    refreshBrainIfOpen();
+  }
+
   function startNewChat(){
     messages = [];
     pendingFiles = [];
@@ -5986,7 +6038,8 @@
 
 
   // ---------- Vigzone Brain: visual memory room / Life OS ----------
-  const BRAIN_META_KEY = 'vigzone_brain_meta_v1';
+  const BRAIN_META_KEY_BASE = 'vigzone_brain_meta_v1';
+  let BRAIN_META_KEY = scopedLocalKey(BRAIN_META_KEY_BASE);
   let brainActiveTab = 'overview';
 
   function loadBrainMeta(){
@@ -6838,7 +6891,7 @@
     syncFloatingMenuBackdrop();
   }
 
-  function exportChat(format){
+  async function exportChat(format){
     const exportable = (messages || []).filter(m => m && (m.role === 'user' || m.role === 'assistant'));
     if (!exportable.length) {
       alert('No chat messages to export yet.');
@@ -6846,19 +6899,27 @@
       return;
     }
     const conv = currentConversation();
-    const title = conv?.title || 'Vigzone chat';
-    const now = new Date().toLocaleString();
+    const title = conv?.title || (liveConfig.app_name || 'Vigzone') + ' chat';
     const safeTitle = title.replace(/[^a-z0-9-_]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'vigzone-chat';
-    if (format === 'html') {
-      const sections = exportable.map(m => {
-        const role = m.role === 'user' ? 'You' : 'Vigzone AI';
-        return `<section><h2>${htmlEscapeInline(role)}</h2><pre>${htmlEscapeInline(exportMessageText(m))}</pre></section>`;
-      }).join('\n');
-      const html = `<!doctype html><html><head><meta charset="utf-8"><title>${htmlEscapeInline(title)}</title><style>body{font-family:Inter,Arial,sans-serif;max-width:820px;margin:32px auto;padding:0 18px;line-height:1.55;color:#121622}h1{font-size:26px}h2{font-size:15px;margin-top:22px;color:#ff6b4a}pre{white-space:pre-wrap;background:#f4f6fb;border:1px solid #dfe5f0;border-radius:12px;padding:14px}</style></head><body><h1>${htmlEscapeInline(title)}</h1><p>Exported from Vigzone AI • ${htmlEscapeInline(now)}</p>${sections}</body></html>`;
-      downloadBlobText(`${safeTitle}.html`, html, 'text/html;charset=utf-8');
-    } else {
-      const txt = [title, `Exported from Vigzone AI • ${now}`, '', ...exportable.map(m => `[${m.role === 'user' ? 'YOU' : 'VIGZONE AI'}]\n${exportMessageText(m)}\n`)].join('\n');
-      downloadBlobText(`${safeTitle}.txt`, txt, 'text/plain;charset=utf-8');
+    try {
+      const res = await fetch('/api/export/chat', {
+        method:'POST',
+        headers:suiteAuthHeaders(true),
+        body:JSON.stringify({title, messages:exportable, format})
+      });
+      if (!res.ok) throw new Error('Backend export failed');
+      const data = await res.json();
+      downloadBlobText(data.filename || `${safeTitle}.${format === 'html' ? 'html' : 'txt'}`, data.content || '', data.media_type || (format === 'html' ? 'text/html;charset=utf-8' : 'text/plain;charset=utf-8'));
+    } catch {
+      const now = new Date().toLocaleString();
+      if (format === 'html') {
+        const sections = exportable.map(m => `<section><h2>${htmlEscapeInline(m.role === 'user' ? 'You' : (liveConfig.app_name || 'Vigzone AI'))}</h2><pre>${htmlEscapeInline(exportMessageText(m))}</pre></section>`).join('\n');
+        const html = `<!doctype html><html><head><meta charset="utf-8"><title>${htmlEscapeInline(title)}</title><style>body{font-family:Inter,Arial,sans-serif;max-width:820px;margin:32px auto;padding:0 18px;line-height:1.55;color:#121622}h1{font-size:26px}h2{font-size:15px;margin-top:22px;color:#ff6b4a}pre{white-space:pre-wrap;background:#f4f6fb;border:1px solid #dfe5f0;border-radius:12px;padding:14px}</style></head><body><h1>${htmlEscapeInline(title)}</h1><p>Exported from ${htmlEscapeInline(liveConfig.app_name || 'Vigzone AI')} • ${htmlEscapeInline(now)}</p>${sections}</body></html>`;
+        downloadBlobText(`${safeTitle}.html`, html, 'text/html;charset=utf-8');
+      } else {
+        const txt = [title, `Exported from ${liveConfig.app_name || 'Vigzone AI'} • ${now}`, '', ...exportable.map(m => `[${m.role === 'user' ? 'YOU' : String(liveConfig.app_name || 'VIGZONE AI').toUpperCase()}]\n${exportMessageText(m)}\n`)].join('\n');
+        downloadBlobText(`${safeTitle}.txt`, txt, 'text/plain;charset=utf-8');
+      }
     }
     closeExportMenu();
   }
@@ -7166,6 +7227,8 @@
   const adminProHealth = $('#adminProHealth');
   const adminProSubtitle = $('#adminProSubtitle');
   const adminTopUsersTable = $('#adminTopUsersTable');
+  const adminProviderUsageTable = $('#adminProviderUsageTable');
+  const adminSystemNotes = $('#adminSystemNotes');
   const adminBadFeedbackList = $('#adminBadFeedbackList');
   const adminProRefreshBtn = $('#adminProRefreshBtn');
   const adminProSignOutBtn = $('#adminProSignOutBtn');
@@ -7365,6 +7428,14 @@
     if (adminTopUsersTable) {
       const rows = (data.top_users || []).map(u => `<tr><td><strong>${escapeHtml(u.name || u.email || ('User '+u.id))}</strong><div class="admin-user-sub">${escapeHtml(u.email || '')}</div></td><td>${adminFmt(u.total_tokens)}</td><td>${adminFmt(u.requests)}</td><td><span class="admin-pill">${u.using_own_key ? 'Own key' : 'Default'}</span></td></tr>`).join('');
       adminTopUsersTable.innerHTML = `<thead><tr><th>User</th><th>Tokens</th><th>Req</th><th>Plan</th></tr></thead><tbody>${rows || '<tr><td colspan="4">No usage yet.</td></tr>'}</tbody>`;
+    }
+    if (adminProviderUsageTable) {
+      const providerRows = (data.provider_usage || []).map(p => `<tr><td><strong>${escapeHtml(p.label || p.provider || 'Provider')}</strong><div class="admin-user-sub">${escapeHtml(p.provider || '')}</div></td><td>${adminFmt(p.tokens)}</td><td>${adminFmt(p.requests)}</td></tr>`).join('');
+      adminProviderUsageTable.innerHTML = `<thead><tr><th>Provider</th><th>Tokens</th><th>Req</th></tr></thead><tbody>${providerRows || '<tr><td colspan="3">No provider usage yet.</td></tr>'}</tbody>`;
+    }
+    if (adminSystemNotes) {
+      const notes = data.system_notes || [];
+      adminSystemNotes.innerHTML = notes.map(n => `<div class="admin-feedback-item"><div class="admin-feedback-top"><span>${escapeHtml(n.title || 'System')}</span><span>${escapeHtml(n.status || '')}</span></div><div class="admin-feedback-reason">${escapeHtml(n.value || '')}</div><div class="admin-feedback-text">${escapeHtml(n.note || '')}</div></div>`).join('') || '<div class="brain-empty">No system notes.</div>';
     }
     if (adminBadFeedbackList) {
       adminBadFeedbackList.innerHTML = (data.bad_feedback || []).map(f => `<div class="admin-feedback-item"><div class="admin-feedback-top"><span>${escapeHtml(f.email || 'Unknown user')}</span><span>${escapeHtml(adminShortDate(f.created_at))}</span></div><div class="admin-feedback-reason">${escapeHtml(f.reason || 'No reason provided')}</div><div class="admin-feedback-text">${escapeHtml(f.assistant_text || '')}</div></div>`).join('') || '<div class="brain-empty">No bad feedback yet. Great bro 😁</div>';
@@ -7640,6 +7711,7 @@
       }
       const data = await res.json();
       userName = (data.user && data.user.name) || (data.user && data.user.email) || '';
+      if (data.user) switchAccountStorageScope(data.user);
       if (data.user && data.user.is_admin) {
         enterAdminOnlyDashboard(data.user);
         return;
@@ -9077,6 +9149,34 @@ A strong website should include: hero section, clear navigation, services/featur
     }
   }
 
+
+  function loadUploadedFileHistory(){
+    try {
+      const rows = JSON.parse(localStorage.getItem(scopedLocalKey('vigzone_uploaded_files_v1')) || '[]');
+      return Array.isArray(rows) ? rows : [];
+    } catch { return []; }
+  }
+  function saveUploadedFileHistory(rows){
+    try { localStorage.setItem(scopedLocalKey('vigzone_uploaded_files_v1'), JSON.stringify((rows || []).slice(0, 250))); } catch {}
+  }
+  function rememberUploadedFile(entry){
+    if (!entry || entry.status !== 'ready') return;
+    const rows = loadUploadedFileHistory();
+    const item = {
+      id: entry.id || genId(),
+      name: entry.name || entry.file?.name || 'file',
+      kind: entry.kind || 'document',
+      subKind: entry.subKind || '',
+      text: entry.text ? String(entry.text).slice(0, 12000) : '',
+      mime: entry.mime || entry.file?.type || '',
+      scanClean: !!entry.scanClean,
+      scannerAvailable: !!entry.scannerAvailable,
+      updatedAt: Date.now()
+    };
+    const next = [item, ...rows.filter(r => r.name !== item.name || r.kind !== item.kind)].slice(0, 250);
+    saveUploadedFileHistory(next);
+  }
+
   function renderAttachmentsBar(){
     attachmentsBar.innerHTML = pendingFiles.map(f => {
       let iconHtml;
@@ -9174,6 +9274,7 @@ A strong website should include: hero section, clear navigation, services/featur
         entry.error = err.message || 'Upload failed';
       }
     }
+    if (entry.status === 'ready') rememberUploadedFile(entry);
     renderAttachmentsBar();
   }
 
@@ -10377,6 +10478,7 @@ A strong website should include: hero section, clear navigation, services/featur
   const websiteStudioStyle = $('#websiteStudioStyle');
   const websiteStudioGenerateBtn = $('#websiteStudioGenerateBtn');
   const websiteStudioPlanBtn = $('#websiteStudioPlanBtn');
+  const websiteStudioExportBtn = $('#websiteStudioExportBtn');
 
   const brainCloudSyncBtn = $('#brainCloudSyncBtn');
   const versionOpenBtn = $('#versionOpenBtn');
@@ -10390,6 +10492,12 @@ A strong website should include: hero section, clear navigation, services/featur
       ...(json ? {'Content-Type':'application/json'} : {}),
       ...(token ? {'Authorization': `Bearer ${token}`} : {})
     };
+  }
+
+  // Compatibility helper used by Workspace/File Studio features.
+  // Previously authHeaders() was referenced but never defined.
+  function authHeaders(json=false){
+    return suiteAuthHeaders(json);
   }
 
   function suiteToast(text){
@@ -10414,7 +10522,7 @@ A strong website should include: hero section, clear navigation, services/featur
       activeId: store.activeId || null,
       pins: store.pins || {},
       brainMeta: loadBrainMeta ? loadBrainMeta() : {},
-      modeMemory: JSON.parse(localStorage.getItem('vigzone_mode_memory_v1') || '{}'),
+      modeMemory: JSON.parse(localStorage.getItem(scopedLocalKey('vigzone_mode_memory_v1')) || '{}'),
       brainStats: {
         chats: data.summaries.length,
         tasks: data.tasks.length,
@@ -10466,7 +10574,7 @@ A strong website should include: hero section, clear navigation, services/featur
   }
 
   function rememberModeUse(mode, note=''){
-    const key = 'vigzone_mode_memory_v1';
+    const key = scopedLocalKey('vigzone_mode_memory_v1');
     let mem = {};
     try { mem = JSON.parse(localStorage.getItem(key) || '{}'); } catch {}
     mem[mode] = mem[mode] || {count:0, lastUsed:null, notes:[]};
@@ -10502,8 +10610,17 @@ A strong website should include: hero section, clear navigation, services/featur
   function renderFileStudio(){
     if (!fileStudioBody) return;
     const data = brainBuildData ? brainBuildData() : {files:[]};
+    const localUploads = loadUploadedFileHistory().map(f => ({
+      ...f,
+      convTitle: 'Uploaded file history',
+      category: {name:'Local files'},
+      convId: store.activeId || null,
+      fromUploadHistory: true
+    }));
     const q = (fileStudioSearchInput?.value || '').toLowerCase().trim();
-    const files = (data.files || []).filter(f => !q || [f.name, f.kind, f.convTitle, f.category?.name].join(' ').toLowerCase().includes(q));
+    const files = [...(data.files || []), ...localUploads]
+      .filter((f, index, arr) => arr.findIndex(x => x.name === f.name && x.kind === f.kind) === index)
+      .filter(f => !q || [f.name, f.kind, f.convTitle, f.category?.name].join(' ').toLowerCase().includes(q));
     fileStudioBody.innerHTML = files.length ? files.map(f => `
       <div class="suite-card">
         <div class="suite-card-icon">${f.kind === 'image' ? '🖼️' : '📄'}</div>
@@ -10545,6 +10662,45 @@ Requirements:
 - Return complete runnable HTML/CSS/JS in organized code blocks
 - Include a short file tree and explain how to run/export it
 - Do not use broken placeholder assets; use gradients or safe placeholders when needed`;
+  }
+
+
+  function extractLatestHtmlFromMessages(){
+    const source = [...(messages || [])].reverse().find(m => m.role === 'assistant' && /```html|<!doctype html|<html[\s>]/i.test(exportMessageText(m)));
+    if (!source) return '';
+    const text = exportMessageText(source);
+    const fenced = text.match(/```html\s*([\s\S]*?)```/i) || text.match(/```\s*([\s\S]*?<html[\s\S]*?)```/i);
+    if (fenced) return fenced[1].trim();
+    const doc = text.match(/<!doctype html[\s\S]*<\/html>/i) || text.match(/<html[\s\S]*<\/html>/i);
+    return doc ? doc[0].trim() : '';
+  }
+
+  async function exportLatestWebsiteZip(){
+    const html = extractLatestHtmlFromMessages();
+    if (!html) {
+      suiteToast('No HTML website found in the latest assistant replies yet.');
+      return;
+    }
+    try {
+      const res = await fetch('/api/website/export', {
+        method:'POST',
+        headers:suiteAuthHeaders(true),
+        body:JSON.stringify({html, filename:'vigzone-website.zip'})
+      });
+      if (!res.ok) throw new Error((await res.json().catch(()=>({}))).detail || 'Could not export website.');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'vigzone-website.zip';
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 0);
+      suiteToast('Website ZIP exported.');
+    } catch (e) {
+      suiteToast(e.message || 'Website export failed.');
+    }
   }
 
   function openWebsiteStudio(){
@@ -10621,6 +10777,7 @@ Requirements:
     websiteStudioModalOverlay?.addEventListener('click', e => { if (e.target === websiteStudioModalOverlay) closeWebsiteStudio(); });
     websiteStudioGenerateBtn?.addEventListener('click', () => generateWebsiteFromStudio(false));
     websiteStudioPlanBtn?.addEventListener('click', () => generateWebsiteFromStudio(true));
+    websiteStudioExportBtn?.addEventListener('click', exportLatestWebsiteZip);
 
     brainCloudSyncBtn?.addEventListener('click', syncBrainCloud);
     versionOpenBtn?.addEventListener('click', openVersionModal);
