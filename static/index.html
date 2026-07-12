@@ -4187,6 +4187,68 @@
       }
     }
 
+
+    /* ---------- Message copy context menu ----------
+       PC: right-click any user/AI message.
+       Mobile: tap and hold any user/AI message. */
+    .message-copy-menu{
+      position:fixed;
+      z-index:2147483647;
+      min-width:172px;
+      max-width:calc(100vw - 22px);
+      background:color-mix(in srgb, var(--surface) 96%, transparent);
+      border:1px solid var(--border);
+      border-radius:14px;
+      box-shadow:0 24px 80px -26px var(--sidebar-shadow), 0 8px 22px -18px var(--composer-shadow);
+      padding:6px;
+      display:none;
+      backdrop-filter:blur(20px) saturate(1.12);
+      -webkit-backdrop-filter:blur(20px) saturate(1.12);
+      animation:messageCopyMenuIn .12s ease-out;
+    }
+    .message-copy-menu.visible{display:block;}
+    @keyframes messageCopyMenuIn{
+      from{opacity:0;transform:translateY(4px) scale(.98);}
+      to{opacity:1;transform:translateY(0) scale(1);}
+    }
+    .message-copy-menu button{
+      width:100%;
+      border:0;
+      background:transparent;
+      color:var(--text);
+      border-radius:10px;
+      padding:10px 11px;
+      cursor:pointer;
+      display:flex;
+      align-items:center;
+      gap:9px;
+      font:800 12.5px 'Inter',sans-serif;
+      text-align:left;
+      touch-action:manipulation;
+    }
+    .message-copy-menu button:hover,
+    .message-copy-menu button:focus-visible{
+      background:var(--surface-2);
+      outline:none;
+    }
+    .message-copy-menu svg{
+      width:16px;
+      height:16px;
+      flex:0 0 auto;
+      color:var(--accent);
+    }
+    .message-copy-menu .copy-menu-sub{
+      display:block;
+      margin-top:2px;
+      color:var(--text-muted);
+      font-size:10.5px;
+      font-weight:700;
+    }
+    .msg.copy-pressing .bubble{
+      outline:2px solid color-mix(in srgb, var(--accent) 54%, transparent);
+      outline-offset:2px;
+    }
+
   </style>
 </head>
 <body style="display: none;">
@@ -8206,6 +8268,193 @@
       }
     });
   }
+
+
+  // ---------- Message copy feature ----------
+  // Desktop: right-click user/assistant message.
+  // Mobile: tap + hold user/assistant message.
+  let messageCopyMenu = null;
+  let messageCopyTarget = null;
+  let messageCopyLongPressTimer = null;
+  let messageCopyTouchStart = null;
+
+  function messageContentToPlainText(content){
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) {
+      return content.map(part => {
+        if (!part) return '';
+        if (typeof part === 'string') return part;
+        if (part.type === 'text') return part.text || '';
+        if (part.text) return part.text;
+        return '';
+      }).filter(Boolean).join('\n');
+    }
+    if (content == null) return '';
+    try { return JSON.stringify(content, null, 2); } catch { return String(content); }
+  }
+
+  function getMessageCopyText(msgEl){
+    const idx = Number(msgEl?.dataset?.index);
+    const m = Number.isFinite(idx) ? messages[idx] : null;
+    if (m) {
+      let text = '';
+      if (m.displayText !== undefined && m.displayText !== null && String(m.displayText).trim()) {
+        text = String(m.displayText);
+      } else {
+        text = messageContentToPlainText(m.content);
+      }
+      if (!text.trim() && m.imageSrc) text = m.content ? String(m.content) : 'Generated image';
+      const attach = Array.isArray(m.attachments) && m.attachments.length
+        ? `\n\n[Attachments: ${m.attachments.map(a => a.name || a.kind || 'file').join(', ')}]`
+        : '';
+      const quote = m.quote && m.quote.text
+        ? `[Replying to ${m.quote.role || 'message'}]\n${m.quote.text}\n\n`
+        : '';
+      return (quote + text + attach).trim();
+    }
+
+    // Fallback for any rendered bubble without stored message data.
+    const bubble = msgEl?.querySelector?.('.bubble');
+    if (!bubble) return '';
+    const clone = bubble.cloneNode(true);
+    clone.querySelectorAll('.msg-feedback,.speaker-btn,.feedback-btn,.msg-quote-btn,.stream-cursor,.typing').forEach(el => el.remove());
+    return (clone.innerText || clone.textContent || '').trim();
+  }
+
+  async function copyMessageText(text){
+    const value = String(text || '').trim();
+    if (!value) {
+      suiteToast?.('Nothing to copy in this message.');
+      return false;
+    }
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(value);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = value;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        ta.style.top = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+      }
+      suiteToast?.('Message copied.');
+      return true;
+    } catch {
+      suiteToast?.('Could not copy this message.');
+      return false;
+    }
+  }
+
+  function ensureMessageCopyMenu(){
+    if (messageCopyMenu) return messageCopyMenu;
+    messageCopyMenu = document.createElement('div');
+    messageCopyMenu.className = 'message-copy-menu';
+    messageCopyMenu.setAttribute('role', 'menu');
+    messageCopyMenu.innerHTML = `
+      <button type="button" role="menuitem" id="copyMessageMenuBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="9" y="9" width="13" height="13" rx="2"></rect>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg>
+        <span><span id="copyMessageMenuTitle">Copy message</span><span class="copy-menu-sub">Right-click / long-press</span></span>
+      </button>`;
+    document.body.appendChild(messageCopyMenu);
+    messageCopyMenu.querySelector('#copyMessageMenuBtn').addEventListener('click', async () => {
+      const text = getMessageCopyText(messageCopyTarget);
+      await copyMessageText(text);
+      hideMessageCopyMenu();
+    });
+    return messageCopyMenu;
+  }
+
+  function hideMessageCopyMenu(){
+    if (messageCopyMenu) messageCopyMenu.classList.remove('visible');
+    if (messageCopyTarget) messageCopyTarget.classList.remove('copy-pressing');
+    messageCopyTarget = null;
+  }
+
+  function showMessageCopyMenu(msgEl, clientX, clientY){
+    const text = getMessageCopyText(msgEl);
+    if (!text) return;
+    const menu = ensureMessageCopyMenu();
+    messageCopyTarget?.classList.remove('copy-pressing');
+    messageCopyTarget = msgEl;
+    messageCopyTarget.classList.add('copy-pressing');
+
+    const role = msgEl.classList.contains('user') ? 'user' : 'AI';
+    const title = menu.querySelector('#copyMessageMenuTitle');
+    if (title) title.textContent = `Copy ${role} message`;
+
+    menu.style.left = '0px';
+    menu.style.top = '0px';
+    menu.classList.add('visible');
+
+    const rect = menu.getBoundingClientRect();
+    const margin = 10;
+    const x = Math.min(Math.max(clientX, margin), window.innerWidth - rect.width - margin);
+    const y = Math.min(Math.max(clientY, margin), window.innerHeight - rect.height - margin);
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+  }
+
+  function messageCopyTargetFromEvent(e){
+    const msg = e.target.closest?.('.msg.user,.msg.assistant');
+    if (!msg || !chatInner.contains(msg)) return null;
+    if (e.target.closest?.('button,a,input,textarea,select,.code-copy-btn,.msg-feedback,.msg-quote-btn')) return null;
+    return msg;
+  }
+
+  chatInner.addEventListener('contextmenu', (e) => {
+    const msg = messageCopyTargetFromEvent(e);
+    if (!msg) return;
+    e.preventDefault();
+    showMessageCopyMenu(msg, e.clientX, e.clientY);
+  });
+
+  chatInner.addEventListener('touchstart', (e) => {
+    const msg = messageCopyTargetFromEvent(e);
+    if (!msg || !e.touches || e.touches.length !== 1) return;
+    clearTimeout(messageCopyLongPressTimer);
+    const t = e.touches[0];
+    messageCopyTouchStart = {x:t.clientX, y:t.clientY, msg};
+    messageCopyLongPressTimer = setTimeout(() => {
+      if (!messageCopyTouchStart) return;
+      navigator.vibrate?.(18);
+      showMessageCopyMenu(messageCopyTouchStart.msg, messageCopyTouchStart.x, messageCopyTouchStart.y);
+      messageCopyLongPressTimer = null;
+    }, 560);
+  }, {passive:true});
+
+  chatInner.addEventListener('touchmove', (e) => {
+    if (!messageCopyTouchStart || !e.touches || !e.touches.length) return;
+    const t = e.touches[0];
+    if (Math.abs(t.clientX - messageCopyTouchStart.x) > 12 || Math.abs(t.clientY - messageCopyTouchStart.y) > 12) {
+      clearTimeout(messageCopyLongPressTimer);
+      messageCopyLongPressTimer = null;
+      messageCopyTouchStart = null;
+    }
+  }, {passive:true});
+
+  ['touchend','touchcancel'].forEach(evt => {
+    chatInner.addEventListener(evt, () => {
+      clearTimeout(messageCopyLongPressTimer);
+      messageCopyLongPressTimer = null;
+      messageCopyTouchStart = null;
+    }, {passive:true});
+  });
+
+  document.addEventListener('click', (e) => {
+    if (messageCopyMenu?.classList.contains('visible') && !messageCopyMenu.contains(e.target)) hideMessageCopyMenu();
+  });
+  document.addEventListener('scroll', hideMessageCopyMenu, true);
+  window.addEventListener('resize', hideMessageCopyMenu);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideMessageCopyMenu(); });
+
 
   async function checkHealth(){
     try{
