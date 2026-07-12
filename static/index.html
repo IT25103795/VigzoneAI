@@ -4126,6 +4126,67 @@
       }
     }
 
+
+    /* ---------- Admin mobile graph stability fix ----------
+       Canvas charts must keep a fixed, responsive box. This prevents the
+       phone layout from stretching the canvas during refresh, clipping the
+       donut/bar charts, or making charts disappear after resize. */
+    .admin-pro-card{
+      min-width:0 !important;
+    }
+    .admin-chart-wrap{
+      width:100% !important;
+      height:220px !important;
+      min-height:220px !important;
+      max-height:220px !important;
+      overflow:hidden !important;
+      position:relative !important;
+      contain:layout paint size !important;
+      isolation:isolate;
+    }
+    .admin-chart-wrap canvas{
+      display:block !important;
+      width:100% !important;
+      height:100% !important;
+      max-width:100% !important;
+      max-height:100% !important;
+      min-width:0 !important;
+      min-height:0 !important;
+    }
+    @media(max-width:760px){
+      .admin-pro-grid.two{
+        grid-template-columns:minmax(0,1fr) !important;
+      }
+      .admin-chart-wrap{
+        height:190px !important;
+        min-height:190px !important;
+        max-height:190px !important;
+      }
+      .admin-pro-card{
+        overflow:hidden !important;
+      }
+      .admin-pro-card-head{
+        margin-bottom:6px !important;
+      }
+    }
+    @media(max-width:420px){
+      .admin-chart-wrap{
+        height:178px !important;
+        min-height:178px !important;
+        max-height:178px !important;
+      }
+      .admin-pro-card{
+        padding:13px !important;
+        border-radius:18px !important;
+      }
+      .admin-pro-card h2{
+        font-size:15px !important;
+      }
+      .admin-pro-card p{
+        font-size:11.5px !important;
+      }
+    }
+
   </style>
 </head>
 <body style="display: none;">
@@ -7057,61 +7118,172 @@
   }
   function adminCanvasPrep(canvas){
     if (!canvas) return null;
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = Math.max(1, Math.floor(rect.width * dpr));
-    canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+    const wrap = canvas.closest('.admin-chart-wrap') || canvas.parentElement;
+    if (!wrap) return null;
+
+    // Lock the CSS size first. Without this, mobile browsers can briefly
+    // measure the canvas at its internal bitmap size during refresh, causing
+    // the huge clipped charts shown on phones.
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    canvas.style.display = 'block';
+
+    const wrapRect = wrap.getBoundingClientRect();
+    let cssW = Math.floor(wrap.clientWidth || wrapRect.width || 0);
+    let cssH = Math.floor(wrap.clientHeight || wrapRect.height || 0);
+
+    // If the card is still animating/layouting, skip this frame instead of
+    // drawing into a bad 0px/giant canvas. A queued redraw handles the next frame.
+    if (cssW < 40 || cssH < 80) return null;
+
+    // Keep bitmap dimensions sane on mobile/high-DPI displays.
+    cssW = Math.max(220, Math.min(cssW, 900));
+    cssH = Math.max(150, Math.min(cssH, 260));
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+    const pixelW = Math.floor(cssW * dpr);
+    const pixelH = Math.floor(cssH * dpr);
+    if (canvas.width !== pixelW) canvas.width = pixelW;
+    if (canvas.height !== pixelH) canvas.height = pixelH;
+
     const ctx = canvas.getContext('2d');
     ctx.setTransform(dpr,0,0,dpr,0,0);
-    return {ctx, w:rect.width, h:rect.height};
+    ctx.clearRect(0,0,cssW,cssH);
+    return {ctx, w:cssW, h:cssH};
   }
   function cssVar(name, fallback){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback; }
   function drawUsageChart(rows){
-    adminLastDailyRows = rows || [];
-    const prep = adminCanvasPrep($('#adminUsageChart')); if (!prep) return;
+    adminLastDailyRows = Array.isArray(rows) ? rows : [];
+    const canvas = $('#adminUsageChart');
+    const prep = adminCanvasPrep(canvas);
+    if (!prep) return queueAdminChartRedraw();
     const {ctx,w,h} = prep;
-    ctx.clearRect(0,0,w,h);
-    const pad = {l:42,r:18,t:18,b:34};
-    const plotW = w-pad.l-pad.r, plotH = h-pad.t-pad.b;
-    const max = Math.max(1, ...rows.map(r => Math.max(r.tokens || 0, r.requests || 0)));
-    const accent = cssVar('--accent','#ff6b4a'), accent2 = cssVar('--accent-2','#1aab94'), muted = cssVar('--text-muted','#8f96a8'), border = cssVar('--border','#ffffff22');
-    ctx.strokeStyle = border; ctx.lineWidth = 1;
-    for(let i=0;i<4;i++){ const y=pad.t+plotH*(i/3); ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(w-pad.r,y); ctx.stroke(); }
-    const barGap = 8;
-    const slot = plotW / Math.max(rows.length,1);
-    rows.forEach((r,i)=>{
+    const compact = w < 420;
+    const pad = compact ? {l:30,r:8,t:16,b:24} : {l:42,r:16,t:18,b:34};
+    const plotW = Math.max(1, w-pad.l-pad.r);
+    const plotH = Math.max(1, h-pad.t-pad.b);
+    const max = Math.max(1, ...adminLastDailyRows.map(r => Number(r.tokens || 0)));
+    const accent = cssVar('--accent','#ff6b4a');
+    const accent2 = cssVar('--accent-2','#1aab94');
+    const muted = cssVar('--text-muted','#8f96a8');
+    const border = cssVar('--border','#ffffff22');
+
+    ctx.strokeStyle = border;
+    ctx.lineWidth = 1;
+    for(let i=0;i<4;i++){
+      const y=pad.t+plotH*(i/3);
+      ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(w-pad.r,y); ctx.stroke();
+    }
+
+    const rowCount = Math.max(adminLastDailyRows.length,1);
+    const slot = plotW / rowCount;
+    const barGap = compact ? Math.max(3, Math.min(7, slot * .18)) : 8;
+
+    adminLastDailyRows.forEach((r,i)=>{
       const x = pad.l + i*slot + barGap;
-      const bw = Math.max(8, slot - barGap*2);
-      const bh = (r.tokens/max)*plotH;
+      const bw = Math.max(compact ? 7 : 8, Math.min(54, slot - barGap*2));
+      const bh = (Number(r.tokens || 0)/max)*plotH;
       const y = pad.t + plotH - bh;
       const grad = ctx.createLinearGradient(0,y,0,pad.t+plotH);
-      grad.addColorStop(0, accent); grad.addColorStop(1, accent2);
+      grad.addColorStop(0, accent);
+      grad.addColorStop(1, accent2);
       ctx.fillStyle = grad;
+      const rr = Math.min(7, bw/2, Math.max(0,bh));
       ctx.beginPath();
-      const rr = 8; const x2=x+bw, y2=pad.t+plotH;
-      ctx.moveTo(x+rr,y); ctx.lineTo(x2-rr,y); ctx.quadraticCurveTo(x2,y,x2,y+rr); ctx.lineTo(x2,y2); ctx.lineTo(x,y2); ctx.lineTo(x,y+rr); ctx.quadraticCurveTo(x,y,x+rr,y); ctx.fill();
-      ctx.fillStyle = muted; ctx.font = '10px Inter, sans-serif'; ctx.textAlign='center'; ctx.fillText(r.label || '', x+bw/2, h-12);
+      const x2=x+bw, y2=pad.t+plotH;
+      ctx.moveTo(x+rr,y);
+      ctx.lineTo(x2-rr,y);
+      ctx.quadraticCurveTo(x2,y,x2,y+rr);
+      ctx.lineTo(x2,y2);
+      ctx.lineTo(x,y2);
+      ctx.lineTo(x,y+rr);
+      ctx.quadraticCurveTo(x,y,x+rr,y);
+      ctx.fill();
+
+      if (!compact || i % 2 === 0 || adminLastDailyRows.length <= 4) {
+        ctx.fillStyle = muted;
+        ctx.font = compact ? '9px Inter, sans-serif' : '10px Inter, sans-serif';
+        ctx.textAlign='center';
+        ctx.fillText(String(r.label || '').replace(/^Jul /,'J'), x+bw/2, h-8);
+      }
     });
-    ctx.fillStyle = muted; ctx.font = '11px Inter, sans-serif'; ctx.textAlign='left'; ctx.fillText('Tokens', 6, 14);
+
+    ctx.fillStyle = muted;
+    ctx.font = compact ? '10px Inter, sans-serif' : '11px Inter, sans-serif';
+    ctx.textAlign='left';
+    ctx.fillText('Tokens', 4, 13);
   }
   function drawFeedbackChart(mix){
-    adminLastFeedbackMix = mix || [];
-    const prep = adminCanvasPrep($('#adminFeedbackChart')); if (!prep) return;
+    adminLastFeedbackMix = Array.isArray(mix) ? mix : [];
+    const canvas = $('#adminFeedbackChart');
+    const prep = adminCanvasPrep(canvas);
+    if (!prep) return queueAdminChartRedraw();
     const {ctx,w,h} = prep;
-    ctx.clearRect(0,0,w,h);
-    const good = Number((mix.find(x=>/positive/i.test(x.name))||{}).value || 0);
-    const bad = Number((mix.find(x=>/negative/i.test(x.name))||{}).value || 0);
-    const total = Math.max(1, good + bad);
-    const cx = w/2, cy = h/2 - 4, r = Math.min(w,h)*0.33;
+    const good = Number((adminLastFeedbackMix.find(x=>/positive/i.test(x.name))||{}).value || 0);
+    const bad = Number((adminLastFeedbackMix.find(x=>/negative|bad/i.test(x.name))||{}).value || 0);
+    const shownTotal = good + bad;
+    const total = Math.max(1, shownTotal);
+    const compact = w < 420;
+
+    const legendH = compact ? 22 : 30;
+    const chartH = Math.max(1, h - legendH);
+    const cx = w / 2;
+    const cy = Math.max(54, Math.min(chartH / 2 + 4, h - legendH - 54));
+    const r = Math.min(w * (compact ? 0.22 : 0.25), chartH * 0.38, compact ? 48 : 64);
     const colors = [cssVar('--accent-2','#1aab94'), cssVar('--danger','#e84a5a')];
+
     let start = -Math.PI/2;
-    [good,bad].forEach((v,i)=>{ const ang = (v/total)*Math.PI*2; ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,start,start+ang); ctx.closePath(); ctx.fillStyle=colors[i]; ctx.fill(); start += ang; });
-    ctx.globalCompositeOperation='destination-out'; ctx.beginPath(); ctx.arc(cx,cy,r*0.62,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='source-over';
-    ctx.fillStyle = cssVar('--text','#fff'); ctx.font='800 24px Sora, sans-serif'; ctx.textAlign='center'; ctx.fillText(String(total === 1 && !good && !bad ? 0 : total), cx, cy+3);
-    ctx.fillStyle = cssVar('--text-muted','#999'); ctx.font='12px Inter, sans-serif'; ctx.fillText('feedbacks', cx, cy+24);
-    ctx.textAlign='left'; ctx.font='12px Inter, sans-serif';
-    ctx.fillStyle=colors[0]; ctx.fillRect(18,h-30,10,10); ctx.fillStyle=cssVar('--text-muted','#999'); ctx.fillText(`Positive ${good}`,34,h-21);
-    ctx.fillStyle=colors[1]; ctx.fillRect(w/2+14,h-30,10,10); ctx.fillStyle=cssVar('--text-muted','#999'); ctx.fillText(`Bad ${bad}`,w/2+30,h-21);
+    [good,bad].forEach((v,i)=>{
+      const ang = (v/total)*Math.PI*2;
+      ctx.beginPath();
+      ctx.moveTo(cx,cy);
+      ctx.arc(cx,cy,r,start,start+ang);
+      ctx.closePath();
+      ctx.fillStyle=colors[i];
+      ctx.fill();
+      start += ang;
+    });
+
+    ctx.globalCompositeOperation='destination-out';
+    ctx.beginPath();
+    ctx.arc(cx,cy,r*0.58,0,Math.PI*2);
+    ctx.fill();
+    ctx.globalCompositeOperation='source-over';
+
+    ctx.fillStyle = cssVar('--text','#fff');
+    ctx.font = compact ? '800 20px Sora, sans-serif' : '800 24px Sora, sans-serif';
+    ctx.textAlign='center';
+    ctx.fillText(String(shownTotal), cx, cy+3);
+    ctx.fillStyle = cssVar('--text-muted','#999');
+    ctx.font = compact ? '10px Inter, sans-serif' : '12px Inter, sans-serif';
+    ctx.fillText(compact ? 'feedback' : 'feedbacks', cx, cy+(compact ? 21 : 24));
+
+    const legendY = h - (compact ? 16 : 21);
+    const leftX = compact ? 12 : 18;
+    const rightX = Math.max(w/2 + (compact ? 4 : 14), leftX + 110);
+    ctx.textAlign='left';
+    ctx.font = compact ? '10px Inter, sans-serif' : '12px Inter, sans-serif';
+    ctx.fillStyle=colors[0];
+    ctx.fillRect(leftX,legendY-9,9,9);
+    ctx.fillStyle=cssVar('--text-muted','#999');
+    ctx.fillText(`Positive ${good}`,leftX+15,legendY);
+
+    ctx.fillStyle=colors[1];
+    ctx.fillRect(rightX,legendY-9,9,9);
+    ctx.fillStyle=cssVar('--text-muted','#999');
+    ctx.fillText(`Bad ${bad}`,rightX+15,legendY);
+  }
+
+  let adminChartRedrawQueued = false;
+  function queueAdminChartRedraw(){
+    if (adminChartRedrawQueued) return;
+    adminChartRedrawQueued = true;
+    requestAnimationFrame(() => {
+      adminChartRedrawQueued = false;
+      if (!document.body.classList.contains('admin-only')) return;
+      drawUsageChart(adminLastDailyRows || []);
+      drawFeedbackChart(adminLastFeedbackMix || []);
+    });
   }
   function renderAdminProDashboard(data){
     const s = data.summary || {};
@@ -7135,7 +7307,9 @@
     if (adminBadFeedbackList) {
       adminBadFeedbackList.innerHTML = (data.bad_feedback || []).map(f => `<div class="admin-feedback-item"><div class="admin-feedback-top"><span>${escapeHtml(f.email || 'Unknown user')}</span><span>${escapeHtml(adminShortDate(f.created_at))}</span></div><div class="admin-feedback-reason">${escapeHtml(f.reason || 'No reason provided')}</div><div class="admin-feedback-text">${escapeHtml(f.assistant_text || '')}</div></div>`).join('') || '<div class="brain-empty">No bad feedback yet. Great bro 😁</div>';
     }
-    requestAnimationFrame(()=>{ drawUsageChart(data.daily || []); drawFeedbackChart(data.feedback_mix || []); });
+    adminLastDailyRows = data.daily || [];
+    adminLastFeedbackMix = data.feedback_mix || [];
+    requestAnimationFrame(() => requestAnimationFrame(queueAdminChartRedraw));
   }
   async function loadAdminProDashboard(){
     if (adminProHealth) adminProHealth.textContent = 'Loading system…';
@@ -7169,7 +7343,18 @@
   }
   adminProRefreshBtn?.addEventListener('click', loadAdminProDashboard);
   adminProSignOutBtn?.addEventListener('click', adminProSignOut);
-  window.addEventListener('resize', () => { if (document.body.classList.contains('admin-only')) { drawUsageChart(adminLastDailyRows); drawFeedbackChart(adminLastFeedbackMix); } });
+  try {
+    const adminChartObserver = new ResizeObserver(() => {
+      if (document.body.classList.contains('admin-only')) queueAdminChartRedraw();
+    });
+    document.querySelectorAll('.admin-chart-wrap').forEach(el => adminChartObserver.observe(el));
+  } catch {}
+  let adminResizeTimer = null;
+  window.addEventListener('resize', () => {
+    if (!document.body.classList.contains('admin-only')) return;
+    clearTimeout(adminResizeTimer);
+    adminResizeTimer = setTimeout(queueAdminChartRedraw, 120);
+  });
 
   // ---------- Admin dashboard ----------
   async function loadAdminDashboard(){
