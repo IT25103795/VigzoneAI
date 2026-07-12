@@ -14,6 +14,8 @@ import asyncio
 import logging
 import os
 import re
+import html as _html
+from urllib.parse import parse_qs, unquote, urlparse
 from datetime import datetime, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -26,6 +28,52 @@ _CONFIGURED_USER_TIMEZONE = os.getenv("USER_TIMEZONE", "").strip()
 _WEATHER_FALLBACK_LOCATION = os.getenv("WEATHER_DEFAULT_LOCATION", "Colombo, Sri Lanka")
 
 logger = logging.getLogger(__name__)
+
+# ── Vigzone Real-Time Search v2 helpers ──────────────────────────────────────
+# Keyless sources:
+# - DuckDuckGo Instant Answer + HTML search
+# - GDELT article search for latest/news/current events
+# - Wikipedia summary for stable entities
+# Optional future providers can be added without changing the chat layer.
+
+def _clean_html(value: str) -> str:
+    value = re.sub(r"<[^>]+>", " ", value or "")
+    value = _html.unescape(value)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _clean_ddg_url(value: str) -> str:
+    value = _html.unescape(value or "").strip()
+    if not value:
+        return ""
+    if value.startswith("//"):
+        value = "https:" + value
+    # DuckDuckGo redirect links often contain ?uddg=<real_url>
+    try:
+        parsed = urlparse(value)
+        qs = parse_qs(parsed.query)
+        if "uddg" in qs and qs["uddg"]:
+            return unquote(qs["uddg"][0])
+    except Exception:
+        pass
+    return value
+
+
+def _is_news_like_query(query: str) -> bool:
+    return bool(re.search(
+        r"\b(latest|recent|today|now|breaking|news|headlines|update|happening|happened|announced|released|launched|"
+        r"election|war|conflict|earthquake|flood|accident|score|result|match|game|sports|ipl|cricket|fifa|world cup|"
+        r"president|prime minister|ceo|minister|current|new)\b",
+        query or "",
+        re.IGNORECASE,
+    ))
+
+
+def _is_stable_encyclopedic_query(query: str) -> bool:
+    if _is_news_like_query(query):
+        return False
+    return bool(re.search(r"\b(who is|what is|explain|meaning of|definition of|history of)\b", query or "", re.IGNORECASE))
+
 
 # ── HTTP client (shared, reused) ──────────────────────────────────────────────
 _search_client: Optional[httpx.AsyncClient] = None
@@ -127,14 +175,14 @@ _REALTIME_PATTERNS = re.compile(
     r"this (week|month|year|morning|evening|afternoon|night)|"
     r"just (happened|announced|released|launched)|"
     r"\b(news|breaking|update|headlines)\b|"
-    r"what.?s happening|what happened|who won|"
+    r"what.?s happening|what happened|who won|latest happenings|recent happenings|"
     r"\b(score|result|match|game)\b|"
     r"\b(price|stock|crypto|bitcoin|ethereum)\b|"
     r"exchange rate|how much (is|does|costs?)|"
     r"\b(weather|forecast|temperature|rain|humidity|wind|climate)\b|"
     r"who is (the )?(current |new )?(president|prime minister|ceo|head|minister)|"
     r"is .+ still (alive|ceo|president)|"
-    r"\b(ipl|t20|cricket|fifa|nba|nfl)\b|"
+    r"\b(ipl|t20|cricket|fifa|nba|nfl|nhl|mlb|epl|olympics|ufc|formula 1|f1)\b|"
     r"world cup|premier league|formula 1|"
     r"\b(standings|ranking|leaderboard)\b|"
     r"\blkr\b|"
@@ -224,6 +272,7 @@ async def _ddg_html_search(query: str, max_results: int = 5) -> list[dict]:
     """
     Scrape DuckDuckGo HTML results page to get title + snippet + URL.
     Returns a list of {title, snippet, url} dicts.
+    Robust enough for current DDG HTML variants.
     """
     try:
         client = _get_search_client()
@@ -236,61 +285,166 @@ async def _ddg_html_search(query: str, max_results: int = 5) -> list[dict]:
             return []
 
         html = resp.text
-        results = []
+        results: list[dict] = []
 
-        title_pattern = re.compile(r'class="result__a"[^>]*>([^<]+)</a>', re.DOTALL)
-        snippet_pattern = re.compile(r'class="result__snippet"[^>]*>(.+?)</a>', re.DOTALL)
-        url_pattern = re.compile(r'class="result__url"[^>]*>([^<]+)<', re.DOTALL)
-
-        titles = title_pattern.findall(html)
-        snippets = snippet_pattern.findall(html)
-        urls = url_pattern.findall(html)
-
-        for i in range(min(max_results, len(titles))):
-            title = re.sub(r"<[^>]+>", "", titles[i]).strip()
-            snippet = re.sub(r"<[^>]+>", "", snippets[i] if i < len(snippets) else "").strip()
-            url = urls[i].strip() if i < len(urls) else ""
-            if title:
+        # Preferred block parser.
+        blocks = re.findall(r'<div class="result(?: results_links)?[\s\S]*?</div>\s*</div>', html, re.IGNORECASE)
+        for block in blocks:
+            title_match = re.search(r'class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)</a>', block, re.IGNORECASE)
+            if not title_match:
+                continue
+            url = _clean_ddg_url(title_match.group(1))
+            title = _clean_html(title_match.group(2))
+            snippet_match = re.search(r'class="result__snippet"[^>]*>([\s\S]*?)</a>', block, re.IGNORECASE)
+            snippet = _clean_html(snippet_match.group(1)) if snippet_match else ""
+            if title and url:
                 results.append({"title": title, "snippet": snippet, "url": url})
+            if len(results) >= max_results:
+                break
 
-        return results
+        # Fallback old parser.
+        if not results:
+            title_pattern = re.compile(r'class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)</a>', re.DOTALL | re.IGNORECASE)
+            snippet_pattern = re.compile(r'class="result__snippet"[^>]*>([\s\S]*?)</a>', re.DOTALL | re.IGNORECASE)
+            titles = title_pattern.findall(html)
+            snippets = snippet_pattern.findall(html)
+            for i, (url, title_html) in enumerate(titles[:max_results]):
+                title = _clean_html(title_html)
+                snippet = _clean_html(snippets[i] if i < len(snippets) else "")
+                url = _clean_ddg_url(url)
+                if title:
+                    results.append({"title": title, "snippet": snippet, "url": url})
+
+        # Deduplicate domains/URLs.
+        deduped = []
+        seen = set()
+        for r in results:
+            key = r.get("url") or r.get("title")
+            if key and key not in seen:
+                deduped.append(r)
+                seen.add(key)
+        return deduped[:max_results]
 
     except Exception as exc:
         logger.debug("DDG HTML search failed: %s", exc)
         return []
 
 
+async def _gdelt_article_search(query: str, max_results: int = 5) -> list[dict]:
+    """Keyless current-news search using GDELT Doc API."""
+    if not _is_news_like_query(query):
+        return []
+    try:
+        client = _get_search_client()
+        resp = await client.get(
+            "https://api.gdeltproject.org/api/v2/doc/doc",
+            params={
+                "query": query,
+                "mode": "ArtList",
+                "format": "json",
+                "maxrecords": max_results,
+                "sort": "HybridRel",
+            },
+            headers={"Accept": "application/json"},
+        )
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+        rows = []
+        for item in (data.get("articles") or [])[:max_results]:
+            title = (item.get("title") or "").strip()
+            url = (item.get("url") or "").strip()
+            source = (item.get("sourceCommonName") or item.get("domain") or "").strip()
+            seen_date = (item.get("seendate") or "").strip()
+            if title and url:
+                rows.append({
+                    "title": title,
+                    "snippet": f"{source} · {seen_date}".strip(" ·"),
+                    "url": url,
+                })
+        return rows
+    except Exception as exc:
+        logger.debug("GDELT search failed: %s", exc)
+        return []
+
+
+async def _wikipedia_summary(query: str) -> Optional[str]:
+    """Keyless encyclopedia fallback for stable 'who/what is' questions."""
+    if not _is_stable_encyclopedic_query(query):
+        return None
+    try:
+        topic = re.sub(r"^\s*(who|what)\s+is\s+", "", query, flags=re.IGNORECASE)
+        topic = re.sub(r"\?.*$", "", topic).strip()
+        if not topic or len(topic) > 80:
+            return None
+        client = _get_search_client()
+        resp = await client.get(
+            "https://en.wikipedia.org/api/rest_v1/page/summary/" + topic.replace(" ", "_"),
+            headers={"Accept": "application/json"},
+        )
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        extract = (data.get("extract") or "").strip()
+        page = (data.get("content_urls", {}).get("desktop", {}) or {}).get("page", "")
+        if extract:
+            return f"{extract}\nSource: {page}"
+    except Exception as exc:
+        logger.debug("Wikipedia summary failed: %s", exc)
+    return None
+
+
 async def web_search(query: str, max_results: int = 5) -> str:
     """
-    Main search entry point. Tries DuckDuckGo Instant Answer first,
-    then falls back to HTML search results. Returns a formatted string
-    ready for injection into the LLM context.
+    Main search entry point.
+    Uses multiple keyless live sources:
+    - DuckDuckGo instant answer
+    - DuckDuckGo HTML results
+    - GDELT article search for current news
+    - Wikipedia summary for stable entities
+    Returns a formatted context block for the model.
     """
     normalized_query = _normalize_search_query(query)
 
-    instant_task = asyncio.create_task(_ddg_instant_answer(normalized_query))
-    html_task = asyncio.create_task(_ddg_html_search(normalized_query, max_results))
+    tasks = [
+        asyncio.create_task(_ddg_instant_answer(normalized_query)),
+        asyncio.create_task(_ddg_html_search(normalized_query, max_results)),
+        asyncio.create_task(_gdelt_article_search(normalized_query, max_results)),
+        asyncio.create_task(_wikipedia_summary(normalized_query)),
+    ]
+    instant, html_results, gdelt_results, wiki = await asyncio.gather(*tasks, return_exceptions=True)
 
-    instant, html_results = await asyncio.gather(instant_task, html_task, return_exceptions=True)
-
-    if isinstance(instant, Exception):
-        instant = None
-    if isinstance(html_results, Exception):
-        html_results = []
+    if isinstance(instant, Exception): instant = None
+    if isinstance(html_results, Exception): html_results = []
+    if isinstance(gdelt_results, Exception): gdelt_results = []
+    if isinstance(wiki, Exception): wiki = None
 
     parts = []
 
     if instant:
-        parts.append(f"📌 Summary:\n{instant}")
+        parts.append(f"📌 Direct/summary result:\n{instant}")
 
-    if html_results:
-        lines = [f"🔍 Web results for \"{normalized_query}\":"]
-        for i, r in enumerate(html_results, 1):
+    if wiki:
+        parts.append(f"📚 Encyclopedia context:\n{wiki}")
+
+    # Merge news and web results, preserving fresh GDELT first for current queries.
+    merged = []
+    seen = set()
+    for source_rows, label in ((gdelt_results or [], "Current/news result"), (html_results or [], "Web result")):
+        for r in source_rows:
+            key = r.get("url") or r.get("title")
+            if key and key not in seen:
+                merged.append((label, r))
+                seen.add(key)
+
+    if merged:
+        lines = [f"🔍 Live web results for \"{normalized_query}\" (use these as current context, not as guaranteed truth):"]
+        for i, (label, r) in enumerate(merged[:max_results], 1):
             lines.append(f"{i}. **{r['title']}**")
-            if r["snippet"]:
+            if r.get("snippet"):
                 lines.append(f"   {r['snippet']}")
-            if r["url"]:
-                lines.append(f"   {r['url']}")
+            if r.get("url"):
+                lines.append(f"   Source: {r['url']}")
         parts.append("\n".join(lines))
 
     if not parts:
