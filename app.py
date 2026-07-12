@@ -130,6 +130,10 @@ class ChatRequest(BaseModel):
     model: str = Field(default=DEFAULT_MODEL)
     ai_mode: Optional[str] = Field(default="general", max_length=40)
     workspace_id: Optional[int] = Field(default=None)
+    # Browser-provided timezone lets Vigzone answer date/time correctly
+    # without requiring a Railway USER_TIMEZONE variable.
+    client_timezone: Optional[str] = Field(default=None, max_length=80)
+    client_now_iso: Optional[str] = Field(default=None, max_length=80)
 
 
 class HealthCheckResponse(BaseModel):
@@ -817,6 +821,96 @@ async def get_current_time_endpoint():
         )
     
     return JSONResponse(get_datetime_info())
+
+
+
+# ── Deterministic date/time answers ───────────────────────────────────────────
+def _message_text_plain(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict):
+                parts.append(str(item.get("text") or ""))
+        return "\n".join(p for p in parts if p)
+    return ""
+
+
+def _is_simple_datetime_request(text: str) -> bool:
+    q = re.sub(r"[^\w\s?.!:/+-]+", " ", (text or "").lower())
+    q = re.sub(r"\s+", " ", q).strip()
+    if not q:
+        return False
+    keywords = (
+        "date", "today", "day", "weekday", "calendar", "time", "now",
+        "දිනය", "අද", "දවස", "වේලාව", "වෙලාව",
+        "தேதி", "இன்று", "நாள்", "நேரம்", "மணி"
+    )
+    if not any(k in q for k in keywords):
+        return False
+    non_dt_task_words = (
+        "schedule", "meeting", "remind", "deadline", "history", "code",
+        "website", "image", "weather", "news", "price", "stock", "birthday"
+    )
+    if any(w in q for w in non_dt_task_words) and not re.search(r"\b(current|today|now|what|tell|date|time|day)\b", q):
+        return False
+    return len(q.split()) <= 18 or bool(re.search(r"\b(what|tell|give|show).{0,40}\b(date|time|day|today|now)\b", q))
+
+
+def _datetime_info_for_client(client_timezone: Optional[str] = None) -> dict:
+    if client_timezone:
+        try:
+            from zoneinfo import ZoneInfo
+            tz = ZoneInfo(client_timezone)
+            now = datetime.now(tz)
+            return {
+                "full": now.strftime("%d %B %Y, %I:%M %p %Z (%A)"),
+                "date": now.strftime("%d %B %Y"),
+                "time": now.strftime("%I:%M %p"),
+                "timezone": client_timezone,
+                "day": now.strftime("%A"),
+                "iso": now.isoformat(),
+            }
+        except Exception:
+            pass
+    if HAS_REALWORLD_ENDPOINTS:
+        try:
+            return get_datetime_info()
+        except Exception:
+            logger.exception("Failed to get realworld datetime info")
+    now = datetime.now().astimezone()
+    return {
+        "full": now.strftime("%d %B %Y, %I:%M %p %Z (%A)"),
+        "date": now.strftime("%d %B %Y"),
+        "time": now.strftime("%I:%M %p"),
+        "timezone": str(now.tzinfo or "local"),
+        "day": now.strftime("%A"),
+        "iso": now.isoformat(),
+    }
+
+
+def _build_datetime_answer(text: str, client_timezone: Optional[str] = None) -> str:
+    info = _datetime_info_for_client(client_timezone)
+    q = (text or "").lower()
+    wants_date = any(k in q for k in ("date", "today", "calendar", "දිනය", "අද", "தேதி", "இன்று"))
+    wants_time = any(k in q for k in ("time", "now", "වේලාව", "වෙලාව", "நேரம்", "மணி"))
+    wants_day = any(k in q for k in ("day", "weekday", "දවස", "நாள்"))
+    tz = info.get("timezone") or "local timezone"
+
+    if wants_date and wants_time:
+        return f"📅 Today is **{info['day']}, {info['date']}**.\n🕒 The current time is **{info['time']}** ({tz})."
+    if wants_time and not wants_date:
+        return f"🕒 The current time is **{info['time']}** ({tz})."
+    if wants_day and not wants_date:
+        return f"📅 Today is **{info['day']}**. The date is **{info['date']}**."
+    return f"📅 Today is **{info['day']}, {info['date']}**."
+
+
+async def _stream_direct_answer(stream_id: str, text: str):
+    yield f'data: {json.dumps({"stream_id": stream_id})}\n\n'
+    yield f'data: {json.dumps({"content": text})}\n\n'
+    yield "data: [DONE]\n\n"
 
 
 # ── Fact Verification & Accuracy endpoints ──────────────────────────────────
@@ -1934,9 +2028,26 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
     messages  = [{"role": m.role, "content": m.content} for m in chat_request.messages]
     last_user_query = ""
     for m in reversed(messages):
-        if m.get("role") == "user" and isinstance(m.get("content"), str):
-            last_user_query = m.get("content") or ""
+        if m.get("role") == "user":
+            last_user_query = _message_text_plain(m.get("content")) or ""
             break
+
+    if _is_simple_datetime_request(last_user_query):
+        stream_id = create_stream_id()
+        register_stream(stream_id)
+        direct_answer = _build_datetime_answer(last_user_query, chat_request.client_timezone)
+        async def direct_event_stream():
+            try:
+                async for item in _stream_direct_answer(stream_id, direct_answer):
+                    yield item
+            finally:
+                unregister_stream(stream_id)
+        return StreamingResponse(
+            direct_event_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        )
+
     user_learning_context = _combine_context(
         _mode_context(chat_request.ai_mode),
         authmod.get_workspace_context(user["id"], chat_request.workspace_id, last_user_query),
@@ -2032,9 +2143,13 @@ async def chat_sync(request: Request, chat_request: ChatRequest, user: dict = De
     messages = [{"role": m.role, "content": m.content} for m in chat_request.messages]
     last_user_query = ""
     for m in reversed(messages):
-        if m.get("role") == "user" and isinstance(m.get("content"), str):
-            last_user_query = m.get("content") or ""
+        if m.get("role") == "user":
+            last_user_query = _message_text_plain(m.get("content")) or ""
             break
+
+    if _is_simple_datetime_request(last_user_query):
+        return JSONResponse({"role": "assistant", "content": _build_datetime_answer(last_user_query, chat_request.client_timezone)})
+
     user_learning_context = _combine_context(
         _mode_context(chat_request.ai_mode),
         authmod.get_workspace_context(user["id"], chat_request.workspace_id, last_user_query),

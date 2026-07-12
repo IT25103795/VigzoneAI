@@ -8718,6 +8718,21 @@ A strong website should include: hero section, clear navigation, services/featur
     const images = ctx.images || [];
     const shortQ = offlineNormalize(typed);
 
+
+    if (/\b(date|today|day|weekday|calendar|time|now)\b|දිනය|අද|දවස|වේලාව|වෙලාව|தேதி|இன்று|நாள்|நேரம்|மணி/i.test(typed)) {
+      const now = new Date();
+      const fmtDate = now.toLocaleDateString(undefined, {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+      const fmtTime = now.toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit'});
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'local timezone';
+      const wantsTime = /\b(time|now)\b|වේලාව|වෙලාව|நேரம்|மணி/i.test(typed);
+      const wantsDate = /\b(date|today|calendar)\b|දිනය|අද|தேதி|இன்று/i.test(typed);
+      const wantsDay = /\b(day|weekday)\b|දවස|நாள்/i.test(typed);
+      if (wantsTime && wantsDate) return `📅 Today is **${fmtDate}**.\n🕒 The current time is **${fmtTime}** (${tz}).`;
+      if (wantsTime && !wantsDate) return `🕒 The current time is **${fmtTime}** (${tz}).`;
+      if (wantsDay && !wantsDate) return `📅 Today is **${now.toLocaleDateString(undefined, {weekday:'long'})}**. The date is **${fmtDate}**.`;
+      return `📅 Today is **${fmtDate}**.`;
+    }
+
     if (images.length && !docs.length) {
       return `**Offline local mode**\n\nI can reply offline, but I cannot analyze new images without the online vision model. I can still help with image-label text, layout suggestions, or continue from saved chat memory.`;
     }
@@ -8879,7 +8894,7 @@ A strong website should include: hero section, clear navigation, services/featur
           'Content-Type': 'application/json',
           ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
         },
-        body: JSON.stringify({ messages: apiMessages(), ai_mode: currentMode(), workspace_id: activeWorkspaceId || null })
+        body: JSON.stringify({ messages: apiMessages(), ai_mode: currentMode(), workspace_id: activeWorkspaceId || null, client_timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone || null), client_now_iso: new Date().toISOString() })
       });
 
       if (!res.ok || !res.body) {
@@ -9728,7 +9743,7 @@ A strong website should include: hero section, clear navigation, services/featur
           'Content-Type': 'application/json',
           ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
         },
-        body: JSON.stringify({ messages: apiMessages(), ai_mode: currentMode(), workspace_id: activeWorkspaceId || null })
+        body: JSON.stringify({ messages: apiMessages(), ai_mode: currentMode(), workspace_id: activeWorkspaceId || null, client_timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone || null), client_now_iso: new Date().toISOString() })
       });
 
       if (!response.ok || !response.body) {
@@ -10116,7 +10131,7 @@ A strong website should include: hero section, clear navigation, services/featur
           'Content-Type': 'application/json',
           ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
         },
-        body: JSON.stringify({ messages: apiMessages(), ai_mode: currentMode(), workspace_id: activeWorkspaceId || null })
+        body: JSON.stringify({ messages: apiMessages(), ai_mode: currentMode(), workspace_id: activeWorkspaceId || null, client_timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone || null), client_now_iso: new Date().toISOString() })
       });
       if (!response.ok || !response.body) {
         const errData = await response.json().catch(() => ({}));
