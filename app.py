@@ -91,7 +91,14 @@ logger = logging.getLogger(__name__)
 # ── Lifespan (replaces deprecated @app.on_event) ─────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    validate_production_settings()
+    try:
+        validate_production_settings()
+    except RuntimeError as exc:
+        # Managed platforms otherwise tend to show only the downstream symptom
+        # ("nothing is listening on PORT"). Log the real preflight failure
+        # prominently without printing any configured secret values.
+        logger.critical("Production preflight failed; server will not become ready:\n%s", exc)
+        raise
     authmod.init_db()
     purge_stale_streams()
     mode = "TESTING (unlimited)" if IS_TESTING else "PRODUCTION (token tracking ON)"

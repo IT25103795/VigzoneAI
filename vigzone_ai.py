@@ -93,6 +93,13 @@ def _friendly_groq_error(status_code: int, body_text: str) -> str:
             return f"{base} Please try again in about {wait_str}. Vigzone will also try a backup model when available."
         return f"{base} Please wait a bit and try again. Vigzone will also try a backup model when available."
 
+    if status_code == 413 or "request too large" in inner_message.lower():
+        return (
+            "This request is larger than the selected Groq model can accept right now. "
+            "Vigzone reduced older context and the reply budget automatically, but the "
+            "current message may still need to be shortened."
+        )
+
     if "decommissioned" in inner_message.lower() or "no longer supported" in inner_message.lower():
         return (
             "Groq says the selected model is no longer supported. "
@@ -256,6 +263,23 @@ GROQ_BACKUP_MODELS = [
     for model in (m.strip() for m in _raw_backup_models.split(","))
     if model and model in ALLOWED_CHAT_MODELS
 ]
+
+# Backup models often have lower per-minute token limits than the primary
+# model. Bound the complete fallback request (prompt + requested completion),
+# then make one more conservative retry if Groq reports a smaller live limit.
+# These are request-shaping limits, not user quotas.
+FALLBACK_MAX_REQUEST_TOKENS = max(
+    4_000, _env_int("GROQ_FALLBACK_MAX_REQUEST_TOKENS", 7_000)
+)
+FALLBACK_MAX_COMPLETION_TOKENS = max(
+    512, _env_int("GROQ_FALLBACK_MAX_COMPLETION_TOKENS", 3_200)
+)
+FALLBACK_MIN_COMPLETION_TOKENS = max(
+    256, _env_int("GROQ_FALLBACK_MIN_COMPLETION_TOKENS", 512)
+)
+FALLBACK_RETRY_SAFETY_PERCENT = min(
+    90, max(50, _env_int("GROQ_FALLBACK_RETRY_SAFETY_PERCENT", 70))
+)
 
 # History compaction: keeps chats cheaper and faster by sending the latest turns
 # plus a compact deterministic summary of older turns instead of the full chat.
@@ -652,6 +676,240 @@ def estimate_messages_tokens(messages: list[dict]) -> int:
     return _estimate_tokens(" ".join(_message_content_as_text(m.get("content")) for m in messages))
 
 
+def _estimate_payload_prompt_tokens(messages: list[dict]) -> int:
+    """Conservative prompt estimate including message and image overhead."""
+
+    total = 0
+    for message in messages:
+        content = message.get("content")
+        total += _estimate_tokens(_message_content_as_text(content)) + 8
+        if isinstance(content, list):
+            total += 512 * sum(
+                1
+                for item in content
+                if isinstance(item, dict) and item.get("type") == "image_url"
+            )
+    return max(1, total)
+
+
+def _middle_truncate(text: str, max_chars: int) -> str:
+    """Keep the request's beginning and end while clearly marking a cut."""
+
+    if len(text) <= max_chars:
+        return text
+    marker = "\n\n[Older/extra context shortened by Vigzone to fit the model limit.]\n\n"
+    if max_chars <= len(marker) + 32:
+        return text[:max(0, max_chars)].rstrip()
+    usable = max_chars - len(marker)
+    head = max(1, int(usable * 0.72))
+    tail = max(1, usable - head)
+    return text[:head].rstrip() + marker + text[-tail:].lstrip()
+
+
+def _truncate_message_content(content, token_budget: int):
+    """Bound one message without removing attached images."""
+
+    char_budget = max(64, token_budget * 4)
+    if isinstance(content, str):
+        return _middle_truncate(content, char_budget)
+    if not isinstance(content, list):
+        return content
+
+    copied = [dict(item) if isinstance(item, dict) else item for item in content]
+    text_items = [item for item in copied if isinstance(item, dict) and item.get("type") == "text"]
+    if not text_items:
+        return copied
+    per_item = max(64, char_budget // len(text_items))
+    for item in text_items:
+        item["text"] = _middle_truncate(str(item.get("text", "")), per_item)
+    return copied
+
+
+def _constrain_payload(
+    payload: dict,
+    *,
+    max_request_tokens: int,
+    max_completion_tokens: int,
+) -> dict:
+    """Fit a payload below a provider request cap, preserving core safeguards.
+
+    The base system prompt and latest user message are kept. Older conversation
+    turns and optional retrieved context are removed first. Only then is the
+    latest user text shortened, and its beginning and end remain available.
+    """
+
+    request_cap = max(1_200, int(max_request_tokens))
+    completion_cap = max(256, int(max_completion_tokens))
+    constrained = dict(payload)
+    messages = []
+    for original in payload.get("messages") or []:
+        message = dict(original)
+        content = message.get("content")
+        if isinstance(content, list):
+            message["content"] = [
+                dict(item) if isinstance(item, dict) else item for item in content
+            ]
+        messages.append(message)
+
+    desired_completion = max(256, int(payload.get("max_completion_tokens") or 800))
+    minimum_completion = min(
+        desired_completion,
+        FALLBACK_MIN_COMPLETION_TOKENS,
+        max(256, request_cap // 3),
+    )
+
+    latest_user = next(
+        (message for message in reversed(messages) if message.get("role") == "user"),
+        None,
+    )
+    base_system = next(
+        (message for message in messages if message.get("role") == "system"),
+        None,
+    )
+    essential = [message for message in (base_system, latest_user) if message is not None]
+    essential_tokens = _estimate_payload_prompt_tokens(essential)
+    wanted_prompt = min(essential_tokens, max(256, request_cap - minimum_completion))
+    completion_tokens = min(
+        desired_completion,
+        completion_cap,
+        max(minimum_completion, request_cap - wanted_prompt),
+    )
+    completion_tokens = max(256, min(completion_tokens, request_cap - 256))
+    prompt_budget = max(256, request_cap - completion_tokens)
+
+    # Remove old chat turns before sacrificing current instructions or sources.
+    while _estimate_payload_prompt_tokens(messages) > prompt_budget:
+        old_turn = next(
+            (
+                message
+                for message in messages
+                if message.get("role") != "system" and message is not latest_user
+            ),
+            None,
+        )
+        if old_turn is None:
+            break
+        messages.remove(old_turn)
+
+    # Remove optional system additions in least-essential order. The first/base
+    # system prompt is never removed, so safety and truthfulness rules survive.
+    def optional_priority(message: dict) -> int:
+        text = _message_content_as_text(message.get("content"))
+        if "UNTRUSTED CONVERSATION SUMMARY" in text:
+            return 0
+        if "UNTRUSTED IMAGE SEARCH" in text:
+            return 1
+        if "UNTRUSTED LIVE SOURCE" in text:
+            return 2
+        if "UNTRUSTED PRIVATE USER CONTEXT" in text:
+            return 3
+        if text.startswith("The user's name is"):
+            return 5
+        return 4
+
+    while _estimate_payload_prompt_tokens(messages) > prompt_budget:
+        optional = [
+            message
+            for message in messages
+            if message.get("role") == "system" and message is not base_system
+        ]
+        if not optional:
+            break
+        target = min(optional, key=optional_priority)
+        current_total = _estimate_payload_prompt_tokens(messages)
+        target_tokens = _estimate_payload_prompt_tokens([target])
+        excess = current_total - prompt_budget
+        keep_tokens = target_tokens - excess - 8
+        if keep_tokens >= 96:
+            before = _message_content_as_text(target.get("content"))
+            target["content"] = _truncate_message_content(
+                target.get("content"), max(16, keep_tokens - 8)
+            )
+            after = _message_content_as_text(target.get("content"))
+            if len(after) < len(before):
+                continue
+        messages.remove(target)
+
+    if latest_user is not None and _estimate_payload_prompt_tokens(messages) > prompt_budget:
+        without_latest = [message for message in messages if message is not latest_user]
+        available = max(
+            16,
+            prompt_budget - _estimate_payload_prompt_tokens(without_latest) - 8,
+        )
+        latest_user["content"] = _truncate_message_content(
+            latest_user.get("content"), available
+        )
+
+    # Estimation can still exceed the cap if the mandatory system prompt alone
+    # is unusually large. Reduce output headroom before ever trimming it.
+    prompt_tokens = _estimate_payload_prompt_tokens(messages)
+    if prompt_tokens + completion_tokens > request_cap:
+        completion_tokens = max(256, request_cap - prompt_tokens)
+
+    constrained["messages"] = messages
+    constrained["max_completion_tokens"] = completion_tokens
+    return constrained
+
+
+def _provider_request_too_large(status_code: int, body_text: str) -> bool:
+    lowered = (body_text or "").lower()
+    return status_code == 413 or (
+        status_code in {400, 422}
+        and any(
+            phrase in lowered
+            for phrase in (
+                "request too large",
+                "payload too large",
+                "context length",
+                "too many tokens",
+                "tokens per minute",
+            )
+        )
+    )
+
+
+def _provider_token_limit(body_text: str) -> Optional[int]:
+    """Extract Groq's reported TPM/request limit without retaining raw details."""
+
+    try:
+        parsed = json.loads(body_text)
+        message = str(parsed.get("error", {}).get("message", ""))
+    except (json.JSONDecodeError, AttributeError):
+        message = body_text or ""
+    match = re.search(r"\bLimit\s+([\d,]+)\b", message, flags=re.IGNORECASE)
+    if not match:
+        return None
+    try:
+        return int(match.group(1).replace(",", ""))
+    except ValueError:
+        return None
+
+
+def _compact_retry_payload(payload: dict, body_text: str) -> dict:
+    """Create one substantially smaller retry after a provider size error."""
+
+    live_limit = _provider_token_limit(body_text)
+    if live_limit:
+        request_cap = int(live_limit * FALLBACK_RETRY_SAFETY_PERCENT / 100)
+        request_cap = min(FALLBACK_MAX_REQUEST_TOKENS, request_cap)
+    else:
+        request_cap = int(
+            FALLBACK_MAX_REQUEST_TOKENS * FALLBACK_RETRY_SAFETY_PERCENT / 100
+        )
+    request_cap = max(1_200, request_cap)
+    current_completion = int(payload.get("max_completion_tokens") or 800)
+    completion_cap = min(
+        current_completion,
+        FALLBACK_MAX_COMPLETION_TOKENS,
+        max(256, request_cap // 3),
+    )
+    return _constrain_payload(
+        payload,
+        max_request_tokens=request_cap,
+        max_completion_tokens=completion_cap,
+    )
+
+
 def _compact_history_for_model(messages: list[dict]) -> tuple[list[dict], str]:
     """Return (recent_messages, summary_block) to keep long chats within budget.
 
@@ -712,7 +970,7 @@ def _model_candidates(requested_model: str, contains_image: bool = False) -> lis
 
 def _should_try_fallback(status_code: int) -> bool:
     """Only fallback for model/rate/server problems, never invalid keys."""
-    return status_code in {404, 408, 409, 429, 500, 502, 503, 504}
+    return status_code in {404, 408, 409, 413, 429, 500, 502, 503, 504}
 
 
 def _untrusted_context(label: str, text: str, max_chars: int = 18_000) -> str:
@@ -728,7 +986,15 @@ def _untrusted_context(label: str, text: str, max_chars: int = 18_000) -> str:
     )
 
 
-async def _build_payload(messages: list[dict], model: str, stream: bool, user_name: Optional[str] = None, user_learning_context: str = "") -> dict:
+async def _build_payload(
+    messages: list[dict],
+    model: str,
+    stream: bool,
+    user_name: Optional[str] = None,
+    user_learning_context: str = "",
+    max_request_tokens: Optional[int] = None,
+    max_completion_tokens: Optional[int] = None,
+) -> dict:
     # Keep latest turns verbatim and compact older turns to reduce token spend.
     messages, history_summary_block = _compact_history_for_model(messages)
     # The caller already chooses the correct candidate model. Do not force the
@@ -839,6 +1105,17 @@ async def _build_payload(messages: list[dict], model: str, stream: bool, user_na
     }
     if stream:
         payload["stream_options"] = {"include_usage": True}
+
+    if max_request_tokens is not None:
+        payload = _constrain_payload(
+            payload,
+            max_request_tokens=max_request_tokens,
+            max_completion_tokens=(
+                max_completion_tokens
+                if max_completion_tokens is not None
+                else payload["max_completion_tokens"]
+            ),
+        )
 
     return payload
 
@@ -1124,177 +1401,210 @@ async def stream_chat(
     effective_provider_label = "groq"
     client = _get_client()
     last_error: Optional[VigzoneAIError] = None
-    candidates = _model_candidates(model, contains_image=_contains_image(messages))
+    contains_image = _contains_image(messages)
+    candidates = _model_candidates(model, contains_image=contains_image)
 
-    for candidate_model in candidates:
+    for candidate_index, candidate_model in enumerate(candidates):
+        is_fallback = candidate_index > 0 and not contains_image
         payload = await _build_payload(
             messages,
             candidate_model,
             stream=True,
             user_name=user_name,
             user_learning_context=user_learning_context,
+            max_request_tokens=(FALLBACK_MAX_REQUEST_TOKENS if is_fallback else None),
+            max_completion_tokens=(FALLBACK_MAX_COMPLETION_TOKENS if is_fallback else None),
         )
+        size_retry_used = False
 
-        # Estimate prompt tokens for tracking
-        prompt_text = " ".join(
-            _message_content_as_text(m.get("content", ""))
-            for m in payload["messages"]
-        )
-        prompt_tokens = _estimate_tokens(prompt_text)
-        emitted_content = False
-        provider_usage: Optional[dict] = None
-        provider_request_id = ""
+        while True:
+            prompt_tokens = _estimate_payload_prompt_tokens(payload["messages"])
+            emitted_content = False
+            provider_usage: Optional[dict] = None
+            provider_request_id = ""
 
-        try:
-            async with client.stream(
-                "POST",
-                effective_api_url,
-                json=payload,
-                headers={"Content-Type": "application/json", **effective_headers},
-            ) as resp:
-                _capture_provider_rate_headers(user_id, resp.headers)
-                provider_request_id = (
-                    resp.headers.get("x-request-id")
-                    or resp.headers.get("request-id")
-                    or ""
-                )
-                if resp.status_code == 401:
-                    await resp.aread()
-                    raise VigzoneAIError(
-                        "Groq rejected this API key. "
-                        + ("Check the key you entered in Settings." if using_override else "Check GROQ_API_KEY in .env.")
+            try:
+                async with client.stream(
+                    "POST",
+                    effective_api_url,
+                    json=payload,
+                    headers={"Content-Type": "application/json", **effective_headers},
+                ) as resp:
+                    _capture_provider_rate_headers(user_id, resp.headers)
+                    provider_request_id = (
+                        resp.headers.get("x-request-id")
+                        or resp.headers.get("request-id")
+                        or ""
                     )
-
-                if resp.status_code != 200:
-                    body = await resp.aread()
-                    body_text = body.decode(errors="ignore")
-                    err = VigzoneAIError(_friendly_groq_error(resp.status_code, body_text))
-                    last_error = err
-                    if (
-                        _should_try_fallback(resp.status_code)
-                        or "decommissioned" in body_text.lower()
-                        or "no longer supported" in body_text.lower()
-                    ) and candidate_model != candidates[-1]:
-                        logger.warning(
-                            "Groq model %s failed with status %s; trying fallback model %s",
-                            payload.get("model"), resp.status_code, candidates[candidates.index(candidate_model) + 1],
+                    if resp.status_code == 401:
+                        await resp.aread()
+                        raise VigzoneAIError(
+                            "Groq rejected this API key. "
+                            + (
+                                "Check the key you entered in Settings."
+                                if using_override
+                                else "Check GROQ_API_KEY in .env."
+                            )
                         )
-                        continue
-                    raise err
 
-                full_text = ""
-                yielded_len = 0
-                tokens_since_check = 0
+                    if resp.status_code != 200:
+                        body = await resp.aread()
+                        body_text = body.decode(errors="ignore")
+                        too_large = _provider_request_too_large(
+                            resp.status_code, body_text
+                        )
+                        if too_large and not size_retry_used and not contains_image:
+                            payload = _compact_retry_payload(payload, body_text)
+                            size_retry_used = True
+                            logger.warning(
+                                "Groq model %s rejected request size; retrying once with "
+                                "a compact payload",
+                                candidate_model,
+                            )
+                            continue
 
-                async for line in resp.aiter_lines():
-                    if stream_id:
-                        if stream_manager.is_cancelled(stream_id):
+                        err = VigzoneAIError(
+                            _friendly_groq_error(resp.status_code, body_text)
+                        )
+                        last_error = err
+                        can_fallback = (
+                            _should_try_fallback(resp.status_code)
+                            or "decommissioned" in body_text.lower()
+                            or "no longer supported" in body_text.lower()
+                        ) and candidate_index < len(candidates) - 1
+                        if can_fallback:
+                            logger.warning(
+                                "Groq model %s failed with status %s; trying fallback "
+                                "model %s",
+                                payload.get("model"),
+                                resp.status_code,
+                                candidates[candidate_index + 1],
+                            )
                             break
-                        await stream_manager.wait_if_paused(stream_id)
-                        if stream_manager.is_cancelled(stream_id):
+                        raise err
+
+                    full_text = ""
+                    yielded_len = 0
+                    tokens_since_check = 0
+
+                    async for line in resp.aiter_lines():
+                        if stream_id:
+                            if stream_manager.is_cancelled(stream_id):
+                                break
+                            await stream_manager.wait_if_paused(stream_id)
+                            if stream_manager.is_cancelled(stream_id):
+                                break
+
+                        if not line or not line.startswith("data: "):
+                            continue
+                        data = line[len("data: "):]
+                        if data.strip() == "[DONE]":
                             break
+                        try:
+                            chunk = json.loads(data)
+                        except json.JSONDecodeError:
+                            continue
 
-                    if not line or not line.startswith("data: "):
-                        continue
-                    data = line[len("data: "):]
-                    if data.strip() == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(data)
-                    except json.JSONDecodeError:
-                        continue
+                        chunk_usage = chunk.get("usage")
+                        if not isinstance(chunk_usage, dict):
+                            chunk_usage = (chunk.get("x_groq") or {}).get("usage")
+                        if isinstance(chunk_usage, dict):
+                            provider_usage = chunk_usage
 
-                    chunk_usage = chunk.get("usage")
-                    if not isinstance(chunk_usage, dict):
-                        chunk_usage = (chunk.get("x_groq") or {}).get("usage")
-                    if isinstance(chunk_usage, dict):
-                        provider_usage = chunk_usage
+                        choices = chunk.get("choices") or [{}]
+                        delta = choices[0].get("delta", {})
+                        content = delta.get("content")
+                        if not content:
+                            continue
 
-                    choices = chunk.get("choices") or [{}]
-                    delta = choices[0].get("delta", {})
-                    content = delta.get("content")
-                    if not content:
-                        continue
+                        full_text += content
+                        tokens_since_check += 1
 
-                    full_text += content
-                    tokens_since_check += 1
-
-                    if tokens_since_check >= 40:
-                        tokens_since_check = 0
-                        clean = trim_degeneration_tail(full_text)
-                        if len(clean) < len(full_text.rstrip()):
-                            if len(clean) > yielded_len:
-                                piece = clean[yielded_len:]
-                                yielded_len = len(clean)
-                                emitted_content = True
-                                yield piece
-                            logger.warning("Trimmed echo loop from streamed reply.")
-                            break
-                        if len(full_text) > 200 and is_degenerate_text(full_text):
+                        if tokens_since_check >= 40:
+                            tokens_since_check = 0
                             clean = trim_degeneration_tail(full_text)
-                            if len(clean) > yielded_len:
-                                piece = clean[yielded_len:]
-                                yielded_len = len(clean)
-                                emitted_content = True
-                                yield piece
-                            else:
-                                emitted_content = True
-                                yield "\n\n_(Stopped early — I started repeating myself. Mind rephrasing?)_"
-                            break
+                            if len(clean) < len(full_text.rstrip()):
+                                if len(clean) > yielded_len:
+                                    piece = clean[yielded_len:]
+                                    yielded_len = len(clean)
+                                    emitted_content = True
+                                    yield piece
+                                logger.warning("Trimmed echo loop from streamed reply.")
+                                break
+                            if len(full_text) > 200 and is_degenerate_text(full_text):
+                                clean = trim_degeneration_tail(full_text)
+                                if len(clean) > yielded_len:
+                                    piece = clean[yielded_len:]
+                                    yielded_len = len(clean)
+                                    emitted_content = True
+                                    yield piece
+                                else:
+                                    emitted_content = True
+                                    yield "\n\n_(Stopped early — I started repeating myself. Mind rephrasing?)_"
+                                break
 
-                    if len(full_text) > yielded_len:
-                        piece = full_text[yielded_len:]
-                        yielded_len = len(full_text)
-                        emitted_content = True
-                        yield piece
+                        if len(full_text) > yielded_len:
+                            piece = full_text[yielded_len:]
+                            yielded_len = len(full_text)
+                            emitted_content = True
+                            yield piece
 
-                if stream_id and stream_manager.is_cancelled(stream_id):
-                    return
-                if not full_text.strip():
-                    last_error = VigzoneAIError(
-                        "Groq returned an empty completion."
-                    )
-                    if candidate_model != candidates[-1]:
-                        logger.warning(
-                            "Groq model %s returned no visible content; trying fallback model %s",
-                            candidate_model,
-                            candidates[candidates.index(candidate_model) + 1],
+                    if stream_id and stream_manager.is_cancelled(stream_id):
+                        return
+                    if not full_text.strip():
+                        last_error = VigzoneAIError(
+                            "Groq returned an empty completion."
                         )
-                        continue
-                    raise last_error
+                        if candidate_index < len(candidates) - 1:
+                            logger.warning(
+                                "Groq model %s returned no visible content; trying "
+                                "fallback model %s",
+                                candidate_model,
+                                candidates[candidate_index + 1],
+                            )
+                            break
+                        raise last_error
 
-                if user_id and not IS_TESTING:
-                    prompt_used, completion_used, estimated = _usage_numbers(
-                        provider_usage,
-                        prompt_tokens,
-                        _estimate_tokens(full_text),
-                    )
-                    track_token_usage(
-                        user_id,
-                        prompt_used,
-                        completion_used,
-                        provider=effective_provider_label,
-                        estimated=estimated,
-                        model=candidate_model,
-                        provider_request_id=provider_request_id,
-                    )
-                return
+                    if user_id and not IS_TESTING:
+                        prompt_used, completion_used, estimated = _usage_numbers(
+                            provider_usage,
+                            prompt_tokens,
+                            _estimate_tokens(full_text),
+                        )
+                        track_token_usage(
+                            user_id,
+                            prompt_used,
+                            completion_used,
+                            provider=effective_provider_label,
+                            estimated=estimated,
+                            model=candidate_model,
+                            provider_request_id=provider_request_id,
+                        )
+                    return
 
-        except httpx.RequestError as e:
-            if emitted_content:
-                raise VigzoneAIError(
-                    "The connection to Groq was interrupted after the response started. "
-                    "Retry the message to get a complete answer."
-                ) from e
-            last_error = VigzoneAIError(
-                "Could not reach Groq. Check the server's internet connection "
-                + ("and the API key you entered in Settings" if using_override else "and GROQ_API_KEY")
-                + "."
-            )
-            if candidate_model != candidates[-1]:
-                logger.warning("Groq request failed on %s; trying fallback: %s", candidate_model, e)
-                continue
-            raise last_error from e
+            except httpx.RequestError as e:
+                if emitted_content:
+                    raise VigzoneAIError(
+                        "The connection to Groq was interrupted after the response started. "
+                        "Retry the message to get a complete answer."
+                    ) from e
+                last_error = VigzoneAIError(
+                    "Could not reach Groq. Check the server's internet connection "
+                    + (
+                        "and the API key you entered in Settings"
+                        if using_override
+                        else "and GROQ_API_KEY"
+                    )
+                    + "."
+                )
+                if candidate_index < len(candidates) - 1:
+                    logger.warning(
+                        "Groq request failed on %s; trying fallback: %s",
+                        candidate_model,
+                        type(e).__name__,
+                    )
+                    break
+                raise last_error from e
 
     if last_error:
         raise last_error
@@ -1319,105 +1629,144 @@ async def chat_once(
     effective_provider_label = "groq"
     client = _get_client()
     last_error: Optional[VigzoneAIError] = None
-    candidates = _model_candidates(model, contains_image=_contains_image(messages))
+    contains_image = _contains_image(messages)
+    candidates = _model_candidates(model, contains_image=contains_image)
 
-    for candidate_model in candidates:
+    for candidate_index, candidate_model in enumerate(candidates):
+        is_fallback = candidate_index > 0 and not contains_image
         payload = await _build_payload(
             messages,
             candidate_model,
             stream=False,
             user_name=user_name,
             user_learning_context=user_learning_context,
+            max_request_tokens=(FALLBACK_MAX_REQUEST_TOKENS if is_fallback else None),
+            max_completion_tokens=(FALLBACK_MAX_COMPLETION_TOKENS if is_fallback else None),
         )
-        prompt_text = " ".join(
-            _message_content_as_text(m.get("content", ""))
-            for m in payload["messages"]
-        )
-        prompt_tokens = _estimate_tokens(prompt_text)
+        size_retry_used = False
 
-        try:
-            resp = await client.post(
-                effective_api_url,
-                json=payload,
-                headers={"Content-Type": "application/json", **effective_headers},
-            )
-        except httpx.RequestError as e:
-            last_error = VigzoneAIError(
-                "Could not reach Groq. Check the server's internet connection "
-                + ("and the API key you entered in Settings" if using_override else "and GROQ_API_KEY")
-                + "."
-            )
-            if candidate_model != candidates[-1]:
-                logger.warning("Groq request failed on %s; trying fallback: %s", candidate_model, e)
-                continue
-            raise last_error from e
-
-        _capture_provider_rate_headers(user_id, resp.headers)
-        provider_request_id = (
-            resp.headers.get("x-request-id")
-            or resp.headers.get("request-id")
-            or ""
-        )
-        if resp.status_code == 401:
-            raise VigzoneAIError(
-                "Groq rejected this API key. "
-                + ("Check the key you entered in Settings." if using_override else "Check GROQ_API_KEY in .env.")
-            )
-        if resp.status_code != 200:
-            err = VigzoneAIError(_friendly_groq_error(resp.status_code, resp.text))
-            last_error = err
-            if (_should_try_fallback(resp.status_code) or ('decommissioned' in resp.text.lower() or 'no longer supported' in resp.text.lower())) and candidate_model != candidates[-1]:
-                logger.warning(
-                    "Groq model %s failed with status %s; trying fallback model %s",
-                    payload.get("model"), resp.status_code, candidates[candidates.index(candidate_model) + 1],
+        while True:
+            prompt_tokens = _estimate_payload_prompt_tokens(payload["messages"])
+            try:
+                resp = await client.post(
+                    effective_api_url,
+                    json=payload,
+                    headers={"Content-Type": "application/json", **effective_headers},
                 )
-                continue
-            raise err
+            except httpx.RequestError as e:
+                last_error = VigzoneAIError(
+                    "Could not reach Groq. Check the server's internet connection "
+                    + (
+                        "and the API key you entered in Settings"
+                        if using_override
+                        else "and GROQ_API_KEY"
+                    )
+                    + "."
+                )
+                if candidate_index < len(candidates) - 1:
+                    logger.warning(
+                        "Groq request failed on %s; trying fallback: %s",
+                        candidate_model,
+                        type(e).__name__,
+                    )
+                    break
+                raise last_error from e
 
-        try:
-            data = resp.json()
-        except ValueError:
-            data = {}
-        choices = data.get("choices") if isinstance(data, dict) else []
-        if not isinstance(choices, list):
-            choices = []
-        if not choices:
-            last_error = VigzoneAIError("Groq returned an invalid or empty completion.")
-            if candidate_model != candidates[-1]:
-                continue
-            raise last_error
-        first_choice = choices[0] if isinstance(choices[0], dict) else {}
-        message = first_choice.get("message") if isinstance(first_choice, dict) else {}
-        reply = message.get("content") if isinstance(message, dict) else None
-        if not isinstance(reply, str) or not reply.strip():
-            last_error = VigzoneAIError("Groq returned an empty completion.")
-            if candidate_model != candidates[-1]:
-                continue
-            raise last_error
-        clean = trim_degeneration_tail(reply)
-        if clean != reply.rstrip():
-            logger.warning("Trimmed echo loop from non-streaming completion.")
-            reply = clean
-        if is_degenerate_text(reply):
-            reply = clean or reply[:max(0, len(reply) // 3)].rstrip()
-            reply += "\n\n_(Cut short — I started repeating myself. Mind rephrasing?)_"
+            _capture_provider_rate_headers(user_id, resp.headers)
+            provider_request_id = (
+                resp.headers.get("x-request-id")
+                or resp.headers.get("request-id")
+                or ""
+            )
+            if resp.status_code == 401:
+                raise VigzoneAIError(
+                    "Groq rejected this API key. "
+                    + (
+                        "Check the key you entered in Settings."
+                        if using_override
+                        else "Check GROQ_API_KEY in .env."
+                    )
+                )
+            if resp.status_code != 200:
+                too_large = _provider_request_too_large(
+                    resp.status_code, resp.text
+                )
+                if too_large and not size_retry_used and not contains_image:
+                    payload = _compact_retry_payload(payload, resp.text)
+                    size_retry_used = True
+                    logger.warning(
+                        "Groq model %s rejected request size; retrying once with "
+                        "a compact payload",
+                        candidate_model,
+                    )
+                    continue
 
-        if user_id and not IS_TESTING:
-            prompt_used, completion_used, estimated = _usage_numbers(
-                data.get("usage") or (data.get("x_groq") or {}).get("usage"),
-                prompt_tokens,
-                _estimate_tokens(reply),
-            )
-            track_token_usage(
-                user_id,
-                prompt_used,
-                completion_used,
-                provider=effective_provider_label,
-                estimated=estimated,
-                model=candidate_model,
-                provider_request_id=provider_request_id,
-            )
-        return reply
+                err = VigzoneAIError(
+                    _friendly_groq_error(resp.status_code, resp.text)
+                )
+                last_error = err
+                can_fallback = (
+                    _should_try_fallback(resp.status_code)
+                    or "decommissioned" in resp.text.lower()
+                    or "no longer supported" in resp.text.lower()
+                ) and candidate_index < len(candidates) - 1
+                if can_fallback:
+                    logger.warning(
+                        "Groq model %s failed with status %s; trying fallback "
+                        "model %s",
+                        payload.get("model"),
+                        resp.status_code,
+                        candidates[candidate_index + 1],
+                    )
+                    break
+                raise err
+
+            try:
+                data = resp.json()
+            except ValueError:
+                data = {}
+            choices = data.get("choices") if isinstance(data, dict) else []
+            if not isinstance(choices, list):
+                choices = []
+            if not choices:
+                last_error = VigzoneAIError(
+                    "Groq returned an invalid or empty completion."
+                )
+                if candidate_index < len(candidates) - 1:
+                    break
+                raise last_error
+            first_choice = choices[0] if isinstance(choices[0], dict) else {}
+            message = first_choice.get("message") if isinstance(first_choice, dict) else {}
+            reply = message.get("content") if isinstance(message, dict) else None
+            if not isinstance(reply, str) or not reply.strip():
+                last_error = VigzoneAIError("Groq returned an empty completion.")
+                if candidate_index < len(candidates) - 1:
+                    break
+                raise last_error
+            clean = trim_degeneration_tail(reply)
+            if clean != reply.rstrip():
+                logger.warning("Trimmed echo loop from non-streaming completion.")
+                reply = clean
+            if is_degenerate_text(reply):
+                reply = clean or reply[:max(0, len(reply) // 3)].rstrip()
+                reply += "\n\n_(Cut short — I started repeating myself. Mind rephrasing?)_"
+
+            if user_id and not IS_TESTING:
+                prompt_used, completion_used, estimated = _usage_numbers(
+                    data.get("usage") or (data.get("x_groq") or {}).get("usage"),
+                    prompt_tokens,
+                    _estimate_tokens(reply),
+                )
+                track_token_usage(
+                    user_id,
+                    prompt_used,
+                    completion_used,
+                    provider=effective_provider_label,
+                    estimated=estimated,
+                    model=candidate_model,
+                    provider_request_id=provider_request_id,
+                )
+            return reply
 
     if last_error:
         raise last_error
