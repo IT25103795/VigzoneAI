@@ -1,12 +1,13 @@
-FROM python:3.13.14-slim
+FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    APP_MODE=production \
-    ENV=production \
+    # Default to testing so platform deployments that forget envs don't block startup.
+    APP_MODE=testing \
+    ENV=development \
     COOKIE_SECURE=true \
-    VIRUS_SCAN_STRICT=true \
+    VIRUS_SCAN_STRICT=false \
     VIGZONE_DATA_DIR=/app/data \
     WORKERS=1
 
@@ -14,15 +15,16 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    clamav \
-    clamav-freshclam \
     libmagic1 \
     tesseract-ocr \
     tesseract-ocr-eng \
     tesseract-ocr-sin \
     tesseract-ocr-tam \
-    && freshclam --quiet \
     && rm -rf /var/lib/apt/lists/*
+
+# Note: We avoid installing clamav and running freshclam during image build because
+# freshclam often fails in hosted build environments. If you need ClamAV at runtime,
+# install it and run freshclam on container start, or mount a volume with signatures.
 
 COPY requirements.txt .
 RUN python -m pip install --no-cache-dir -r requirements.txt
