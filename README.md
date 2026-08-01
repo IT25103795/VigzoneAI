@@ -7,6 +7,7 @@ This release removes demo-only product behavior. Features either call a real bac
 ## Included
 
 - Streaming Groq chat with server-side model allowlists and exact usage capture when the provider reports it.
+- Adaptive backup-model request shaping with bounded replies, deterministic context compaction, and one safe retry after provider TPM/payload overflow.
 - Per-user accounts, hash-at-rest sessions, password reset/verification email, Google sign-in, account export, and account deletion.
 - Durable admin roles with a secure bootstrap path. An unverified signup cannot claim admin access by using an allowlisted email.
 - Private Learning Center memory. Only memories explicitly saved by the signed-in user enter that user's prompts.

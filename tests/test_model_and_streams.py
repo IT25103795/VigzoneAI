@@ -150,6 +150,181 @@ def test_non_streaming_malformed_completion_uses_backup_model(monkeypatch):
     assert client.calls == 2
 
 
+def test_streaming_rate_limit_uses_bounded_fallback_and_compact_retry(monkeypatch):
+    import vigzone_ai
+
+    async def payload(_messages, model, stream, **kwargs):
+        built = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": "safety rules " * 900},
+                {"role": "assistant", "content": "old context " * 1200},
+                {"role": "user", "content": "build the requested site " * 700},
+            ],
+            "stream": stream,
+            "max_completion_tokens": 8192,
+        }
+        if kwargs.get("max_request_tokens"):
+            built = vigzone_ai._constrain_payload(
+                built,
+                max_request_tokens=kwargs["max_request_tokens"],
+                max_completion_tokens=kwargs["max_completion_tokens"],
+            )
+        return built
+
+    class Response:
+        headers = httpx.Headers()
+
+        def __init__(self, status_code, body="", lines=None):
+            self.status_code = status_code
+            self.body = body.encode()
+            self.lines = lines or []
+
+        async def aread(self):
+            return self.body
+
+        async def aiter_lines(self):
+            for line in self.lines:
+                yield line
+
+    class Context:
+        def __init__(self, response):
+            self.response = response
+
+        async def __aenter__(self):
+            return self.response
+
+        async def __aexit__(self, *_args):
+            return False
+
+    class Client:
+        def __init__(self):
+            self.responses = [
+                Response(429, '{"error":{"message":"rate limited"}}'),
+                Response(
+                    413,
+                    '{"error":{"message":"Request too large for model on tokens per minute '
+                    '(TPM): Limit 8000, Requested 10025 in organization org_private"}}',
+                ),
+                Response(
+                    200,
+                    lines=[
+                        'data: {"choices":[{"delta":{"content":"compact answer"}}]}',
+                        "data: [DONE]",
+                    ],
+                ),
+            ]
+            self.payloads = []
+
+        def stream(self, *_args, **kwargs):
+            self.payloads.append(kwargs["json"])
+            return Context(self.responses[len(self.payloads) - 1])
+
+    client = Client()
+    monkeypatch.setattr(vigzone_ai, "_build_payload", payload)
+    monkeypatch.setattr(
+        vigzone_ai,
+        "_model_candidates",
+        lambda *_args, **_kwargs: ["primary", "backup"],
+    )
+    monkeypatch.setattr(vigzone_ai, "_get_client", lambda: client)
+
+    async def collect():
+        return "".join(
+            [
+                chunk
+                async for chunk in vigzone_ai.stream_chat(
+                    [{"role": "user", "content": "build a site"}]
+                )
+            ]
+        )
+
+    assert asyncio.run(collect()) == "compact answer"
+    assert len(client.payloads) == 3
+    fallback = client.payloads[1]
+    compact_retry = client.payloads[2]
+    fallback_total = (
+        vigzone_ai._estimate_payload_prompt_tokens(fallback["messages"])
+        + fallback["max_completion_tokens"]
+    )
+    retry_total = (
+        vigzone_ai._estimate_payload_prompt_tokens(compact_retry["messages"])
+        + compact_retry["max_completion_tokens"]
+    )
+    assert fallback["model"] == compact_retry["model"] == "backup"
+    assert fallback_total <= vigzone_ai.FALLBACK_MAX_REQUEST_TOKENS
+    assert retry_total < fallback_total
+
+
+def test_non_streaming_payload_overflow_retries_once_without_leaking_provider_details(
+    monkeypatch,
+):
+    import vigzone_ai
+
+    raw_error = (
+        '{"error":{"message":"Request too large: Limit 8000, Requested 10025 '
+        'for organization org_secret. Upgrade at https://console.groq.com/private"}}'
+    )
+
+    async def payload(_messages, model, stream, **_kwargs):
+        return {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": "rules " * 1200},
+                {"role": "user", "content": "request " * 1800},
+            ],
+            "stream": stream,
+            "max_completion_tokens": 8192,
+        }
+
+    class Response:
+        headers = httpx.Headers()
+
+        def __init__(self, status_code, text, body=None):
+            self.status_code = status_code
+            self.text = text
+            self.body = body
+
+        def json(self):
+            return self.body
+
+    class Client:
+        def __init__(self):
+            self.payloads = []
+
+        async def post(self, *_args, **kwargs):
+            self.payloads.append(kwargs["json"])
+            if len(self.payloads) == 1:
+                return Response(413, raw_error)
+            return Response(
+                200,
+                "",
+                {"choices": [{"message": {"content": "recovered answer"}}]},
+            )
+
+    client = Client()
+    monkeypatch.setattr(vigzone_ai, "_build_payload", payload)
+    monkeypatch.setattr(vigzone_ai, "_model_candidates", lambda *_a, **_k: ["only"])
+    monkeypatch.setattr(vigzone_ai, "_get_client", lambda: client)
+
+    reply = asyncio.run(
+        vigzone_ai.chat_once([{"role": "user", "content": "large request"}])
+    )
+    friendly = vigzone_ai._friendly_groq_error(413, raw_error)
+
+    assert reply == "recovered answer"
+    assert len(client.payloads) == 2
+    assert (
+        vigzone_ai._estimate_payload_prompt_tokens(client.payloads[1]["messages"])
+        + client.payloads[1]["max_completion_tokens"]
+        < vigzone_ai._estimate_payload_prompt_tokens(client.payloads[0]["messages"])
+        + client.payloads[0]["max_completion_tokens"]
+    )
+    assert "org_secret" not in friendly
+    assert "console.groq.com" not in friendly
+    assert "larger than" in friendly
+
+
 def test_stream_controls_are_owner_bound_and_pause_is_async():
     import stream_manager
 
