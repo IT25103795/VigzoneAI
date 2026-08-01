@@ -8,13 +8,18 @@ import sys
 import argparse
 import subprocess
 
+from dotenv import load_dotenv
+
 
 def setup_environment():
     """Setup environment variables"""
     os.environ.setdefault('ENV', 'development')
+    os.environ.setdefault('APP_MODE', 'testing')
     os.environ.setdefault('PORT', '8000')
     os.environ.setdefault('LOG_LEVEL', 'INFO')
     os.environ.setdefault('CORS_ORIGINS', 'http://localhost:8000,http://localhost:3000')
+    os.environ.setdefault('COOKIE_SECURE', 'false')
+    os.environ.setdefault('VIRUS_SCAN_STRICT', 'false')
 
 
 def run_dev_server():
@@ -37,11 +42,14 @@ def run_prod_server():
     """Run production server with uvicorn workers"""
     setup_environment()
     os.environ['ENV'] = 'production'
+    os.environ['APP_MODE'] = 'production'
 
     print("🚀 Starting Vigzone AI in PRODUCTION mode...")
     print("📍 Server: http://0.0.0.0:8000")
 
-    workers = int(os.getenv('WORKERS', '4'))
+    workers = int(os.getenv('WORKERS', '1'))
+    if workers != 1:
+        raise SystemExit('Production requires --workers 1 with the current SQLite/stream architecture.')
     subprocess.run([
         sys.executable, '-m', 'uvicorn',
         'app:app',
@@ -54,7 +62,11 @@ def run_prod_server():
 
 def check_dependencies():
     """Check if all dependencies are installed"""
-    required = ['fastapi', 'uvicorn', 'pydantic', 'httpx', 'dotenv', 'multipart', 'PIL', 'pypdf', 'docx']
+    required = [
+        'fastapi', 'uvicorn', 'pydantic', 'httpx', 'dotenv', 'multipart',
+        'PIL', 'pypdf', 'pypdfium2', 'pytesseract', 'docx', 'openpyxl',
+        'pptx', 'magic', 'cryptography',
+    ]
     missing = []
 
     for pkg in required:
@@ -65,7 +77,7 @@ def check_dependencies():
 
     if missing:
         print(f"❌ Missing dependencies: {', '.join(missing)}")
-        print(f"   Install with: pip install -r requirements.txt")
+        print("   Install with: pip install -r requirements.txt")
         return False
 
     print("✓ All dependencies installed!")
@@ -84,6 +96,7 @@ def check_dependencies():
 
 
 def main():
+    load_dotenv()
     parser = argparse.ArgumentParser(
         description='Vigzone AI Launcher',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -97,7 +110,7 @@ Examples:
 
     parser.add_argument('command', choices=['dev', 'prod', 'check'], help='Command to run')
     parser.add_argument('--port', type=int, default=8000, help='Port to run server on (default: 8000)')
-    parser.add_argument('--workers', type=int, default=4, help='Number of production workers (default: 4)')
+    parser.add_argument('--workers', type=int, choices=[1], default=1, help='Production workers (must be 1)')
 
     args = parser.parse_args()
     os.environ['PORT'] = str(args.port)

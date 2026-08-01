@@ -2314,6 +2314,22 @@
       background:var(--surface-2);
       margin:10px 0 14px;
     }
+    .settings-account-actions{
+      display:flex;
+      align-items:center;
+      justify-content:flex-end;
+      flex-wrap:wrap;
+      gap:7px;
+    }
+    .settings-account-actions .danger{
+      color:var(--danger-soft-text);
+      border-color:var(--danger-soft-border);
+      background:var(--danger-soft-bg);
+    }
+    .settings-account-actions .danger:hover{
+      color:var(--danger);
+      border-color:var(--danger);
+    }
     .settings-user-text{
       min-width:0;
       display:flex;
@@ -2336,6 +2352,7 @@
       border-radius:14px;
       padding:13px;
     }
+    .settings-section + .settings-section{margin-top:12px;}
     .settings-section-head{
       display:flex;
       align-items:center;
@@ -2355,6 +2372,51 @@
       line-height:1.4;
     }
     .settings-browse-btn svg{width:15px;height:15px;}
+    .shared-links-list{
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+    }
+    .shared-link-row{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      padding:10px;
+      border:1px solid var(--border);
+      border-radius:11px;
+      background:var(--surface);
+    }
+    .shared-link-main{min-width:0;}
+    .shared-link-title{
+      color:var(--text);
+      font-size:12.5px;
+      font-weight:750;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+    .shared-link-meta{
+      color:var(--text-muted);
+      font-size:11px;
+      margin-top:2px;
+    }
+    .shared-link-actions{
+      display:flex;
+      align-items:center;
+      flex-shrink:0;
+      gap:6px;
+    }
+    .shared-link-revoke{
+      color:var(--danger-soft-text) !important;
+      border-color:var(--danger-soft-border) !important;
+      background:var(--danger-soft-bg) !important;
+    }
+    .shared-links-empty{
+      color:var(--text-muted);
+      font-size:12px;
+      padding:6px 2px 2px;
+    }
     .wallpaper-preview{
       width:100%;
       height:135px;
@@ -2456,9 +2518,12 @@
         align-items:flex-start;
         flex-direction:column;
       }
-      .settings-account-card .edit-name-btn{
-        align-self:flex-end;
+      .settings-account-actions{
+        width:100%;
+        justify-content:flex-start;
       }
+      .shared-link-row{align-items:flex-start;flex-direction:column;}
+      .shared-link-actions{width:100%;}
       .wallpaper-control-row{
         grid-template-columns:70px 1fr 44px;
       }
@@ -3790,6 +3855,29 @@
       max-width:920px;
       max-height:88vh;
     }
+    .sandbox-preview-modal{
+      width:min(1100px, calc(100vw - 28px));
+      max-width:1100px;
+      height:min(820px, 90vh);
+      max-height:90vh;
+      display:flex;
+      flex-direction:column;
+      overflow:hidden;
+    }
+    .sandbox-preview-note{
+      color:var(--text-muted);
+      font-size:11.5px;
+      line-height:1.45;
+      margin:4px 0 10px;
+    }
+    .sandbox-preview-frame{
+      width:100%;
+      min-height:0;
+      flex:1 1 auto;
+      border:1px solid var(--border);
+      border-radius:12px;
+      background:white;
+    }
     .suite-body{
       display:grid;
       gap:10px;
@@ -4298,7 +4386,7 @@
 <body style="display: none;">
 <div class="offline-status-banner" id="offlineStatusBanner" role="status" aria-live="polite">
   <span class="offline-dot"></span>
-  <span><strong>Offline mode</strong> — saved chats are available, but AI replies, uploads, sync and admin data need internet.</span>
+  <span><strong>Offline mode</strong> — saved chats and local tools are available; full AI replies, uploads, sync and admin data need internet.</span>
 </div>
 
 
@@ -4609,7 +4697,25 @@
           <div class="settings-user-sub">Signed in to Vigzone AI</div>
         </div>
       </div>
-      <button class="edit-name-btn" id="signOutBtn">Sign out</button>
+      <div class="settings-account-actions">
+        <button class="edit-name-btn" id="exportAccountBtn" type="button">Export data</button>
+        <button class="edit-name-btn" id="changePasswordBtn" type="button">Change password</button>
+        <button class="edit-name-btn danger" id="deleteAccountBtn" type="button">Delete account</button>
+        <button class="edit-name-btn" id="signOutBtn" type="button">Sign out</button>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-head">
+        <div>
+          <div class="settings-section-title">Shared chat links</div>
+          <div class="settings-section-sub">Links expire automatically. Revoke access here at any time.</div>
+        </div>
+        <button class="edit-name-btn" id="refreshSharedLinksBtn" type="button">Refresh</button>
+      </div>
+      <div class="shared-links-list" id="sharedLinksList">
+        <div class="shared-links-empty">Loading shared links…</div>
+      </div>
     </div>
 
     <div class="settings-section">
@@ -4646,6 +4752,23 @@
         <button class="deep-action-btn" id="resetWallpaperBtn" type="button">Remove wallpaper</button>
       </div>
     </div>
+  </div>
+</div>
+
+<div class="usage-modal-overlay" id="sandboxPreviewOverlay">
+  <div class="usage-modal sandbox-preview-modal" role="dialog" aria-modal="true" aria-labelledby="sandboxPreviewTitle">
+    <div class="usage-modal-head">
+      <h3 id="sandboxPreviewTitle">Isolated website preview</h3>
+      <button class="usage-modal-close" id="sandboxPreviewCloseBtn" aria-label="Close">&times;</button>
+    </div>
+    <div class="sandbox-preview-note">Runs in a restricted preview without Vigzone cookies, form submission, popups, downloads, or parent-page navigation.</div>
+    <iframe
+      class="sandbox-preview-frame"
+      id="sandboxPreviewFrame"
+      title="Sandboxed generated website preview"
+      sandbox="allow-scripts allow-modals"
+      referrerpolicy="no-referrer"
+    ></iframe>
   </div>
 </div>
 
@@ -4883,7 +5006,7 @@
     <div class="quote-preview-bar" id="quotePreviewBar"></div>
     <div class="composer compact-composer">
       <input type="file" id="fileInput" multiple hidden
-             accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/tiff,image/svg+xml,.png,.jpg,.jpeg,.webp,.gif,.bmp,.tiff,.ico,.svg,.pdf,.docx,.doc,.odt,.rtf,.xlsx,.xlsm,.xls,.csv,.tsv,.pptx,.ppt,.txt,.md,.log,.json,.jsonl,.xml,.yaml,.yml,.toml,.zip,.tar,.gz,.tgz,.py,.js,.ts,.jsx,.tsx,.java,.c,.cpp,.h,.cs,.go,.rs,.rb,.php,.swift,.kt,.sh,.sql,.mp3,.wav,.mp4,.mov" />
+             accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/tiff,.png,.jpg,.jpeg,.webp,.gif,.bmp,.tiff,.ico,.pdf,.docx,.rtf,.xlsx,.xlsm,.csv,.tsv,.pptx,.txt,.md,.log,.json,.jsonl,.xml,.yaml,.yml,.toml,.zip,.tar,.tgz,.tar.gz,.py,.js,.ts,.jsx,.tsx,.java,.c,.cpp,.h,.cs,.go,.rs,.rb,.php,.swift,.kt,.sh,.sql,.mp3,.wav,.mp4,.mov" />
       <div class="mode-menu-wrap" id="modeMenuWrap">
         <button class="attach-btn mode-menu-btn plus-menu-btn" id="modeMenuBtn" aria-label="Open tools" title="Tools and smart modes" type="button">
           <svg class="plus-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
@@ -4934,13 +5057,6 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"></rect><circle cx="8.5" cy="10" r="1.5"></circle><path d="M21 15l-4.2-4.2a2 2 0 0 0-2.8 0L5 19"></path></svg>
             </span>
             <span class="plus-menu-label">Create image</span>
-          </button>
-
-          <button class="mode-menu-item plus-primary disabled" type="button" role="menuitem" aria-disabled="true" title="Coming later">
-            <span class="plus-menu-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"></rect><path d="m10 9 5 3-5 3V9Z"></path></svg>
-            </span>
-            <span class="plus-menu-label">Create video</span>
           </button>
 
           <button class="mode-menu-item plus-primary has-chevron" data-plus-section="moreTools" type="button" role="menuitem" aria-expanded="false">
@@ -5033,6 +5149,11 @@
   const sidebarToggleBtn = $('#sidebarToggleBtn');
   const historyList = $('#historyList');
   const signOutBtn = $('#signOutBtn');
+  const exportAccountBtn = $('#exportAccountBtn');
+  const changePasswordBtn = $('#changePasswordBtn');
+  const deleteAccountBtn = $('#deleteAccountBtn');
+  const refreshSharedLinksBtn = $('#refreshSharedLinksBtn');
+  const sharedLinksList = $('#sharedLinksList');
   const sidebarUserName = $('#sidebarUserName');
   const sidebarUserDot = $('#sidebarUserDot');
   const settingsBtn = $('#settingsBtn');
@@ -5048,6 +5169,9 @@
   const settingsModalCloseBtn = $('#settingsModalCloseBtn');
   const settingsUserName = $('#settingsUserName');
   const settingsUserDot = $('#settingsUserDot');
+  const sandboxPreviewOverlay = $('#sandboxPreviewOverlay');
+  const sandboxPreviewCloseBtn = $('#sandboxPreviewCloseBtn');
+  const sandboxPreviewFrame = $('#sandboxPreviewFrame');
   const chatWallpaperLayer = $('#chatWallpaperLayer');
   const chatWallpaperBrowseBtn = $('#chatWallpaperBrowseBtn');
   const chatWallpaperInput = $('#chatWallpaperInput');
@@ -5229,7 +5353,6 @@
   let accountStorageScope = localStorage.getItem(LAST_SCOPE_KEY) || 'guest';
   let CONV_STORE_KEY = scopedLocalKey(CONV_STORE_KEY_BASE);
   let LEGACY_KEY = scopedLocalKey(LEGACY_KEY_BASE);
-  const NAME_KEY = 'vigzone_user_name';
   const SIDEBAR_KEY = 'vigzone_sidebar_collapsed';
   const THEME_KEY = 'vigzone_theme';
 
@@ -5445,7 +5568,7 @@
   const ICON_SPEAKER_STOP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="1.5"></rect></svg>';
 
   function escapeHtml(str){
-    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   }
 
   // Syntax highlighting for code blocks
@@ -5680,7 +5803,7 @@
     if (_jsZipLoadPromise) return _jsZipLoadPromise;
     _jsZipLoadPromise = new Promise((resolve, reject) => {
       const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+      s.src = '/static/vendor/jszip.min.js';
       s.onload = () => resolve(window.JSZip);
       s.onerror = () => reject(new Error('Could not load the zip library'));
       document.head.appendChild(s);
@@ -5825,11 +5948,7 @@
         previewBtn.setAttribute('aria-label', 'Preview website');
         previewBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
         previewBtn.addEventListener('click', () => {
-          const blob = new Blob([raw], { type: 'text/html' });
-          const url = URL.createObjectURL(blob);
-          const win = window.open(url, '_blank', 'noopener,noreferrer');
-          if (!win) downloadTextFile('index.html', raw);
-          setTimeout(() => URL.revokeObjectURL(url), 60000);
+          openSandboxedWebsitePreview(raw);
         });
         const actions = header.querySelector('.code-block-actions');
         if (actions) actions.insertBefore(previewBtn, actions.firstChild);
@@ -5864,6 +5983,27 @@
     });
   }
 
+  function closeSandboxedWebsitePreview(){
+    sandboxPreviewOverlay?.classList.remove('visible');
+    if (sandboxPreviewFrame) {
+      sandboxPreviewFrame.srcdoc = '<!doctype html><title>Preview closed</title>';
+    }
+  }
+
+  function openSandboxedWebsitePreview(html){
+    if (!sandboxPreviewOverlay || !sandboxPreviewFrame) {
+      downloadTextFile('index.html', html);
+      return;
+    }
+    sandboxPreviewFrame.srcdoc = String(html || '');
+    sandboxPreviewOverlay.classList.add('visible');
+  }
+
+  sandboxPreviewCloseBtn?.addEventListener('click', closeSandboxedWebsitePreview);
+  sandboxPreviewOverlay?.addEventListener('click', event => {
+    if (event.target === sandboxPreviewOverlay) closeSandboxedWebsitePreview();
+  });
+
   // Minimal, safe markdown-ish rendering: code fences, inline code, bold.
   function renderContent(text){
     const escaped = escapeHtml(text);
@@ -5884,8 +6024,39 @@
     return withBold;
   }
 
+  function storageSafeStore(source){
+    const copy = JSON.parse(JSON.stringify(source || {conversations:{}, order:[], activeId:null, pins:{}}));
+    let strippedImages = 0;
+    Object.values(copy.conversations || {}).forEach((conversation) => {
+      (conversation.messages || []).forEach((message) => {
+        if (typeof message.imageSrc === 'string' &&
+            message.imageSrc.startsWith('data:') &&
+            message.imageSrc.length > 350000) {
+          delete message.imageSrc;
+          message.imageStorageNote = 'Large generated image omitted from browser storage.';
+          strippedImages += 1;
+        }
+        (message.attachments || []).forEach((attachment) => {
+          if (attachment && typeof attachment.dataUri === 'string' && attachment.dataUri.length > 180000) {
+            delete attachment.dataUri;
+          }
+        });
+      });
+    });
+    return {copy, strippedImages};
+  }
+
   function persistStore(){
-    localStorage.setItem(CONV_STORE_KEY, JSON.stringify(store));
+    try {
+      localStorage.setItem(CONV_STORE_KEY, JSON.stringify(store));
+      return;
+    } catch (error) {
+      const safe = storageSafeStore(store);
+      localStorage.setItem(CONV_STORE_KEY, JSON.stringify(safe.copy));
+      if (safe.strippedImages) {
+        console.warn(`${safe.strippedImages} large generated image(s) were kept in this tab but omitted from browser history storage.`);
+      }
+    }
   }
 
   function saveConversation(){
@@ -7086,6 +7257,18 @@
     return { limit, used, remaining, pct, pctLabel, resetIn };
   }
 
+  function providerRateSummary(data){
+    const rate = data?.provider_rate_limit || {};
+    const requestRemaining = rate['x-ratelimit-remaining-requests'];
+    const tokenRemaining = rate['x-ratelimit-remaining-tokens'];
+    const requestReset = rate['x-ratelimit-reset-requests'];
+    const tokenReset = rate['x-ratelimit-reset-tokens'];
+    const parts = [];
+    if (requestRemaining !== undefined) parts.push(`${requestRemaining} provider requests left${requestReset ? ` · reset ${requestReset}` : ''}`);
+    if (tokenRemaining !== undefined) parts.push(`${tokenRemaining} provider tokens left${tokenReset ? ` · reset ${tokenReset}` : ''}`);
+    return parts;
+  }
+
   function renderUsageCyclePopover(data){
     if (!usageCyclePercent || !usageCycleNote) return;
     if (!data || data.mode === 'testing') {
@@ -7096,11 +7279,16 @@
     const st = usageStatsFromData(data);
     const ownKey = data.mode === 'own_key' || data.using_own_key;
     const planName = data.plan_label || (ownKey ? 'Vigzone app cap • Personal Groq key' : 'Vigzone app cap • Default Groq key');
+    const estimated = Number(data.estimated_request_count_today || 0);
+    const exact = Math.max(0, Number(data.request_count_today || 0) - estimated);
+    const providerParts = providerRateSummary(data);
     usageCyclePercent.textContent = `${st.pctLabel} used`;
     usageCycleNote.innerHTML = `
-      <strong>${escapeHtml(planName)}</strong><div class="usage-cycle-pop-note">Groq may block earlier with its own live free-tier/rate limits.</div>
+      <strong>${escapeHtml(planName)}</strong>
+      <div class="usage-cycle-pop-note">${exact.toLocaleString()} exact usage record${exact === 1 ? '' : 's'}${estimated ? ` · ${estimated.toLocaleString()} estimated` : ''}</div>
       <div class="usage-cycle-pop-meta"><span>${st.used.toLocaleString()} used</span><span>${st.limit ? st.limit.toLocaleString() : 'No'} limit</span></div>
       <div class="usage-cycle-pop-meta"><span>${Number(st.remaining || 0).toLocaleString()} left</span><span>${escapeHtml(st.resetIn || '')}</span></div>
+      ${providerParts.length ? `<div class="usage-cycle-pop-note">${providerParts.map(escapeHtml).join('<br>')}</div>` : '<div class="usage-cycle-pop-note">Provider quota headers will appear after Groq returns them.</div>'}
     `;
     if (usageCyclePopover?.classList.contains('visible')) positionUsageCyclePopover();
   }
@@ -7255,6 +7443,9 @@
       const ownKey = data.mode === 'own_key' || data.using_own_key;
       const planName = data.plan_label || (ownKey ? 'Vigzone app cap • Personal Groq key' : 'Vigzone app cap • Default Groq key');
       const locked = !!data.is_limited;
+      const estimated = Number(data.estimated_request_count_today || 0);
+      const exact = Math.max(0, Number(data.request_count_today || 0) - estimated);
+      const providerParts = providerRateSummary(data);
       const enforcedText = data.limit_enforced ? 'Limit enforced by Vigzone.' : 'Tracking only — no Vigzone block.';
       const planText = locked
         ? `${planName} is out of tokens for today. ${resetIn}`
@@ -7279,6 +7470,11 @@
         </div>
         <div class="usage-modal-total-row">
           <span>${(data.request_count_today || 0).toLocaleString()} requests today</span>
+          <span>${exact.toLocaleString()} exact${estimated ? ` · ${estimated.toLocaleString()} estimated` : ''}</span>
+        </div>
+        ${providerParts.map((part, index) => `<div class="usage-modal-total-row"><span>${index === 0 ? 'Live provider signal' : ''}</span><span>${escapeHtml(part)}</span></div>`).join('')}
+        <div class="usage-modal-total-row">
+          <span>Daily window</span>
           <span>${escapeHtml(data.timezone_label || '')}</span>
         </div>
         <div class="usage-modal-disclaimer">${escapeHtml(data.disclaimer || '')}</div>
@@ -7503,8 +7699,8 @@
       ['Bad feedback 👎', s.negative_feedback, `${adminFmt(s.positive_feedback)} positive`],
       ['Weekly tokens', s.week_tokens, `${adminFmt(s.week_active_users)} active users`],
       ['Own Groq keys', s.own_key_users, `${adminFmt(s.default_plan_users)} default plan users`],
-      ['Feedback total', s.feedback_total, 'learning signals saved'],
-      ['Build', data.version || 'v4', data.app_name || 'Vigzone AI'],
+      ['Feedback total', s.feedback_total, 'feedback records saved'],
+      ['Build', data.version || 'unknown', data.app_name || 'Vigzone AI'],
     ];
     if (adminProKpis) adminProKpis.innerHTML = cards.map(c => `<div class="admin-pro-card admin-pro-kpi"><div class="admin-pro-kpi-label">${escapeHtml(c[0])}</div><div class="admin-pro-kpi-value">${typeof c[1] === 'number' ? adminFmt(c[1]) : escapeHtml(c[1])}</div><div class="admin-pro-kpi-note">${escapeHtml(c[2] || '')}</div></div>`).join('');
     if (adminTopUsersTable) {
@@ -7540,9 +7736,15 @@
   }
   function clearAccountScopedClientState(){
     try {
-      localStorage.removeItem('vigzone_token');
       sessionStorage.clear();
     } catch {}
+    accountStorageScope = 'guest';
+    CONV_STORE_KEY = scopedLocalKey(CONV_STORE_KEY_BASE);
+    LEGACY_KEY = scopedLocalKey(LEGACY_KEY_BASE);
+    BRAIN_META_KEY = scopedLocalKey(BRAIN_META_KEY_BASE);
+    try { localStorage.setItem(LAST_SCOPE_KEY, 'guest'); } catch {}
+    store = loadStore();
+    messages = [];
   }
   async function adminProSignOut(){
     try { await fetch('/api/auth/logout', { method:'POST', credentials:'same-origin' }); } catch {}
@@ -7819,6 +8021,7 @@
   function openSettingsModal(){
     updateGreeting();
     settingsModalOverlay?.classList.add('visible');
+    loadSharedLinks();
   }
 
   function closeSettingsModal(){
@@ -7927,6 +8130,183 @@
   }
 
   signOutBtn?.addEventListener('click', signOut);
+
+  function shareExpiryLabel(value){
+    const parsed = new Date(value || '');
+    if (Number.isNaN(parsed.getTime())) return 'Expiry unavailable';
+    return `Expires ${parsed.toLocaleString()}`;
+  }
+
+  async function loadSharedLinks(){
+    if (!sharedLinksList) return;
+    sharedLinksList.innerHTML = '<div class="shared-links-empty">Loading shared links…</div>';
+    if (refreshSharedLinksBtn) refreshSharedLinksBtn.disabled = true;
+    try {
+      const response = await fetch('/api/share/chats', {credentials:'same-origin'});
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || 'Could not load shared links.');
+      const shares = Array.isArray(data.shares) ? data.shares : [];
+      if (!shares.length) {
+        sharedLinksList.innerHTML = '<div class="shared-links-empty">No shared chat links yet.</div>';
+        return;
+      }
+      const now = Date.now();
+      sharedLinksList.innerHTML = shares.map((share) => {
+        const expired = Number.isFinite(Date.parse(share.expires_at)) && Date.parse(share.expires_at) <= now;
+        const inactive = !!share.revoked || expired;
+        const status = share.revoked ? 'Revoked' : (expired ? 'Expired' : shareExpiryLabel(share.expires_at));
+        const safeId = String(share.id || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 32);
+        return `<div class="shared-link-row">
+          <div class="shared-link-main">
+            <div class="shared-link-title">${escapeHtml(String(share.title || 'Vigzone chat'))}</div>
+            <div class="shared-link-meta">${escapeHtml(status)}</div>
+          </div>
+          <div class="shared-link-actions">
+            ${inactive ? '' : `<button class="edit-name-btn" type="button" data-share-copy="${safeId}">Copy</button><button class="edit-name-btn" type="button" data-share-open="${safeId}">Open</button><button class="edit-name-btn shared-link-revoke" type="button" data-share-revoke="${safeId}">Revoke</button>`}
+          </div>
+        </div>`;
+      }).join('');
+    } catch (error) {
+      sharedLinksList.innerHTML = `<div class="shared-links-empty">${escapeHtml(error.message || 'Could not load shared links.')}</div>`;
+    } finally {
+      if (refreshSharedLinksBtn) refreshSharedLinksBtn.disabled = false;
+    }
+  }
+
+  refreshSharedLinksBtn?.addEventListener('click', loadSharedLinks);
+  sharedLinksList?.addEventListener('click', async (event) => {
+    const copyButton = event.target.closest('[data-share-copy]');
+    if (copyButton) {
+      const url = new URL(`/share/${copyButton.dataset.shareCopy}`, location.origin).href;
+      try {
+        await navigator.clipboard.writeText(url);
+        suiteToast?.('Share link copied.');
+      } catch {
+        window.prompt('Copy this share link:', url);
+      }
+      return;
+    }
+    const openButton = event.target.closest('[data-share-open]');
+    if (openButton) {
+      window.open(`/share/${openButton.dataset.shareOpen}`, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    const revokeButton = event.target.closest('[data-share-revoke]');
+    if (!revokeButton) return;
+    if (!window.confirm('Revoke this public share link now?')) return;
+    revokeButton.disabled = true;
+    try {
+      const response = await fetch(`/api/share/chat/${revokeButton.dataset.shareRevoke}`, {
+        method:'DELETE',
+        credentials:'same-origin'
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || 'Could not revoke this link.');
+      suiteToast?.('Share link revoked.');
+      await loadSharedLinks();
+    } catch (error) {
+      suiteToast?.(error.message || 'Could not revoke this link.');
+      revokeButton.disabled = false;
+    }
+  });
+
+  exportAccountBtn?.addEventListener('click', async () => {
+    const previous = exportAccountBtn.textContent;
+    exportAccountBtn.disabled = true;
+    exportAccountBtn.textContent = 'Exporting…';
+    try {
+      const response = await fetch('/api/account/export', {credentials:'same-origin'});
+      const data = await response.blob();
+      if (!response.ok) {
+        const errorBody = await data.text().catch(() => '');
+        let detail = '';
+        try { detail = JSON.parse(errorBody).detail || ''; } catch {}
+        throw new Error(detail || 'Account export failed.');
+      }
+      const url = URL.createObjectURL(data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'vigzone-account-export.json';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      suiteToast?.('Your account export is ready.');
+    } catch (error) {
+      suiteToast?.(error.message || 'Could not export account data.');
+    } finally {
+      exportAccountBtn.disabled = false;
+      exportAccountBtn.textContent = previous;
+    }
+  });
+
+  changePasswordBtn?.addEventListener('click', async () => {
+    const currentPassword = window.prompt('Current password (leave blank if you only use Google sign-in):');
+    if (currentPassword === null) return;
+    const newPassword = window.prompt('New password (at least 10 characters):');
+    if (newPassword === null) return;
+    if (newPassword.length < 10) {
+      suiteToast?.('The new password must be at least 10 characters.');
+      return;
+    }
+    changePasswordBtn.disabled = true;
+    try {
+      const response = await fetch('/api/account/password', {
+        method:'POST',
+        credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({current_password:currentPassword, new_password:newPassword})
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || 'Password change failed.');
+      alert('Password changed. Please sign in again.');
+      window.location.href = '/';
+    } catch (error) {
+      suiteToast?.(error.message || 'Could not change password.');
+    } finally {
+      changePasswordBtn.disabled = false;
+    }
+  });
+
+  function clearDeletedAccountClientData(){
+    [
+      CONV_STORE_KEY,
+      LEGACY_KEY,
+      BRAIN_META_KEY,
+      scopedLocalKey('vigzone_uploaded_files_v1'),
+      scopedLocalKey('vigzone_mode_memory_v1')
+    ].forEach((key) => {
+      try { localStorage.removeItem(key); } catch {}
+    });
+    try { sessionStorage.clear(); } catch {}
+    clearAccountScopedClientState();
+  }
+
+  deleteAccountBtn?.addEventListener('click', async () => {
+    const confirmation = window.prompt('This permanently deletes your Vigzone account and cloud data. Type DELETE to continue:');
+    if (confirmation !== 'DELETE') {
+      if (confirmation !== null) suiteToast?.('Account deletion cancelled.');
+      return;
+    }
+    const password = window.prompt('Confirm your password (leave blank if you only use Google sign-in):');
+    if (password === null) return;
+    deleteAccountBtn.disabled = true;
+    try {
+      const response = await fetch('/api/account', {
+        method:'DELETE',
+        credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({confirmation:'DELETE', password})
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || 'Account deletion failed.');
+      clearDeletedAccountClientData();
+      window.location.href = '/';
+    } catch (error) {
+      suiteToast?.(error.message || 'Could not delete account.');
+      deleteAccountBtn.disabled = false;
+    }
+  });
 
   function autoResize(){
     input.style.height = 'auto';
@@ -8270,8 +8650,9 @@
       upBtn.classList.toggle('done', rating === 'up');
       downBtn.classList.toggle('done', rating === 'down');
       try {
-        await fetch('/api/feedback', {
+        const response = await fetch('/api/feedback', {
           method:'POST',
+          credentials:'same-origin',
           headers:suiteAuthHeaders ? suiteAuthHeaders(true) : {'Content-Type':'application/json'},
           body:JSON.stringify({
             rating,
@@ -8281,8 +8662,13 @@
             context:{mode:currentMode?.() || 'general'}
           })
         });
-      } catch {}
-      suiteToast?.(rating === 'up' ? 'Thanks — feedback saved.' : 'Thanks — I’ll learn from this.');
+        if (!response.ok) throw new Error('Feedback could not be saved.');
+        suiteToast?.(rating === 'up' ? 'Thanks — feedback saved.' : 'Thanks — feedback saved.');
+      } catch {
+        upBtn.classList.remove('done');
+        downBtn.classList.remove('done');
+        suiteToast?.('Feedback could not be saved. Please try again.');
+      }
     }
     upBtn.addEventListener('click', () => sendFeedback('up'));
     downBtn.addEventListener('click', () => {
@@ -8719,9 +9105,50 @@ A strong website should include: hero section, clear navigation, services/featur
     if (!/^[\d\s+\-*/().%^]+$/.test(q)) return null;
     if (!/[+\-*/%^]/.test(q)) return null;
     try {
-      const expr = q.replace(/\^/g, '**');
-      // Only arithmetic characters passed above.
-      const val = Function(`"use strict"; return (${expr});`)();
+      const tokens = q.match(/\d+(?:\.\d+)?|[()+\-*/%^]/g) || [];
+      let cursor = 0;
+      const peek = () => tokens[cursor];
+      const take = () => tokens[cursor++];
+      const primary = () => {
+        if (peek() === '(') {
+          take();
+          const value = expression();
+          if (take() !== ')') throw new Error('Mismatched parentheses');
+          return value;
+        }
+        const token = take();
+        if (token === '+' || token === '-') {
+          const value = primary();
+          return token === '-' ? -value : value;
+        }
+        const value = Number(token);
+        if (!Number.isFinite(value)) throw new Error('Invalid number');
+        return value;
+      };
+      const power = () => {
+        const left = primary();
+        return peek() === '^' ? (take(), Math.pow(left, power())) : left;
+      };
+      const term = () => {
+        let value = power();
+        while (['*','/','%'].includes(peek())) {
+          const op = take();
+          const right = power();
+          value = op === '*' ? value * right : op === '/' ? value / right : value % right;
+        }
+        return value;
+      };
+      const expression = () => {
+        let value = term();
+        while (peek() === '+' || peek() === '-') {
+          const op = take();
+          const right = term();
+          value = op === '+' ? value + right : value - right;
+        }
+        return value;
+      };
+      const val = expression();
+      if (cursor !== tokens.length) throw new Error('Unexpected token');
       if (Number.isFinite(val)) return `Answer: **${val}**`;
     } catch {}
     return null;
@@ -8908,6 +9335,12 @@ A strong website should include: hero section, clear navigation, services/featur
     } else if (!combinedText && images.length) {
       combinedText = images.length > 1 ? "What's in these images?" : "What's in this image?";
     }
+    const imageLimitations = images
+      .filter(image => image.limitation)
+      .map(image => `[Attachment limitation for ${image.name}: ${image.limitation}]`);
+    if (imageLimitations.length) {
+      combinedText = `${combinedText}\n\n${imageLimitations.join('\n')}`.trim();
+    }
 
     // If the user is replying to a quoted message, give the model that
     // context explicitly so it understands what "this"/"it" refers to.
@@ -8969,13 +9402,10 @@ A strong website should include: hero section, clear navigation, services/featur
     getActiveStreamReply = () => fullReply;
 
     try {
-      const authToken = localStorage.getItem('vigzone_token') || '';
       const res = await fetch('/api/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
-        },
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: apiMessages(), ai_mode: currentMode(), workspace_id: activeWorkspaceId || null, client_timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone || null), client_now_iso: new Date().toISOString() })
       });
 
@@ -9093,6 +9523,7 @@ A strong website should include: hero section, clear navigation, services/featur
     const img = document.createElement('img');
     img.src = src;
     img.alt = caption || 'Generated image';
+    img.referrerPolicy = 'no-referrer';
     wrap.appendChild(img);
 
     const row = document.createElement('div');
@@ -9106,7 +9537,11 @@ A strong website should include: hero section, clear navigation, services/featur
     // data: URLs download fine via the `download` attribute; remote URLs
     // (e.g. an OpenAI-hosted url result) will open in a new tab instead,
     // since cross-origin downloads can't be forced from the browser.
-    if (!src.startsWith('data:')) dl.target = '_blank';
+    if (!src.startsWith('data:')) {
+      dl.target = '_blank';
+      dl.rel = 'noopener noreferrer';
+      dl.referrerPolicy = 'no-referrer';
+    }
     row.appendChild(dl);
     wrap.appendChild(row);
 
@@ -9266,6 +9701,7 @@ A strong website should include: hero section, clear navigation, services/featur
       subKind: entry.subKind || '',
       text: entry.text ? String(entry.text).slice(0, 12000) : '',
       mime: entry.mime || entry.file?.type || '',
+      limitation: entry.limitation || '',
       scanClean: !!entry.scanClean,
       scannerAvailable: !!entry.scannerAvailable,
       updatedAt: Date.now()
@@ -9300,7 +9736,9 @@ A strong website should include: hero section, clear navigation, services/featur
       }
 
       const errorClass = f.status === 'error' ? ' error' : '';
-      const title = f.status === 'error' ? ` title="${escapeHtml(f.error || 'Upload failed')}"` : '';
+      const title = f.status === 'error'
+        ? ` title="${escapeHtml(f.error || 'Upload failed')}"`
+        : (f.limitation ? ` title="${escapeHtml(f.limitation)}"` : '');
       return `
       <div class="chip${errorClass}" data-id="${f.id}"${title}>
         ${iconHtml}
@@ -9397,6 +9835,7 @@ A strong website should include: hero section, clear navigation, services/featur
     entry.driveFileId = data.drive_file_id || entry.driveFileId;
     entry.name = data.name || entry.name || 'Google Drive file';
     entry.kind = data.kind || 'document';
+    entry.limitation = data.limitation || '';
     entry.scanClean = data.scan_clean !== false;
     entry.scannerAvailable = !!data.scanner_available;
 
@@ -9530,6 +9969,7 @@ A strong website should include: hero section, clear navigation, services/featur
 
       entry.status = 'ready';
       entry.kind = data.kind;
+      entry.limitation = data.limitation || '';
       entry.scanClean = data.scan_clean !== false;       // true unless explicitly false
       entry.scannerAvailable = !!data.scanner_available;
 
@@ -9546,21 +9986,8 @@ A strong website should include: hero section, clear navigation, services/featur
         else entry.subKind = 'document';
       }
     } catch (err) {
-      const isPdf = /\.pdf$/i.test(entry.name || entry.file?.name || '') || entry.file?.type === 'application/pdf';
-      if (isPdf) {
-        // Do not reject PDFs in the UI just because extraction/upload failed.
-        // This prevents the red chip problem for scanned/design/protected PDFs.
-        entry.status = 'ready';
-        entry.kind = 'document';
-        entry.subKind = 'document';
-        entry.text = `[PDF attached: ${entry.name || entry.file?.name || 'upload.pdf'}]\nVigzone accepted this PDF, but text extraction/upload failed in the browser/server path. It may be scanned/image-based, protected, or a design PDF. If you need visual analysis, upload page screenshots/images too.`;
-        entry.truncated = false;
-        entry.pdfFallback = true;
-        entry.error = '';
-      } else {
-        entry.status = 'error';
-        entry.error = err.message || 'Upload failed';
-      }
+      entry.status = 'error';
+      entry.error = err.message || 'Upload failed';
     }
     if (entry.status === 'ready') rememberUploadedFile(entry);
     renderAttachmentsBar();
@@ -9627,49 +10054,6 @@ A strong website should include: hero section, clear navigation, services/featur
     handleFiles(e.dataTransfer?.files);
   });
 
-  // Handle feedback button clicks
-  chatInner.addEventListener('click', (e) => {
-    const feedbackUpBtn = e.target.closest('.feedback-up');
-    const feedbackDownBtn = e.target.closest('.feedback-down');
-
-    if (feedbackUpBtn || feedbackDownBtn) {
-      e.preventDefault();
-      const msgContainer = e.target.closest('.msg');
-      if (!msgContainer) return;
-
-      const msgIndex = parseInt(msgContainer.dataset.index || '0', 10);
-      const isUpvote = !!feedbackUpBtn;
-
-      // Provide visual feedback
-      if (feedbackUpBtn) {
-        feedbackUpBtn.style.transform = 'scale(1.2)';
-        feedbackUpBtn.style.color = 'var(--accent-2)';
-        setTimeout(() => {
-          feedbackUpBtn.style.transform = '';
-          feedbackUpBtn.style.color = '';
-        }, 300);
-      } else if (feedbackDownBtn) {
-        feedbackDownBtn.style.transform = 'scale(1.2)';
-        feedbackDownBtn.style.color = 'var(--danger)';
-        setTimeout(() => {
-          feedbackDownBtn.style.transform = '';
-          feedbackDownBtn.style.color = '';
-        }, 300);
-      }
-
-      // In a real implementation, this would send feedback to the backend
-      // For now, we'll just log it
-      console.log(`Feedback ${isUpvote ? 'up' : 'down'} for message index ${msgIndex}`);
-
-      // TODO: Send feedback to backend API
-      // await fetch('/api/feedback', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ messageIndex: msgIndex, isUpvote })
-      // });
-    }
-  });
-
   // ===== VOICE / MIC FEATURE =====
   const micBtn = $('#micBtn');
   const micWrapper = $('#micWrapper');
@@ -9721,10 +10105,9 @@ A strong website should include: hero section, clear navigation, services/featur
       form.append('browser_hint', browserHint || '');
     } catch {}
 
-    const authToken = localStorage.getItem('vigzone_token') || '';
     const res = await fetch('/api/transcribe', {
       method: 'POST',
-      headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
+      credentials: 'same-origin',
       body: form,
     });
     const data = await res.json().catch(() => ({}));
@@ -10009,13 +10392,10 @@ A strong website should include: hero section, clear navigation, services/featur
     let fullReply = '';
 
     try {
-      const authToken = localStorage.getItem('vigzone_token') || '';
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
-        },
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: apiMessages(), ai_mode: currentMode(), workspace_id: activeWorkspaceId || null, client_timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone || null), client_now_iso: new Date().toISOString() })
       });
 
@@ -10397,13 +10777,10 @@ A strong website should include: hero section, clear navigation, services/featur
     let fullReply = '';
 
     try {
-      const authToken = localStorage.getItem('vigzone_token') || '';
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
-        },
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: apiMessages(), ai_mode: currentMode(), workspace_id: activeWorkspaceId || null, client_timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone || null), client_now_iso: new Date().toISOString() })
       });
       if (!response.ok || !response.body) {
@@ -10775,10 +11152,8 @@ A strong website should include: hero section, clear navigation, services/featur
   const versionModalBody = $('#versionModalBody');
 
   function suiteAuthHeaders(json=true){
-    const token = localStorage.getItem('vigzone_token') || '';
     return {
-      ...(json ? {'Content-Type':'application/json'} : {}),
-      ...(token ? {'Authorization': `Bearer ${token}`} : {})
+      ...(json ? {'Content-Type':'application/json'} : {})
     };
   }
 
@@ -10802,6 +11177,39 @@ A strong website should include: hero section, clear navigation, services/featur
     setTimeout(() => el.remove(), 2600);
   }
 
+  let brainCloudVersion = 0;
+
+  function mergeConversationMaps(cloudMap={}, localMap={}){
+    const merged = {...cloudMap};
+    Object.entries(localMap || {}).forEach(([id, local]) => {
+      const remote = merged[id];
+      if (!remote || Number(local?.updatedAt || 0) >= Number(remote?.updatedAt || 0)) {
+        merged[id] = local;
+      }
+    });
+    return merged;
+  }
+
+  function mergeCloudPayload(payload={}){
+    store.conversations = mergeConversationMaps(payload.conversations || {}, store.conversations || {});
+    store.order = Array.from(new Set([...(store.order || []), ...(payload.order || [])]))
+      .filter(id => store.conversations[id])
+      .sort((a,b) => Number(store.conversations[b]?.updatedAt || 0) - Number(store.conversations[a]?.updatedAt || 0));
+    store.pins = {...(payload.pins || {}), ...(store.pins || {})};
+    if (!store.activeId && payload.activeId && store.conversations[payload.activeId]) {
+      store.activeId = payload.activeId;
+      messages = store.conversations[store.activeId].messages || [];
+      renderAll();
+    }
+    if (payload.brainMeta) {
+      const localMeta = loadBrainMeta ? loadBrainMeta() : {};
+      saveBrainMeta({...payload.brainMeta, ...localMeta});
+    }
+    persistStore();
+    renderHistoryList();
+    refreshBrainIfOpen();
+  }
+
   function productSuitePayload(){
     const data = brainBuildData ? brainBuildData() : { summaries:[], tasks:[], files:[], categories:[] };
     return {
@@ -10820,16 +11228,28 @@ A strong website should include: hero section, clear navigation, services/featur
     };
   }
 
-  async function syncBrainCloud(){
+  async function syncBrainCloud(isRetry=false){
     if (!brainCloudSyncBtn) return;
     brainCloudSyncBtn.textContent = 'Syncing…';
     try {
       const res = await fetch('/api/brain/cloud', {
         method:'POST',
         headers:suiteAuthHeaders(true),
-        body:JSON.stringify({data: productSuitePayload(), client_updated_at:new Date().toISOString()})
+        body:JSON.stringify({
+          data: productSuitePayload(),
+          client_updated_at:new Date().toISOString(),
+          base_version: brainCloudVersion
+        })
       });
-      if (!res.ok) throw new Error((await res.json().catch(()=>({}))).detail || 'Cloud sync failed');
+      const data = await res.json().catch(()=>({}));
+      if (res.status === 409 && !isRetry) {
+        const current = data.current || {};
+        brainCloudVersion = Number(current.version || 0);
+        mergeCloudPayload(current.payload || {});
+        return syncBrainCloud(true);
+      }
+      if (!res.ok) throw new Error(data.detail || 'Cloud sync failed');
+      brainCloudVersion = Number(data.version || brainCloudVersion);
       brainCloudSyncBtn.textContent = 'Synced ✓';
       suiteToast('Vigzone Brain synced to cloud.');
       setTimeout(() => brainCloudSyncBtn.textContent = 'Cloud Sync', 1500);
@@ -10844,20 +11264,13 @@ A strong website should include: hero section, clear navigation, services/featur
       const res = await fetch('/api/brain/cloud', {headers:suiteAuthHeaders(false)});
       if (!res.ok) return;
       const cloud = await res.json();
+      brainCloudVersion = Number(cloud.version || 0);
       const payload = cloud.payload || {};
       if (!payload.conversations) return;
-      const localCount = Object.keys(store.conversations || {}).length;
-      const cloudCount = Object.keys(payload.conversations || {}).length;
-      if (cloudCount > localCount) {
-        store.conversations = {...payload.conversations, ...(store.conversations || {})};
-        store.order = Array.from(new Set([...(payload.order || []), ...(store.order || [])]));
-        store.pins = {...(payload.pins || {}), ...(store.pins || {})};
-        if (payload.brainMeta) saveBrainMeta(payload.brainMeta);
-        persistStore();
-        renderHistoryList();
-        refreshBrainIfOpen();
-        suiteToast('Cloud Brain restored on this device.');
-      }
+      const before = Object.keys(store.conversations || {}).length;
+      mergeCloudPayload(payload);
+      const after = Object.keys(store.conversations || {}).length;
+      if (after > before) suiteToast('Cloud Brain restored on this device.');
     } catch {}
   }
 
@@ -10949,7 +11362,8 @@ Requirements:
 - Accessibility, SEO basics, semantic HTML
 - Return complete runnable HTML/CSS/JS in organized code blocks
 - Include a short file tree and explain how to run/export it
-- Do not use broken placeholder assets; use gradients or safe placeholders when needed`;
+- Every local interaction must work; clearly label any external backend/payment integration still required
+- Do not invent asset URLs; use sourced images or original inline SVG/CSS illustrations`;
   }
 
 
@@ -11036,13 +11450,22 @@ Requirements:
         headers:suiteAuthHeaders(true),
         body:JSON.stringify({title, messages, public:true})
       });
-      if (!res.ok) throw new Error('Share failed');
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'Share failed');
       const url = new URL(data.url, location.origin).href;
-      await navigator.clipboard?.writeText(url);
-      suiteToast('Public share link copied.');
-    } catch {
-      suiteToast('Could not create share link.');
+      let copied = false;
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(url);
+          copied = true;
+        }
+      } catch {}
+      if (!copied) window.prompt('Copy this public share link:', url);
+      const expiry = data.expires_at ? new Date(data.expires_at).toLocaleString() : 'the configured expiry';
+      suiteToast(`${copied ? 'Public share link copied' : 'Public share link ready'} · expires ${expiry}.`);
+      loadSharedLinks();
+    } catch (error) {
+      suiteToast(error.message || 'Could not create share link.');
     }
   }
 
@@ -11067,7 +11490,7 @@ Requirements:
     websiteStudioPlanBtn?.addEventListener('click', () => generateWebsiteFromStudio(true));
     websiteStudioExportBtn?.addEventListener('click', exportLatestWebsiteZip);
 
-    brainCloudSyncBtn?.addEventListener('click', syncBrainCloud);
+    brainCloudSyncBtn?.addEventListener('click', () => syncBrainCloud(false));
     versionOpenBtn?.addEventListener('click', openVersionModal);
     versionModalCloseBtn?.addEventListener('click', () => versionModalOverlay?.classList.remove('visible'));
     versionModalOverlay?.addEventListener('click', e => { if (e.target === versionModalOverlay) versionModalOverlay.classList.remove('visible'); });

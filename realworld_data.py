@@ -1,11 +1,11 @@
 """
 Vigzone AI - Real-World Data Access Module
 ============================================
-Multi-source real-world data provider for 100% accuracy:
+Multi-source real-world data provider with attributable live sources:
 - Current date/time
 - Weather data
 - Stock/Crypto prices
-- News & facts (with verification)
+- News and web evidence
 - Sports scores
 - Currency rates
 
@@ -17,7 +17,7 @@ import logging
 import os
 import re
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, Tuple
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
@@ -228,6 +228,7 @@ async def _get_weather_openweather(location: str) -> Optional[Dict[str, Any]]:
             data = resp.json()
             return {
                 "source": "OpenWeather",
+                "source_url": "https://openweathermap.org/",
                 "location": f"{data.get('name')}, {data.get('sys', {}).get('country')}",
                 "temp": data["main"]["temp"],
                 "feels_like": data["main"]["feels_like"],
@@ -236,7 +237,7 @@ async def _get_weather_openweather(location: str) -> Optional[Dict[str, Any]]:
                 "description": data["weather"][0]["description"],
                 "wind_speed": data["wind"]["speed"],
                 "cloudiness": data["clouds"]["all"],
-                "confidence": 0.95,
+                "retrieved_at": datetime.now(timezone.utc).isoformat(),
             }
     except Exception as exc:
         logger.debug("OpenWeather failed: %s", exc)
@@ -261,9 +262,10 @@ async def _get_weather_duckduckgo(location: str) -> Optional[Dict[str, Any]]:
             if abstract:
                 return {
                     "source": "DuckDuckGo",
+                    "source_url": "https://duckduckgo.com/",
                     "location": location,
                     "summary": abstract,
-                    "confidence": 0.70,
+                    "retrieved_at": datetime.now(timezone.utc).isoformat(),
                 }
     except Exception as exc:
         logger.debug("DuckDuckGo weather failed: %s", exc)
@@ -303,7 +305,7 @@ async def _get_crypto_coingecko(symbol: str) -> Optional[Dict[str, Any]]:
         coin_id = symbol_map.get(symbol.upper(), symbol.lower())
 
         resp = await client.get(
-            f"https://api.coingecko.com/api/v3/simple/price",
+            "https://api.coingecko.com/api/v3/simple/price",
             params={
                 "ids": coin_id,
                 "vs_currencies": "usd",
@@ -319,12 +321,13 @@ async def _get_crypto_coingecko(symbol: str) -> Optional[Dict[str, Any]]:
                 coin_data = data[coin_id]
                 return {
                     "source": "CoinGecko",
+                    "source_url": f"https://www.coingecko.com/en/coins/{coin_id}",
                     "symbol": symbol.upper(),
                     "price_usd": coin_data.get("usd"),
                     "market_cap": coin_data.get("usd_market_cap"),
                     "volume_24h": coin_data.get("usd_24h_vol"),
                     "change_24h": coin_data.get("usd_24h_change"),
-                    "confidence": 0.95,
+                    "retrieved_at": datetime.now(timezone.utc).isoformat(),
                 }
     except Exception as exc:
         logger.debug("CoinGecko crypto fetch failed: %s", exc)
@@ -347,12 +350,13 @@ async def _get_stock_yahoo(symbol: str) -> Optional[Dict[str, Any]]:
             if price_data:
                 return {
                     "source": "Yahoo Finance",
+                    "source_url": f"https://finance.yahoo.com/quote/{symbol.upper()}",
                     "symbol": symbol.upper(),
                     "price": price_data.get("regularMarketPrice", {}).get("raw"),
                     "currency": price_data.get("currency"),
                     "change": price_data.get("regularMarketChange", {}).get("raw"),
                     "change_pct": price_data.get("regularMarketChangePercent", {}).get("raw"),
-                    "confidence": 0.92,
+                    "retrieved_at": datetime.now(timezone.utc).isoformat(),
                 }
     except Exception as exc:
         logger.debug("Yahoo Finance stock fetch failed: %s", exc)
@@ -403,30 +407,13 @@ async def get_exchange_rate(from_curr: str, to_curr: str) -> Optional[Dict[str, 
     if rate:
         return {
             "source": "ExchangeRate-API",
+            "source_url": f"https://api.exchangerate-api.com/v4/latest/{from_curr.upper()}",
             "from": from_curr.upper(),
             "to": to_curr.upper(),
             "rate": rate,
-            "confidence": 0.93,
+            "retrieved_at": datetime.now(timezone.utc).isoformat(),
         }
     return None
-
-
-# ── Fact Verification (Multi-Source Cross-Check) ─────────────────────────────
-
-async def verify_fact(claim: str) -> Dict[str, Any]:
-    """
-    Cross-check a factual claim against multiple sources.
-    Returns: { verified: bool, sources: [...], confidence: 0-100 }
-    """
-    # This is a framework for fact-checking; actual implementation
-    # would call multiple fact-check APIs (Snopes, FactCheck.org, etc.)
-    return {
-        "claim": claim,
-        "verified": None,  # Unable to verify without specific APIs
-        "sources": [],
-        "confidence": 0,
-        "note": "Fact verification requires additional API integrations (Snopes, FactCheck.org)",
-    }
 
 
 # ── Aggregate Real-World Context ──────────────────────────────────────────────
@@ -490,7 +477,10 @@ async def get_realworld_context(user_message: str) -> Tuple[str, str]:
                         system_lines.append(f"Wind: {weather['wind_speed']} m/s")
                 else:
                     system_lines.append(f"Summary: {weather.get('summary', 'Unknown')}")
-                system_lines.append(f"Confidence: {weather.get('confidence', 0):.0%}")
+                if weather.get("retrieved_at"):
+                    system_lines.append(f"Retrieved: {weather['retrieved_at']}")
+                if weather.get("source_url"):
+                    system_lines.append(f"Source URL: {weather['source_url']}")
             else:
                 system_lines.append(f"\n[WEATHER DATA]\nNo live weather result found for {location}.")
         except asyncio.TimeoutError:
@@ -520,7 +510,10 @@ async def get_realworld_context(user_message: str) -> Tuple[str, str]:
                         system_lines.append(f"24h change: {price_data['change_24h']:.2f}%")
                     if price_data.get("change_pct") is not None:
                         system_lines.append(f"Market change: {price_data['change_pct']:.2f}%")
-                    system_lines.append(f"Confidence: {price_data.get('confidence', 0):.0%}")
+                    if price_data.get("retrieved_at"):
+                        system_lines.append(f"Retrieved: {price_data['retrieved_at']}")
+                    if price_data.get("source_url"):
+                        system_lines.append(f"Source URL: {price_data['source_url']}")
                 else:
                     system_lines.append(f"\n[PRICE DATA]\nNo live price result found for {symbol}.")
             except asyncio.TimeoutError:
@@ -536,7 +529,10 @@ async def get_realworld_context(user_message: str) -> Tuple[str, str]:
             if rate_data:
                 system_lines.append(f"\n[EXCHANGE RATE - {rate_data['source']}]")
                 system_lines.append(f"1 {rate_data['from']} = {rate_data['rate']} {rate_data['to']}")
-                system_lines.append(f"Confidence: {rate_data.get('confidence', 0):.0%}")
+                if rate_data.get("retrieved_at"):
+                    system_lines.append(f"Retrieved: {rate_data['retrieved_at']}")
+                if rate_data.get("source_url"):
+                    system_lines.append(f"Source URL: {rate_data['source_url']}")
             else:
                 system_lines.append(f"\n[EXCHANGE RATE]\nNo live exchange-rate result found for {from_curr}/{to_curr}.")
         except asyncio.TimeoutError:
@@ -569,4 +565,3 @@ async def get_realworld_context(user_message: str) -> Tuple[str, str]:
     ])
 
     return "\n".join(system_lines), user_prefix
-

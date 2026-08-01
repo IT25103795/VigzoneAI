@@ -1,149 +1,132 @@
-# Vigzone AI — Groq Production v2
+# Vigzone AI 5.0
 
-Vigzone AI is a FastAPI + HTML/JS chat app powered by Groq's hosted OpenAI-compatible API. This production build is Groq-only: users either use the deployment's default Groq key with an individual Vigzone daily limit, or they paste their own Groq API key and use their own quota.
+Vigzone AI is a private, multi-user AI workspace built with FastAPI and a responsive browser client. Chat, vision, and transcription use Groq. Image generation uses OpenAI when configured and otherwise uses a clearly labelled Pollinations fallback.
 
-## What changed in v2
+This release removes demo-only product behavior. Features either call a real backend/provider, work locally and say so, or report that required configuration is missing.
 
-- Groq-only chat path; no local/server model dependency.
-- Per-user daily usage table with used tokens, remaining tokens, reset countdown, request count, and plan label.
-- Real backend daily limit enforcement, not just a UI progress bar.
-- Optional BYOK Groq key flow: Check → Use this key.
-- Admin dashboard for total users, active users, today’s tokens, top users, and per-user usage reset.
-- Model fallback through `GROQ_BACKUP_MODELS`.
-- Token-saving history compaction for long conversations.
-- Basic chat rate limiting and secure-cookie option.
-- API keys saved encrypted at rest with `ENCRYPTION_SECRET`.
+## Included
 
-## Required production variables
+- Streaming Groq chat with server-side model allowlists and exact usage capture when the provider reports it.
+- Per-user accounts, hash-at-rest sessions, password reset/verification email, Google sign-in, account export, and account deletion.
+- Durable admin roles with a secure bootstrap path. An unverified signup cannot claim admin access by using an allowlisted email.
+- Private Learning Center memory. Only memories explicitly saved by the signed-in user enter that user's prompts.
+- Versioned Brain cloud sync with conflict detection, per-user browser storage, workspaces, feedback, conversations, and expiring/revocable public shares.
+- Bounded uploads, MIME checks, archive/Office bomb checks, ClamAV scanning, PDF text extraction, scanned-PDF OCR, and truthful format limitations.
+- Groq Whisper voice transcription, image understanding, live-data tools, sourced web evidence, image generation/editing, and Website Studio ZIP export.
+- Request IDs, origin checks, security headers, durable rate limits, bounded bodies, encrypted user API keys, health probes, Docker packaging, and automated tests.
 
-```env
-AI_PROVIDER=groq
-APP_MODE=production
-GROQ_API_KEY=your_new_groq_key
-GROQ_MODEL=llama-3.3-70b-versatile
-GROQ_VISION_MODEL=meta-llama/llama-4-scout-17b-16e-instruct
-DAILY_TOKEN_LIMIT=100000
-BYOK_DAILY_TOKEN_LIMIT=100000
-USAGE_TZ_OFFSET_MINUTES=330
-ENCRYPTION_SECRET=make_a_long_random_secret
-COOKIE_SECURE=true
-```
+Vigzone does not claim perfect factual accuracy. Live facts include sources when available; unsupported verification returns an explicit unknown result instead of a fabricated confidence score.
 
-Optional but recommended:
+## Supported uploads
 
-```env
-GROQ_BACKUP_MODELS=
-CHAT_RATE_LIMIT_PER_MINUTE=20
-ADMIN_EMAILS=your-admin-email@example.com
-MAX_HISTORY_MESSAGES=14
-MAX_COMPACTED_TURNS=18
-USAGE_RESERVE_TOKENS=800
-```
+| Category | Formats | Behavior |
+|---|---|---|
+| Documents | PDF, DOCX, RTF | Bounded text extraction; scanned PDFs use bounded OCR |
+| Spreadsheets | XLSX, XLSM, CSV, TSV | Bounded sheets, rows, and cells converted to text |
+| Presentations | PPTX | Bounded slide text extraction |
+| Images | PNG, JPEG, WebP, GIF, BMP, TIFF, ICO | Validated and resized; animated GIFs use the first frame only |
+| Data/code/text | JSON/JSONL, XML, YAML, TOML, common source/text files | Bounded plain-text context |
+| Archives | ZIP, TAR, TGZ | Manifest only; contents are not analyzed |
+| Audio/video attachments | Common formats | Metadata only; use the microphone flow for transcription |
 
-## User plans
+Legacy DOC/XLS/PPT, ODT/ODS, SVG, RAR, and 7z are rejected with conversion guidance.
 
-### Vigzone default Groq plan
+## Local development
 
-Users without a saved key use the deployment’s `GROQ_API_KEY`. Vigzone tracks each signed-in user separately and blocks new chats after the configured daily limit is reached.
-
-### Personal Groq key plan
-
-Users can paste a Groq key in the sidebar. Vigzone validates it against Groq, then stores it encrypted and uses it for that user’s chats. Usage is still estimated by Vigzone so the UI can show a countdown and remaining tokens.
-
-## Admin dashboard
-
-Set `ADMIN_EMAILS` to one or more comma-separated account emails. Those users will see an Admin button in the sidebar.
-
-Admin dashboard shows:
-
-- total users
-- active users today
-- total tokens and requests today
-- default-plan vs own-key users
-- top users by tokens today
-- reset today’s tracked usage for a user
-
-The reset only clears Vigzone’s own database rows. It does not reset Groq-side quota.
-
-## Daily limits
-
-Default settings:
-
-```env
-DAILY_TOKEN_LIMIT=100000
-BYOK_DAILY_TOKEN_LIMIT=100000
-ENFORCE_DEFAULT_DAILY_LIMIT=true
-ENFORCE_BYOK_DAILY_LIMIT=true
-```
-
-Set `ENFORCE_BYOK_DAILY_LIMIT=false` if users with their own Groq key should only be tracked, not blocked by Vigzone.
-
-## Model fallback
-
-Set backup models as a comma-separated list:
-
-```env
-GROQ_BACKUP_MODELS=model-one,model-two
-```
-
-Vigzone tries backups when the main model returns a model/rate/server failure. It does not fallback on invalid API keys.
-
-## Local run
+Python 3.11–3.14 is supported. Python 3.13 is used in the container.
 
 ```bash
 python -m venv .venv
-# Windows: .venv\Scripts\activate
-# macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt
-copy .env.example .env  # Windows
-# cp .env.example .env  # macOS/Linux
-python start.py
+# Linux/macOS
+source .venv/bin/activate
+# Windows
+# .venv\Scripts\activate
+
+python -m pip install -r requirements-dev.txt
+cp .env.example .env
 ```
 
-Open `http://localhost:8000`.
+Add `GROQ_API_KEY` to `.env`, then run:
 
-## Groq API key tutorial for users
+```bash
+python launcher.py dev
+```
 
-1. Go to Groq Console → API Keys.
-2. Create a new API key.
-3. Copy it immediately; Groq will not show it again.
-4. Paste it in Vigzone’s sidebar.
-5. Click Check, then Use this key.
+Open `http://localhost:8000`. API documentation is available at `/docs` in development.
 
-## Security notes
+OCR requires Tesseract and MIME detection requires libmagic. ClamAV is optional in local testing; the Docker image includes all three.
 
-- Revoke any key that was ever shared in screenshots.
-- Use a strong, stable `ENCRYPTION_SECRET`; changing it makes saved user keys unreadable.
-- Keep `COOKIE_SECURE=true` in HTTPS production.
-- Do not rely only on UI limits; this build enforces limits in the backend before chat requests.
+## Production
 
+Production startup intentionally fails if a critical setting is unsafe. At minimum configure:
 
-## Voice message reliability
+```env
+APP_MODE=production
+ENV=production
+GROQ_API_KEY=...
+ENCRYPTION_SECRET=<unique random value, at least 32 characters>
+COOKIE_SECURE=true
+VIRUS_SCAN_STRICT=true
+WORKERS=1
+VIGZONE_DATA_DIR=/app/data
+CORS_ORIGINS=https://ai.example.com
+PUBLIC_BASE_URL=https://ai.example.com
+```
 
-Voice messages first try the browser's instant speech recognizer. If the browser returns a false no-speech result, Vigzone falls back to Groq Whisper through `/api/transcribe`, using the deployment Groq key or the user's activated Groq key. Configure with `GROQ_TRANSCRIPTION_MODEL=whisper-large-v3-turbo`.
+Generate the encryption secret with:
 
-## Learning Center (private per-user memory)
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
 
-This build includes a real Learning Center from the sidebar. Each signed-in user can add, edit, pause, delete, and toggle their own approved memories. Memories are private to that account and are injected into only that user's chat context when Learning is ON. They do not change the model weights and are not shared with other users.
+For a first admin account, set a unique email and a password of at least 12 characters:
 
-API endpoints:
+```env
+ADMIN_BOOTSTRAP_EMAIL=admin@example.com
+ADMIN_BOOTSTRAP_NAME=Vigzone Admin
+ADMIN_BOOTSTRAP_PASSWORD=<unique admin password>
+```
 
-- `GET /api/learning/status`
-- `POST /api/learning/toggle`
-- `GET /api/learning/memories`
-- `POST /api/learning/memories`
-- `PATCH /api/learning/memories/{id}`
-- `DELETE /api/learning/memories/{id}`
+Remove `ADMIN_BOOTSTRAP_PASSWORD` from the deployment environment after the admin has been created. `ADMIN_EMAILS` can promote only an already verified account.
 
+Build and start behind an HTTPS reverse proxy:
 
+```bash
+cp .env.example .env
+# Fill all required production values in .env
+docker compose up --build -d
+```
 
-## Website Studio V3 Upgrade
-Vigzone now uses an upgraded Website Studio prompt for modern website generation. It detects natural requests like "write a website for a hotel", applies industry-specific section guidance, requires complete self-contained code, and adds a browser Preview button for generated HTML blocks.
+Mount `/app/data` persistently and back up `vigzone.db`. Use one process and one replica: pause/resume stream state is process-local and the current persistence layer is SQLite.
 
+See [DEPLOYMENT.md](DEPLOYMENT.md), [SECURITY.md](SECURITY.md), and [PRIVACY.md](PRIVACY.md).
 
-## Voice language detection fix
+## Optional providers
 
-- Voice recorder now always asks server-side Groq transcription too, because browser SpeechRecognition can mishear Sinhala as Hindi.
-- Hands-free mode now records each turn and sends it to `/api/transcribe` for language-aware transcription.
-- Backend tries the first words plus language candidates and scores Sinhala/Tamil/Hindi/English output.
-- Optional Railway variable: `VOICE_TRANSCRIPTION_LANG_PRIORITY=si,ta,en,hi`.
+- `OPENAI_API_KEY`: OpenAI image generation/editing (`gpt-image-2` by default).
+- SMTP settings: verification and password-reset email. Without SMTP, those delivery flows report that email is not configured.
+- Google OAuth settings: Google sign-in.
+- Google Drive API/client IDs: Drive Picker. Shared-link import still requires the file to be downloadable.
+- Weather/market API keys: richer current-data coverage. Keyless sources remain best-effort and attributable.
+
+Users may validate and activate their own Groq key. It is encrypted at rest with `ENCRYPTION_SECRET`.
+
+## Validation
+
+```bash
+python -m compileall -q .
+ruff check .
+pytest
+```
+
+CI runs the same syntax, lint, and test gates. Provider calls are mocked in tests; deploy-time smoke checks should use real staging credentials.
+
+The browser bundle vendors JSZip 3.10.1 for CSP-compatible ZIP downloads. Its MIT license is included at `static/vendor/JSZIP-LICENSE.md`.
+
+## Health
+
+- `GET /health/live`: process liveness only.
+- `GET /health/ready`: database and required Groq configuration readiness.
+- `GET /health`: compatibility alias for readiness.
+
+Production API docs are disabled unless `ENABLE_API_DOCS=true`.

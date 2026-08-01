@@ -6,12 +6,15 @@
 __pycache__/
 *.py[cod]
 *.pyo
-*.pyc
 .venv/
 venv/
 *.egg-info/
 dist/
 build/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
 # IDE
 .idea/
@@ -19,10 +22,9 @@ build/
 *.iml
 
 # Data files (contain user data)
-data/vigzone.db
-data/knowledge.db
-data/knowledge.json
-data/*.migrated
+data/*
+!data/.gitkeep
+uploads/
 
 # Logs
 *.log
@@ -30,5 +32,3 @@ data/*.migrated
 # OS
 .DS_Store
 Thumbs.db
-uploads/
-*.zip
