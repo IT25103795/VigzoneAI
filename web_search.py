@@ -414,10 +414,14 @@ async def web_search(query: str, max_results: int = 5) -> str:
     ]
     instant, html_results, gdelt_results, wiki = await asyncio.gather(*tasks, return_exceptions=True)
 
-    if isinstance(instant, Exception): instant = None
-    if isinstance(html_results, Exception): html_results = []
-    if isinstance(gdelt_results, Exception): gdelt_results = []
-    if isinstance(wiki, Exception): wiki = None
+    if isinstance(instant, Exception):
+        instant = None
+    if isinstance(html_results, Exception):
+        html_results = []
+    if isinstance(gdelt_results, Exception):
+        gdelt_results = []
+    if isinstance(wiki, Exception):
+        wiki = None
 
     parts = []
 
@@ -451,6 +455,58 @@ async def web_search(query: str, max_results: int = 5) -> str:
         return ""
 
     return "\n\n".join(parts)
+
+
+async def search_evidence(query: str, max_results: int = 6) -> list[dict]:
+    """Return structured, attributable search evidence for API/UI use.
+
+    Search snippets are leads, not proof.  This function deliberately does not
+    fabricate a confidence percentage or a true/false verdict.
+    """
+
+    normalized_query = _normalize_search_query(query)[:500]
+    html_task = asyncio.create_task(_ddg_html_search(normalized_query, max_results))
+    news_task = asyncio.create_task(_gdelt_article_search(normalized_query, max_results))
+    html_results, news_results = await asyncio.gather(
+        html_task,
+        news_task,
+        return_exceptions=True,
+    )
+    if isinstance(html_results, Exception):
+        html_results = []
+    if isinstance(news_results, Exception):
+        news_results = []
+
+    from urllib.parse import urlparse
+
+    evidence: list[dict] = []
+    seen: set[str] = set()
+    for source_kind, rows in (
+        ("news", news_results or []),
+        ("web", html_results or []),
+    ):
+        for row in rows:
+            url = str(row.get("url") or "").strip()
+            try:
+                parsed = urlparse(url)
+            except ValueError:
+                continue
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                continue
+            if url in seen:
+                continue
+            seen.add(url)
+            evidence.append({
+                "title": _clean_html(str(row.get("title") or ""))[:300],
+                "snippet": _clean_html(str(row.get("snippet") or ""))[:1000],
+                "url": url[:2000],
+                "source": parsed.netloc.lower(),
+                "kind": source_kind,
+                "retrieved_at": datetime.now(timezone.utc).isoformat(),
+            })
+            if len(evidence) >= max_results:
+                return evidence
+    return evidence
 
 
 # ── High-level helper for vigzone_ai.py ──────────────────────────────────────

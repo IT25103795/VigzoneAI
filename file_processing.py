@@ -5,16 +5,16 @@ Converts any uploaded file into a form the chat model can consume.
 
 Supported categories
 --------------------
-Images         → resized / base64-encoded data URI  (PNG, JPG, WEBP, GIF, BMP, TIFF, ICO, SVG)
-Documents      → extracted text                      (PDF, DOCX, DOC-like, ODT, RTF, EPUB)
-Spreadsheets   → CSV-like table text                 (XLSX, XLS, ODS, CSV, TSV)
-Presentations  → slide-by-slide text                 (PPTX, PPT-like)
+Images         → resized / base64-encoded data URI  (PNG, JPG, WEBP, GIF, BMP, TIFF, ICO)
+Documents      → extracted text                      (PDF, DOCX, RTF)
+Spreadsheets   → table text                          (XLSX, XLSM, CSV, TSV)
+Presentations  → slide-by-slide text                 (PPTX)
 Data files     → pretty-printed content              (JSON, JSONL, XML, YAML, TOML)
 Code / scripts → syntax-highlighted plain text       (py, js, ts, java, c, cpp, cs, go, rs, …)
-Archives       → file manifest (no extraction)       (ZIP, TAR, GZ, 7Z, RAR)
-Audio / Video  → metadata only                       (MP3, WAV, MP4, MOV, …)
+Archives       → file manifest only                  (ZIP, TAR, TGZ)
+Audio / Video  → metadata only, clearly labelled     (MP3, WAV, MP4, MOV, …)
 Plain text     → UTF-8 decoded                       (TXT, MD, LOG, INI, ENV, …)
-Unknown        → MIME-type sniffing then best effort
+Unknown binary formats are rejected instead of being misrepresented as text.
 
 All extractors share the same _truncate() ceiling so the model's
 context window is never blown out.
@@ -25,13 +25,14 @@ from __future__ import annotations
 import base64
 import io
 import json
+import logging
 import zipfile
 import tarfile
 import os
 import struct
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from defusedxml import ElementTree as ET
 try:
     import magic as _magic
     _HAS_MAGIC = True
@@ -44,10 +45,29 @@ from docx import Document
 import openpyxl
 from pptx import Presentation
 
+logger = logging.getLogger("vigzone.files")
+
+try:
+    import pypdfium2 as pdfium
+    import pytesseract
+
+    _HAS_PDF_OCR = True
+except ImportError:
+    _HAS_PDF_OCR = False
+
 # ── Constants ──────────────────────────────────────────────────────────────────
 MAX_IMAGE_DIMENSION = 1280
 IMAGE_JPEG_QUALITY  = 82
 MAX_DOC_CHARS       = 20_000   # raised from 15k to support larger files
+MAX_OFFICE_UNCOMPRESSED_BYTES = 120 * 1024 * 1024
+MAX_OFFICE_ENTRIES = 10_000
+MAX_PDF_OCR_PAGES = int(os.getenv("MAX_PDF_OCR_PAGES", "12"))
+MAX_PDF_TEXT_PAGES = max(1, min(int(os.getenv("MAX_PDF_TEXT_PAGES", "200")), 1000))
+MAX_WORKBOOK_SHEETS = 50
+MAX_SHEET_ROWS = 500
+MAX_ROW_CELLS = 200
+MAX_PRESENTATION_SLIDES = 300
+Image.MAX_IMAGE_PIXELS = 40_000_000
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -72,13 +92,38 @@ def _sniff_mime(data: bytes) -> str:
     return "application/octet-stream"
 
 
+def _validate_zip_container(data: bytes, label: str) -> None:
+    """Reject malformed or explosively compressed Office/ZIP containers."""
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            entries = archive.infolist()
+            if len(entries) > MAX_OFFICE_ENTRIES:
+                raise FileProcessingError(f"{label} contains too many internal files.")
+            total_uncompressed = sum(max(0, item.file_size) for item in entries)
+            total_compressed = sum(max(1, item.compress_size) for item in entries)
+            if total_uncompressed > MAX_OFFICE_UNCOMPRESSED_BYTES:
+                raise FileProcessingError(f"{label} expands beyond the safe processing limit.")
+            if total_uncompressed > 10 * 1024 * 1024 and total_uncompressed / total_compressed > 250:
+                raise FileProcessingError(f"{label} has an unsafe compression ratio.")
+    except FileProcessingError:
+        raise
+    except (zipfile.BadZipFile, OSError) as exc:
+        raise FileProcessingError(f"Couldn't open that {label}.") from exc
+
+
 # ── Image ──────────────────────────────────────────────────────────────────────
 
 def process_image(data: bytes) -> tuple[str, str]:
     """Resize/compress an image and return (data_uri, mime_type)."""
     try:
         img = Image.open(io.BytesIO(data))
+        width, height = img.size
+        if width <= 0 or height <= 0 or width * height > Image.MAX_IMAGE_PIXELS:
+            raise FileProcessingError("That image's pixel dimensions exceed the safe processing limit.")
         img.load()
+    except FileProcessingError:
+        raise
     except Exception as e:
         raise FileProcessingError("That doesn't look like a readable image file.") from e
 
@@ -86,7 +131,6 @@ def process_image(data: bytes) -> tuple[str, str]:
     if not is_png and img.mode in ("RGBA", "P", "LA"):
         img = img.convert("RGB")
 
-    width, height = img.size
     if max(width, height) > MAX_IMAGE_DIMENSION:
         scale = MAX_IMAGE_DIMENSION / max(width, height)
         img = img.resize(
@@ -108,6 +152,34 @@ def process_image(data: bytes) -> tuple[str, str]:
 
 # ── PDF ────────────────────────────────────────────────────────────────────────
 
+def _ocr_pdf_text(data: bytes, page_count: int) -> str:
+    if not _HAS_PDF_OCR or page_count <= 0:
+        return ""
+    language = os.getenv("OCR_LANGUAGES", "eng").strip() or "eng"
+    parts: list[str] = []
+    try:
+        document = pdfium.PdfDocument(data)
+        try:
+            for page_index in range(min(len(document), MAX_PDF_OCR_PAGES)):
+                page = document[page_index]
+                try:
+                    bitmap = page.render(scale=1.6)
+                    try:
+                        image = bitmap.to_pil()
+                        text = pytesseract.image_to_string(image, lang=language).strip()
+                        if text:
+                            parts.append(f"[Page {page_index + 1} — OCR]\n{text}")
+                    finally:
+                        bitmap.close()
+                finally:
+                    page.close()
+        finally:
+            document.close()
+    except Exception:
+        return ""
+    return "\n\n".join(parts)
+
+
 def extract_pdf_text(data: bytes) -> tuple[str, bool]:
     """Extract text from a PDF. Returns (text, was_truncated).
 
@@ -121,9 +193,13 @@ def extract_pdf_text(data: bytes) -> tuple[str, bool]:
         reader = PdfReader(io.BytesIO(data))
         if getattr(reader, "is_encrypted", False):
             try:
-                reader.decrypt("")
-            except Exception:
-                pass
+                unlocked = reader.decrypt("")
+            except Exception as exc:
+                raise FileProcessingError("This PDF is password-protected.") from exc
+            if not unlocked:
+                raise FileProcessingError("This PDF is password-protected.")
+    except FileProcessingError:
+        raise
     except Exception as e:
         raise FileProcessingError("Couldn't open that PDF — it may be corrupted or password-protected.") from e
 
@@ -134,105 +210,165 @@ def extract_pdf_text(data: bytes) -> tuple[str, bool]:
         page_count = 0
 
     pages = []
-    for i, page in enumerate(reader.pages, 1):
+    page_limited = page_count > MAX_PDF_TEXT_PAGES
+    for page_index in range(min(page_count, MAX_PDF_TEXT_PAGES)):
         try:
+            page = reader.pages[page_index]
             t = page.extract_text() or ""
             if t.strip():
-                pages.append(f"[Page {i}]\n{t}")
+                pages.append(f"[Page {page_index + 1}]\n{t}")
         except Exception:
             # Keep going; one broken page should not reject the whole PDF.
             pass
 
     text = "\n\n".join(pages)
     if not text.strip():
+        text = _ocr_pdf_text(data, page_count)
+    if not text.strip():
         page_word = "page" if page_count == 1 else "pages"
+        limit_note = (
+            f" Text extraction was limited to the first {MAX_PDF_TEXT_PAGES} pages."
+            if page_limited
+            else ""
+        )
         fallback = (
             f"[PDF attached: {page_count or 'unknown'} {page_word}]\n"
-            "Vigzone accepted this PDF, but it does not contain selectable/extractable text. "
-            "It is probably a scanned/image-based PDF or a design/export PDF. "
-            "Ask the user to upload the page as an image if visual analysis is required, "
-            "or use this file name as context for the conversation."
+            "No selectable text or OCR text could be extracted. Vigzone cannot "
+            "truthfully analyze the visual contents of this PDF from this attachment. "
+            "Upload the relevant pages as PNG/JPEG images for vision analysis."
+            + limit_note
         )
-        return _truncate(fallback)
+        fallback_text, char_limited = _truncate(fallback)
+        return fallback_text, bool(page_limited or char_limited)
 
-    return _truncate(text)
+    if page_limited:
+        text += (
+            f"\n\n[PDF text extraction limited to the first {MAX_PDF_TEXT_PAGES} "
+            f"of {page_count} pages.]"
+        )
+
+    truncated_text, char_limited = _truncate(text)
+    return truncated_text, bool(page_limited or char_limited)
 
 
 # ── DOCX ───────────────────────────────────────────────────────────────────────
 
 def extract_docx_text(data: bytes) -> tuple[str, bool]:
     """Extract text from a Word document (.docx)."""
+    _validate_zip_container(data, "Word document")
     try:
         doc = Document(io.BytesIO(data))
     except Exception as e:
         raise FileProcessingError("Couldn't open that Word document.") from e
 
-    parts = [p.text for p in doc.paragraphs if p.text.strip()]
-    for table in doc.tables:
+    parts: list[str] = []
+    limited = False
+    for paragraph in doc.paragraphs[:2000]:
+        if paragraph.text.strip():
+            parts.append(paragraph.text)
+        if sum(len(part) for part in parts) > MAX_DOC_CHARS * 2:
+            limited = True
+            break
+    if len(doc.paragraphs) > 2000:
+        limited = True
+    rows_seen = 0
+    for table in doc.tables[:100]:
         for row in table.rows:
-            cells = [c.text.strip() for c in row.cells]
+            if rows_seen >= 1000:
+                limited = True
+                break
+            cells = [c.text.strip() for c in row.cells[:MAX_ROW_CELLS]]
             if any(cells):
                 parts.append(" | ".join(cells))
+            rows_seen += 1
+        if limited or sum(len(part) for part in parts) > MAX_DOC_CHARS * 2:
+            limited = True
+            break
+    if len(doc.tables) > 100:
+        limited = True
 
     text = "\n".join(parts)
     if not text.strip():
         raise FileProcessingError("That document appears to be empty.")
-    return _truncate(text)
+    truncated_text, char_limited = _truncate(text)
+    return truncated_text, bool(limited or char_limited)
 
 
 # ── XLSX ───────────────────────────────────────────────────────────────────────
 
 def extract_xlsx_text(data: bytes) -> tuple[str, bool]:
     """Extract a readable table from an Excel workbook (.xlsx / .xlsm)."""
+    _validate_zip_container(data, "Excel workbook")
     try:
         wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     except Exception as e:
         raise FileProcessingError("Couldn't open that Excel file.") from e
 
     sections: list[str] = []
-    for sheet_name in wb.sheetnames:
+    limited = len(wb.sheetnames) > MAX_WORKBOOK_SHEETS
+    for sheet_name in wb.sheetnames[:MAX_WORKBOOK_SHEETS]:
         ws = wb[sheet_name]
         rows: list[str] = []
         row_count = 0
         for row in ws.iter_rows(values_only=True):
-            if row_count >= 500:   # cap per sheet
+            if row_count >= MAX_SHEET_ROWS:
                 rows.append("… (sheet truncated)")
+                limited = True
                 break
-            cells = [str(c) if c is not None else "" for c in row]
+            if len(row) > MAX_ROW_CELLS:
+                limited = True
+            cells = [str(c) if c is not None else "" for c in row[:MAX_ROW_CELLS]]
             if any(c.strip() for c in cells):
                 rows.append("\t".join(cells))
                 row_count += 1
         if rows:
             sections.append(f"## Sheet: {sheet_name}\n" + "\n".join(rows))
+        if sum(len(section) for section in sections) > MAX_DOC_CHARS * 2:
+            limited = True
+            break
 
     text = "\n\n".join(sections)
     if not text.strip():
         raise FileProcessingError("That spreadsheet appears to be empty.")
-    return _truncate(text)
+    truncated_text, char_limited = _truncate(text)
+    return truncated_text, bool(limited or char_limited)
 
 
 # ── PPTX ───────────────────────────────────────────────────────────────────────
 
 def extract_pptx_text(data: bytes) -> tuple[str, bool]:
     """Extract slide-by-slide text from a PowerPoint file (.pptx)."""
+    _validate_zip_container(data, "PowerPoint presentation")
     try:
         prs = Presentation(io.BytesIO(data))
     except Exception as e:
         raise FileProcessingError("Couldn't open that PowerPoint file.") from e
 
     slides: list[str] = []
+    limited = len(prs.slides) > MAX_PRESENTATION_SLIDES
     for i, slide in enumerate(prs.slides, 1):
+        if i > MAX_PRESENTATION_SLIDES:
+            limited = True
+            break
         parts: list[str] = []
-        for shape in slide.shapes:
+        if len(slide.shapes) > 500:
+            limited = True
+        for shape_index, shape in enumerate(slide.shapes):
+            if shape_index >= 500:
+                break
             if hasattr(shape, "text") and shape.text.strip():
                 parts.append(shape.text.strip())
         if parts:
             slides.append(f"[Slide {i}]\n" + "\n".join(parts))
+        if sum(len(item) for item in slides) > MAX_DOC_CHARS * 2:
+            limited = True
+            break
 
     text = "\n\n".join(slides)
     if not text.strip():
         raise FileProcessingError("That presentation appears to have no readable text.")
-    return _truncate(text)
+    truncated_text, char_limited = _truncate(text)
+    return truncated_text, bool(limited or char_limited)
 
 
 # ── CSV / TSV ──────────────────────────────────────────────────────────────────
@@ -306,41 +442,63 @@ def extract_yaml_toml_text(data: bytes) -> tuple[str, bool]:
 # ── Archives ───────────────────────────────────────────────────────────────────
 
 def extract_archive_manifest(data: bytes, filename: str) -> tuple[str, bool]:
-    """Return a file listing for ZIP or TAR archives (no extraction)."""
+    """Return a bounded file listing for ZIP/TAR archives (never extract)."""
     ext = Path(filename).suffix.lower()
     try:
         if ext == ".zip" or zipfile.is_zipfile(io.BytesIO(data)):
             with zipfile.ZipFile(io.BytesIO(data)) as zf:
-                names = zf.namelist()
-                total = len(names)
-                preview = names[:200]
-                listing = "\n".join(preview)
+                entries = zf.infolist()
+                total = len(entries)
+                if total > MAX_OFFICE_ENTRIES:
+                    raise FileProcessingError("Archive contains too many entries.")
+                total_uncompressed = sum(max(0, item.file_size) for item in entries)
+                preview = entries[:200]
+                listing = "\n".join(
+                    f"{item.filename} ({item.file_size} bytes)"
+                    for item in preview
+                )
                 summary = (
-                    f"ZIP archive containing {total} file(s).\n"
+                    f"ZIP archive manifest only: {total} file(s), "
+                    f"{total_uncompressed} uncompressed bytes declared.\n"
+                    "File contents were not opened or analyzed.\n"
                     + ("(showing first 200)\n\n" if total > 200 else "\n")
                     + listing
                 )
                 return _truncate(summary)
-    except Exception:
+    except FileProcessingError:
+        raise
+    except (zipfile.BadZipFile, OSError):
         pass
 
     try:
-        if tarfile.is_tarfile(io.BytesIO(data)):
-            with tarfile.open(fileobj=io.BytesIO(data)) as tf:
-                names = tf.getnames()
-                total = len(names)
-                preview = names[:200]
-                listing = "\n".join(preview)
-                summary = (
-                    f"TAR archive containing {total} file(s).\n"
-                    + ("(showing first 200)\n\n" if total > 200 else "\n")
-                    + listing
-                )
-                return _truncate(summary)
-    except Exception:
+        with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as tf:
+            total = 0
+            total_uncompressed = 0
+            preview: list[str] = []
+            for member in tf:
+                total += 1
+                if total > MAX_OFFICE_ENTRIES:
+                    raise FileProcessingError("Archive contains too many entries.")
+                total_uncompressed += max(0, member.size)
+                if len(preview) < 200:
+                    preview.append(f"{member.name} ({member.size} bytes)")
+            listing = "\n".join(preview)
+            summary = (
+                f"TAR archive manifest only: {total} file(s), "
+                f"{total_uncompressed} uncompressed bytes declared.\n"
+                "File contents were not opened or analyzed.\n"
+                + ("(showing first 200)\n\n" if total > 200 else "\n")
+                + listing
+            )
+            return _truncate(summary)
+    except FileProcessingError:
+        raise
+    except (tarfile.TarError, OSError):
         pass
 
-    raise FileProcessingError("Couldn't read that archive — it may be corrupted or an unsupported format (7z/rar).")
+    raise FileProcessingError(
+        "Couldn't read that archive. Supported manifest formats are ZIP, TAR, and TGZ."
+    )
 
 
 # ── Audio / Video ──────────────────────────────────────────────────────────────
@@ -373,7 +531,11 @@ def extract_audio_video_info(data: bytes, filename: str) -> tuple[str, bool]:
     """Return metadata summary for audio/video files."""
     ext = Path(filename).suffix.lower()
     size_kb = len(data) / 1024
-    lines = [f"File: {filename}", f"Size: {size_kb:.1f} KB"]
+    lines = [
+        "[Metadata only — media content was not transcribed or visually analyzed]",
+        f"File: {filename}",
+        f"Size: {size_kb:.1f} KB",
+    ]
 
     if ext == ".mp3":
         tags = _read_mp3_id3(data)
@@ -454,26 +616,24 @@ def extract_rtf_text(data: bytes) -> tuple[str, bool]:
 _EXT_MAP: dict[str, str] = {
     # Images
     **{e: "image" for e in (".png", ".jpg", ".jpeg", ".webp", ".gif",
-                             ".bmp", ".tiff", ".tif", ".ico", ".svg")},
+                             ".bmp", ".tiff", ".tif", ".ico")},
     # Documents
     ".pdf":  "pdf",
-    ".docx": "docx", ".doc": "docx",
-    ".odt":  "docx",   # python-docx may handle basic ODT
+    ".docx": "docx",
     ".rtf":  "rtf",
     # Spreadsheets
     ".xlsx": "xlsx", ".xlsm": "xlsx",
     ".csv":  "csv",
     ".tsv":  "tsv",
     # Presentations
-    ".pptx": "pptx", ".ppt": "pptx",
+    ".pptx": "pptx",
     # Data
     ".json": "json", ".jsonl": "json",
     ".xml":  "xml",
     ".yaml": "yaml", ".yml": "yaml",
     ".toml": "yaml",   # same plain-text handler
     # Archives
-    ".zip": "archive", ".tar": "archive", ".gz": "archive",
-    ".tgz": "archive", ".bz2": "archive", ".xz": "archive",
+    ".zip": "archive", ".tar": "archive", ".tgz": "archive",
     # Audio / Video
     **{e: "av" for e in (".mp3", ".wav", ".ogg", ".flac", ".aac",
                           ".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v", ".m4a")},
@@ -482,6 +642,31 @@ _EXT_MAP: dict[str, str] = {
                              ".cfg", ".conf", ".properties",
                              *CODE_EXTENSIONS)},
 }
+
+_UNSUPPORTED_HINTS = {
+    ".svg": "SVG is not rasterized in this build. Export it as PNG or JPEG.",
+    ".doc": "Legacy .doc is not supported. Save it as .docx first.",
+    ".odt": "ODT is not supported. Export it as .docx or PDF first.",
+    ".xls": "Legacy .xls is not supported. Save it as .xlsx or CSV first.",
+    ".ods": "ODS is not supported. Export it as .xlsx or CSV first.",
+    ".ppt": "Legacy .ppt is not supported. Save it as .pptx or PDF first.",
+    ".7z": "7z archives are not supported. Use ZIP, TAR, or TGZ.",
+    ".rar": "RAR archives are not supported. Use ZIP, TAR, or TGZ.",
+}
+
+
+def _looks_like_text(data: bytes) -> bool:
+    if not data:
+        return False
+    sample = data[:8192]
+    if b"\x00" in sample:
+        return False
+    try:
+        decoded = sample.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    printable = sum(character.isprintable() or character in "\r\n\t" for character in decoded)
+    return bool(decoded) and printable / len(decoded) >= 0.9
 
 
 def process_file(data: bytes, filename: str) -> dict:
@@ -494,12 +679,16 @@ def process_file(data: bytes, filename: str) -> dict:
     Plus kind-specific fields (data_uri/mime for images; text/truncated for docs).
     """
     ext = Path(filename).suffix.lower()
+    if filename.lower().endswith(".tar.gz"):
+        ext = ".tgz"
+    if ext in _UNSUPPORTED_HINTS:
+        raise FileProcessingError(_UNSUPPORTED_HINTS[ext])
     handler = _EXT_MAP.get(ext)
 
     # MIME sniff fallback when extension is unknown / missing
     if not handler:
         mime = _sniff_mime(data)
-        if mime.startswith("image/"):
+        if mime in {"image/png", "image/jpeg", "image/webp", "image/gif", "image/bmp", "image/tiff"}:
             handler = "image"
         elif mime in ("application/pdf",):
             handler = "pdf"
@@ -509,15 +698,26 @@ def process_file(data: bytes, filename: str) -> dict:
             handler = "text"
         elif mime in ("application/zip",):
             handler = "archive"
+        elif _looks_like_text(data):
+            handler = "text"
         else:
-            handler = "text"  # try text as last resort
+            raise FileProcessingError(
+                "This binary file type is not supported. Convert it to a listed document, image, text, or archive format."
+            )
 
     base = {"name": filename}
 
     try:
         if handler == "image":
             data_uri, mime = process_image(data)
-            return {**base, "kind": "image", "mime": mime, "data_uri": data_uri}
+            result = {**base, "kind": "image", "mime": mime, "data_uri": data_uri}
+            if ext == ".gif":
+                result.update({
+                    "capability": "first_frame_only",
+                    "analysis_limited": True,
+                    "limitation": "Animated GIFs are analyzed as a single first-frame image.",
+                })
+            return result
 
         if handler == "pdf":
             text, trunc = extract_pdf_text(data)
@@ -541,16 +741,38 @@ def process_file(data: bytes, filename: str) -> dict:
             text, trunc = extract_yaml_toml_text(data)
         elif handler == "archive":
             text, trunc = extract_archive_manifest(data, filename)
-            return {**base, "kind": "archive", "text": text, "truncated": trunc}
+            return {
+                **base,
+                "kind": "archive",
+                "text": text,
+                "truncated": trunc,
+                "capability": "manifest_only",
+                "analysis_limited": True,
+            }
         elif handler == "av":
             text, trunc = extract_audio_video_info(data, filename)
-            return {**base, "kind": "audio_video", "text": text, "truncated": trunc}
+            return {
+                **base,
+                "kind": "audio_video",
+                "text": text,
+                "truncated": trunc,
+                "capability": "metadata_only",
+                "analysis_limited": True,
+            }
         else:
             text, trunc = extract_plain_text(data)
 
-        return {**base, "kind": "document", "text": text, "truncated": trunc}
+        limited = handler == "pdf" and text.startswith("[PDF attached:")
+        return {
+            **base,
+            "kind": "document",
+            "text": text,
+            "truncated": trunc,
+            "analysis_limited": limited,
+        }
 
     except FileProcessingError:
         raise
     except Exception as exc:
-        raise FileProcessingError(f"Failed to process file: {exc}") from exc
+        logger.exception("Unexpected file-processing failure for %s", filename)
+        raise FileProcessingError("The file could not be processed safely.") from exc

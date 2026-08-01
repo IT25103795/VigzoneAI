@@ -10,15 +10,14 @@ Modes (set APP_MODE in .env):
 """
 
 import logging
+import asyncio
 import os
 import re
-import time
 import io
 import json
 import zipfile
 from urllib.parse import parse_qs, unquote, urlparse
 from datetime import datetime, timezone
-from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from typing import List, Literal, Optional, Union, Any
 
@@ -35,14 +34,9 @@ from pydantic import BaseModel, Field
 from file_processing import (
     FileProcessingError,
     process_file,
-    # Legacy single-type helpers kept for any internal callers
-    extract_pdf_text,
-    extract_plain_text,
-    process_image,
 )
 from virus_scanner import scan_bytes as _virus_scan
 from vigzone_ai import (
-    AI_PROVIDER,
     DEFAULT_MODEL,
     OLLAMA_BASE_URL,
     GROQ_BYOK_API_URL,
@@ -61,7 +55,6 @@ from vigzone_ai import (
     stream_chat,
     validate_groq_api_key,
 )
-from self_learning import add_interaction, prune_kb, sanitize_assistant_for_memory
 from image_generation import generate_image, edit_image, ImageGenError
 from web_search import _get_user_timezone_name
 from stream_manager import (
@@ -72,8 +65,19 @@ from stream_manager import (
     unregister_stream,
     pause_stream,
     resume_stream,
+    purge_stale_streams,
+)
+from security import (
+    RequestBodyLimitMiddleware,
+    SecurityHeadersMiddleware,
+    allowed_origins,
+    client_ip,
+    is_production,
+    request_fingerprint,
+    validate_production_settings,
 )
 import auth as authmod
+import mailer
 import secrets as _secrets
 import httpx
 
@@ -87,37 +91,64 @@ logger = logging.getLogger(__name__)
 # ── Lifespan (replaces deprecated @app.on_event) ─────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
-    removed = prune_kb()
-    if removed:
-        logger.info("Pruned %d corrupted knowledge-base entries on startup", removed)
+    validate_production_settings()
     authmod.init_db()
+    purge_stale_streams()
     mode = "TESTING (unlimited)" if IS_TESTING else "PRODUCTION (token tracking ON)"
     logger.info("Vigzone AI started — mode: %s", mode)
     yield
-    # Shutdown (nothing to clean up currently)
 
 
 app = FastAPI(
     title="Vigzone AI API",
     description="A real conversational AI assistant — powered by Groq.",
-    version="3.0.0",
+    version="5.0.0",
     lifespan=lifespan,
+    docs_url="/docs" if not is_production() or os.getenv("ENABLE_API_DOCS", "").lower() in {"1", "true", "yes"} else None,
+    redoc_url=None,
+    openapi_url="/openapi.json" if not is_production() or os.getenv("ENABLE_API_DOCS", "").lower() in {"1", "true", "yes"} else None,
 )
 
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    RequestBodyLimitMiddleware,
+    max_bytes=int(os.getenv("MAX_REQUEST_BODY_BYTES", str(32 * 1024 * 1024))),
 )
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins(),
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Accept", "Content-Type", "X-Request-ID"],
+)
+app.add_middleware(SecurityHeadersMiddleware)
 
 # ── Upload config ─────────────────────────────────────────────────────────────
 MAX_UPLOAD_SIZE    = int(os.getenv("MAX_UPLOAD_SIZE_BYTES", str(25 * 1024 * 1024)))
 IMAGE_EXTENSIONS   = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 IMAGE_CONTENT_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
 DOCUMENT_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".csv"}
+
+
+async def _read_upload_limited(file: UploadFile, limit: int) -> bytes:
+    """Read an upload in bounded chunks and abort before buffering too much."""
+
+    chunks: list[bytes] = []
+    total = 0
+    try:
+        while True:
+            chunk = await file.read(min(1024 * 1024, limit + 1 - total))
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > limit:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Upload exceeds the {limit // (1024 * 1024)} MB limit.",
+                )
+            chunks.append(chunk)
+    finally:
+        await file.close()
+    return b"".join(chunks)
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
@@ -127,8 +158,8 @@ class ChatMessage(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    messages: List[ChatMessage] = Field(..., min_length=1)
-    model: str = Field(default=DEFAULT_MODEL)
+    messages: List[ChatMessage] = Field(..., min_length=1, max_length=100)
+    model: str = Field(default=DEFAULT_MODEL, max_length=120)
     ai_mode: Optional[str] = Field(default="general", max_length=40)
     workspace_id: Optional[int] = Field(default=None)
     # Browser-provided timezone lets Vigzone answer date/time correctly
@@ -165,7 +196,7 @@ class ModelInfoResponse(BaseModel):
 
 class SignupRequest(BaseModel):
     email: str = Field(..., min_length=3, max_length=200)
-    password: str = Field(..., min_length=8, max_length=200)
+    password: str = Field(..., min_length=10, max_length=200)
     name: str = Field(default="", max_length=100)
 
 
@@ -174,20 +205,29 @@ class LoginRequest(BaseModel):
     password: str = Field(..., min_length=1, max_length=200)
 
 
+class EmailRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=200)
+
+
+class PasswordResetRequest(BaseModel):
+    token: str = Field(..., min_length=20, max_length=256)
+    new_password: str = Field(..., min_length=10, max_length=256)
+
+
 class StreamControlRequest(BaseModel):
-    stream_id: str = Field(...)
+    stream_id: str = Field(..., min_length=8, max_length=120)
 
 
 class ImageRequest(BaseModel):
     # Image prompts often need details for accurate composition/text/layout.
     prompt: str = Field(..., min_length=1, max_length=3000)
-    size: Optional[str] = Field(default="1024x1024")
+    size: Optional[str] = Field(default="1024x1024", max_length=30)
 
 
 class EditImageRequest(BaseModel):
-    image_data_uri: str = Field(..., min_length=1)
+    image_data_uri: str = Field(..., min_length=1, max_length=28_000_000)
     prompt: str = Field(..., min_length=1, max_length=3000)
-    size: Optional[str] = Field(default="1024x1024")
+    size: Optional[str] = Field(default="1024x1024", max_length=30)
 
 
 class WorkspaceCreateRequest(BaseModel):
@@ -216,7 +256,7 @@ class FileIntelRequest(BaseModel):
 
 class ExportRequest(BaseModel):
     title: str = Field(default="Vigzone Export", max_length=120)
-    messages: List[dict] = Field(default_factory=list)
+    messages: List[dict] = Field(default_factory=list, max_length=500)
     format: Literal["txt", "html"] = "txt"
 
 
@@ -236,6 +276,7 @@ class DriveImportRequest(BaseModel):
 class BrainCloudSyncRequest(BaseModel):
     data: dict = Field(default_factory=dict)
     client_updated_at: Optional[str] = Field(default=None, max_length=80)
+    base_version: Optional[int] = Field(default=None, ge=0)
 
 
 class FeedbackCreateRequest(BaseModel):
@@ -250,8 +291,26 @@ class FeedbackCreateRequest(BaseModel):
 
 class ShareChatRequest(BaseModel):
     title: str = Field(default="Vigzone chat", max_length=160)
-    messages: List[dict] = Field(default_factory=list)
+    messages: List[dict] = Field(default_factory=list, max_length=200)
     public: bool = True
+    expires_in_days: int = Field(default=7, ge=1, le=30)
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(default="", max_length=256)
+    new_password: str = Field(..., min_length=10, max_length=256)
+
+
+class AccountDeleteRequest(BaseModel):
+    confirmation: Literal["DELETE"]
+    password: str = Field(default="", max_length=256)
+
+
+class ConversationSyncRequest(BaseModel):
+    id: str = Field(..., min_length=1, max_length=120)
+    title: str = Field(default="New chat", max_length=160)
+    messages: List[dict] = Field(default_factory=list, max_length=500)
+    base_revision: Optional[int] = Field(default=None, ge=0)
 
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
@@ -259,29 +318,14 @@ def get_current_user(
     request: Request,
     vigzone_session: Optional[str] = Cookie(default=None),
 ) -> Optional[dict]:
-    token = vigzone_session
-    if not token:
-        header = request.headers.get("authorization") or request.headers.get("Authorization")
-        if header and header.lower().startswith("bearer "):
-            token = header.split(" ", 1)[1].strip() or None
-    return authmod.get_user_by_session(token)
+    return authmod.get_user_by_session(vigzone_session)
 
 
 def require_current_user(
     request: Request,
     vigzone_session: Optional[str] = Cookie(default=None),
 ) -> dict:
-    # Cookie-based session is the canonical auth path, but the JS client
-    # also stores the same token in localStorage (`vigzone_token`) and sends
-    # it as `Authorization: Bearer <token>`. The frontend's Web Speech flow
-    # only ships the bearer token, so without this fallback the voice→chat
-    # request 401s and the user sees "trouble processing your voice message".
-    token = vigzone_session
-    if not token:
-        header = request.headers.get("authorization") or request.headers.get("Authorization")
-        if header and header.lower().startswith("bearer "):
-            token = header.split(" ", 1)[1].strip() or None
-    user = authmod.get_user_by_session(token)
+    user = authmod.get_user_by_session(vigzone_session)
     if not user:
         raise HTTPException(status_code=401, detail="Please sign in to continue.")
     return user
@@ -289,42 +333,49 @@ def require_current_user(
 
 # ── Production safety helpers ────────────────────────────────────────────────
 _CHAT_RATE_LIMIT_PER_MINUTE = int(os.getenv("CHAT_RATE_LIMIT_PER_MINUTE", "20"))
-_rate_windows: dict[str, deque[float]] = defaultdict(deque)
 
 
-def _client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for", "")
-    if forwarded:
-        return forwarded.split(",", 1)[0].strip()
-    return request.client.host if request.client else "unknown"
+def _enforce_rate_limit(
+    request: Request,
+    scope: str,
+    limit: int,
+    *,
+    user: Optional[dict] = None,
+    window_seconds: int = 60,
+) -> None:
+    if IS_TESTING or limit <= 0:
+        return
+    subject = f"user:{user['id']}" if user else f"ip:{client_ip(request)}"
+    retry_after = authmod.consume_rate_limit(subject, scope, limit, window_seconds)
+    if retry_after:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many requests. Try again in {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)},
+        )
 
 
 def _check_chat_rate_limit(request: Request, user: dict) -> None:
-    """Simple in-memory guard against spam. Works per process/deployment."""
-    if IS_TESTING or _CHAT_RATE_LIMIT_PER_MINUTE <= 0:
-        return
-    now = time.monotonic()
-    key = f"user:{user.get('id')}|ip:{_client_ip(request)}"
-    bucket = _rate_windows[key]
-    while bucket and now - bucket[0] > 60:
-        bucket.popleft()
-    if len(bucket) >= _CHAT_RATE_LIMIT_PER_MINUTE:
-        raise HTTPException(status_code=429, detail="Too many messages too quickly. Please wait a minute and try again.")
-    bucket.append(now)
+    _enforce_rate_limit(
+        request,
+        "chat",
+        _CHAT_RATE_LIMIT_PER_MINUTE,
+        user=user,
+        window_seconds=60,
+    )
 
 
 def require_admin(user: dict = Depends(require_current_user)) -> dict:
-    if not authmod.is_admin_email(user.get("email", "")):
+    if not user.get("is_admin"):
         raise HTTPException(status_code=403, detail="Admin access required.")
     return user
 
 
 # ── Product Suite / Brain Pro storage ─────────────────────────────────────────
-DATA_DIR = os.getenv("VIGZONE_DATA_DIR", "data")
-APP_VERSION = os.getenv("VIGZONE_VERSION", "v4.0-brain-pro")
+APP_VERSION = os.getenv("VIGZONE_VERSION", "5.0.0")
 APP_NAME = os.getenv("VIGZONE_APP_NAME", "Vigzone AI")
 APP_SHORT_NAME = os.getenv("VIGZONE_SHORT_NAME", APP_NAME)
-APP_BUILD_NAME = os.getenv("VIGZONE_BUILD_NAME", "Vigzone Brain Pro Suite")
+APP_BUILD_NAME = os.getenv("VIGZONE_BUILD_NAME", "Vigzone AI Production")
 GROQ_KEYS_URL = os.getenv("GROQ_KEYS_URL", "https://console.groq.com/keys")
 GROQ_DOCS_URL = os.getenv("GROQ_DOCS_URL", "https://console.groq.com/docs/models")
 GOOGLE_DRIVE_API_KEY = os.getenv("GOOGLE_DRIVE_API_KEY", os.getenv("GOOGLE_API_KEY", "")).strip()
@@ -344,35 +395,6 @@ GREETING_OPTIONS = [
         "Back at it,|Welcome back,|Good to see you,|Hey there,"
     ).split("|") if x.strip()
 ] or ["Welcome back,"]
-
-
-def _ensure_dir(path: str) -> None:
-    os.makedirs(path, exist_ok=True)
-
-
-def _user_data_dir(user_id: Any) -> str:
-    path = os.path.join(DATA_DIR, "users", str(user_id))
-    _ensure_dir(path)
-    return path
-
-
-def _json_load(path: str, default: Any) -> Any:
-    try:
-        if not os.path.exists(path):
-            return default
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        logger.warning("Could not load json %s: %s", path, e)
-        return default
-
-
-def _json_write(path: str, data: Any) -> None:
-    _ensure_dir(os.path.dirname(path) or ".")
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
 
 
 def _safe_share_id() -> str:
@@ -426,14 +448,16 @@ async def app_version():
         "name": APP_BUILD_NAME,
         "app_name": APP_NAME,
         "features": [
-            "Brain Pro cloud sync",
-            "Continue where I stopped",
-            "Smart project grouping",
-            "File Studio",
-            "Website Studio",
-            "Feedback learning",
-            "Share chat",
-            "Admin analytics",
+            "Private versioned Brain sync",
+            "Per-user chat history",
+            "Explicit Learning Center memory",
+            "Bounded document and OCR analysis",
+            "Voice transcription",
+            "Live-source context",
+            "Image generation and editing",
+            "Website Studio export",
+            "Expiring shared chats",
+            "Account export and deletion",
         ],
     })
 
@@ -451,6 +475,14 @@ async def public_config():
         "google_drive_api_key": GOOGLE_DRIVE_API_KEY,
         "google_drive_client_id": GOOGLE_DRIVE_CLIENT_ID,
         "drive_picker_enabled": bool(GOOGLE_DRIVE_API_KEY and GOOGLE_DRIVE_CLIENT_ID),
+        "email_delivery_enabled": mailer.is_configured(),
+        "supported_uploads": {
+            "documents": ["pdf", "docx", "rtf", "xlsx", "xlsm", "csv", "tsv", "pptx"],
+            "images": ["png", "jpg", "jpeg", "webp", "gif", "bmp", "tiff", "ico"],
+            "archives": ["zip", "tar", "tgz"],
+            "archive_capability": "manifest_only",
+            "audio_video_capability": "metadata_only",
+        },
         "new_chat_topline": NEW_CHAT_TOPLINE,
         "new_chat_subtitle": NEW_CHAT_SUBTITLE.format(app_name=APP_NAME),
         "groq_hint": GROQ_HINT_TEXT,
@@ -467,33 +499,31 @@ async def public_config():
 
 @app.get("/api/brain/cloud", tags=["Brain"])
 async def get_brain_cloud(user: dict = Depends(require_current_user)):
-    path = os.path.join(_user_data_dir(user["id"]), "brain_cloud.json")
-    data = _json_load(path, {"version": 1, "updated_at": None, "payload": {}})
-    return JSONResponse(data)
+    return JSONResponse(authmod.get_brain_snapshot(user["id"]))
 
 
 @app.post("/api/brain/cloud", tags=["Brain"])
 async def save_brain_cloud(req: BrainCloudSyncRequest, user: dict = Depends(require_current_user)):
-    path = os.path.join(_user_data_dir(user["id"]), "brain_cloud.json")
-    doc = {
-        "version": 1,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-        "client_updated_at": req.client_updated_at,
-        "payload": req.data,
-    }
-    _json_write(path, doc)
-    return JSONResponse({"ok": True, "updated_at": doc["updated_at"]})
+    try:
+        result = authmod.save_brain_snapshot(
+            user["id"],
+            req.data,
+            req.client_updated_at,
+            req.base_version,
+        )
+    except authmod.StateConflictError as exc:
+        return JSONResponse(
+            {"detail": str(exc), "current": exc.current},
+            status_code=409,
+        )
+    except authmod.AuthError as exc:
+        raise HTTPException(status_code=413, detail=str(exc))
+    return JSONResponse(result)
 
 
 @app.post("/api/feedback", tags=["Feedback"])
 async def save_feedback(req: FeedbackCreateRequest, user: dict = Depends(require_current_user)):
-    path = os.path.join(_user_data_dir(user["id"]), "feedback.json")
-    rows = _json_load(path, [])
     item = {
-        "id": _safe_share_id(),
-        "user_id": user["id"],
-        "email": user.get("email"),
-        "created_at": datetime.now(timezone.utc).isoformat(),
         "message_id": req.message_id,
         "conversation_id": req.conversation_id,
         "rating": req.rating,
@@ -502,61 +532,66 @@ async def save_feedback(req: FeedbackCreateRequest, user: dict = Depends(require
         "assistant_text": req.assistant_text or "",
         "context": req.context or {},
     }
-    rows.append(item)
-    _json_write(path, rows[-1000:])
-    return JSONResponse({"ok": True, "id": item["id"]})
+    try:
+        feedback_id = authmod.save_feedback_record(user["id"], item)
+    except authmod.AuthError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return JSONResponse({"ok": True, "id": feedback_id})
 
 
 @app.post("/api/share/chat", tags=["Share"])
 async def share_chat(req: ShareChatRequest, user: dict = Depends(require_current_user)):
+    if not req.public:
+        raise HTTPException(status_code=400, detail="Private share links are not supported.")
     share_id = _safe_share_id()
-    share_dir = os.path.join(DATA_DIR, "shares")
-    _ensure_dir(share_dir)
-    payload = {
-        "id": share_id,
-        "user_id": user["id"],
-        "title": req.title,
-        "messages": req.messages[:200],
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "public": req.public,
-    }
-    _json_write(os.path.join(share_dir, f"{share_id}.json"), payload)
-    return JSONResponse({"ok": True, "share_id": share_id, "url": f"/share/{share_id}"})
+    try:
+        payload = authmod.create_shared_chat(
+            user["id"],
+            share_id,
+            req.title,
+            req.messages,
+            req.public,
+            req.expires_in_days,
+        )
+    except authmod.AuthError as exc:
+        raise HTTPException(status_code=413, detail=str(exc))
+    return JSONResponse({
+        "ok": True,
+        "share_id": share_id,
+        "url": f"/share/{share_id}",
+        "expires_at": payload["expires_at"],
+    })
+
+
+@app.get("/api/share/chats", tags=["Share"])
+async def my_shared_chats(user: dict = Depends(require_current_user)):
+    return JSONResponse({"shares": authmod.list_shared_chats(user["id"])})
+
+
+@app.delete("/api/share/chat/{share_id}", tags=["Share"])
+async def revoke_shared_chat(share_id: str, user: dict = Depends(require_current_user)):
+    safe_id = re.sub(r"[^A-Za-z0-9]", "", share_id)[:32]
+    if not authmod.revoke_shared_chat(user["id"], safe_id):
+        raise HTTPException(status_code=404, detail="Shared chat not found.")
+    return JSONResponse({"ok": True, "share_id": safe_id, "revoked": True})
 
 
 @app.get("/share/{share_id}", response_class=HTMLResponse, tags=["Share"])
-async def public_share_page(share_id: str):
+async def public_share_page(request: Request, share_id: str):
+    _enforce_rate_limit(request, "public_share", 120, window_seconds=60)
     share_id = re.sub(r"[^A-Za-z0-9]", "", share_id)[:32]
-    path = os.path.join(DATA_DIR, "shares", f"{share_id}.json")
-    doc = _json_load(path, None)
-    if not doc or not doc.get("public", True):
+    doc = authmod.get_shared_chat(share_id)
+    if not doc:
         raise HTTPException(status_code=404, detail="Shared chat not found.")
-    return HTMLResponse(_render_share_html(doc.get("title") or "Vigzone chat", doc.get("messages") or []))
+    return HTMLResponse(
+        _render_share_html(doc.get("title") or "Vigzone chat", doc.get("messages") or []),
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/api/admin/analytics", tags=["Admin"])
 async def admin_analytics(user: dict = Depends(require_admin)):
-    users_dir = os.path.join(DATA_DIR, "users")
-    shares_dir = os.path.join(DATA_DIR, "shares")
-    brain_users = 0
-    feedback_count = 0
-    feedback_down = 0
-    if os.path.isdir(users_dir):
-        for uid in os.listdir(users_dir):
-            udir = os.path.join(users_dir, uid)
-            if os.path.exists(os.path.join(udir, "brain_cloud.json")):
-                brain_users += 1
-            rows = _json_load(os.path.join(udir, "feedback.json"), [])
-            feedback_count += len(rows)
-            feedback_down += sum(1 for r in rows if r.get("rating") == "down")
-    share_count = len([p for p in os.listdir(shares_dir)]) if os.path.isdir(shares_dir) else 0
-    return JSONResponse({
-        "brain_users": brain_users,
-        "feedback_count": feedback_count,
-        "negative_feedback": feedback_down,
-        "share_count": share_count,
-        "version": APP_VERSION,
-    })
+    return JSONResponse({**authmod.product_analytics(), "version": APP_VERSION})
 
 
 AI_MODE_PROMPTS = {
@@ -644,16 +679,40 @@ def _setup_message() -> str:
     )
 
 
-@app.get("/health", response_model=HealthCheckResponse, tags=["System"])
-async def health_check():
+@app.get("/health/live", tags=["System"])
+async def health_live():
+    """Process liveness only; never depends on an external AI provider."""
+
+    return JSONResponse({"status": "alive", "version": APP_VERSION})
+
+
+async def _readiness_response() -> JSONResponse:
     configured = await is_configured()
-    return HealthCheckResponse(
-        status="healthy" if configured else "needs_setup",
+    database_ready = authmod.database_healthcheck()
+    ready = bool(configured and database_ready)
+    body = HealthCheckResponse(
+        status="ready" if ready else "not_ready",
         backend_configured=configured,
         mode="testing" if IS_TESTING else "production",
         backend=_backend_label(),
         setup_message="" if configured else _setup_message(),
-    )
+    ).model_dump()
+    body["database_ready"] = database_ready
+    return JSONResponse(body, status_code=200 if ready else 503)
+
+
+@app.get("/health/ready", tags=["System"])
+async def health_ready():
+    """Deployment readiness: local database plus configured AI backend."""
+
+    return await _readiness_response()
+
+
+@app.get("/health", tags=["System"])
+async def health_check():
+    """Compatibility alias used by the existing frontend."""
+
+    return await _readiness_response()
 
 
 @app.get("/api/capabilities", response_model=CapabilitiesResponse, tags=["System"])
@@ -676,7 +735,7 @@ async def get_capabilities():
 async def get_model_info():
     return ModelInfoResponse(
         name="Vigzone AI",
-        version="3.0.0",
+        version=APP_VERSION,
         model=DEFAULT_MODEL,
         vision_model=VISION_MODEL,
         backend=_backend_label(),
@@ -689,7 +748,7 @@ async def get_model_info():
 async def get_stats():
     return JSONResponse({
         "name": "Vigzone AI",
-        "version": "3.0.0",
+        "version": APP_VERSION,
         "mode": "testing" if IS_TESTING else "production",
         "description": "A real conversational AI assistant — powered by Groq",
         "endpoints": {
@@ -716,14 +775,14 @@ async def get_stats():
             "groq_key_activate": "POST /api/me/groq-key/activate",
             "groq_key_deactivate": "POST /api/me/groq-key/deactivate",
         },
-        "docs": "/docs",
+        "docs": "/docs" if app.docs_url else None,
     })
 
 
 # ── Real-World Data endpoints (weather, prices, etc.) ────────────────────────
 
 try:
-    from realworld_data import get_weather, get_price, get_exchange_rate, get_datetime_info, get_realworld_context
+    from realworld_data import get_weather, get_price, get_exchange_rate, get_datetime_info
     HAS_REALWORLD_ENDPOINTS = True
 except ImportError:
     HAS_REALWORLD_ENDPOINTS = False
@@ -731,7 +790,14 @@ except ImportError:
 
 
 @app.get("/api/realworld-data/weather", tags=["Real-World Data"])
-async def get_weather_endpoint(location: str = None):
+async def get_weather_endpoint(
+    request: Request,
+    location: str = None,
+    user: dict = Depends(require_current_user),
+):
+    _enforce_rate_limit(request, "realworld", 30, user=user, window_seconds=60)
+    if location is not None:
+        location = re.sub(r"[\x00-\x1f\x7f]", "", location).strip()[:100]
     """
     Get current weather for a location.
     
@@ -760,7 +826,18 @@ async def get_weather_endpoint(location: str = None):
 
 
 @app.get("/api/realworld-data/price", tags=["Real-World Data"])
-async def get_price_endpoint(symbol: str, asset_type: str = "auto"):
+async def get_price_endpoint(
+    request: Request,
+    symbol: str,
+    asset_type: str = "auto",
+    user: dict = Depends(require_current_user),
+):
+    _enforce_rate_limit(request, "realworld", 30, user=user, window_seconds=60)
+    symbol = symbol.strip().upper()
+    if not re.fullmatch(r"[A-Z0-9.^=-]{1,15}", symbol):
+        raise HTTPException(status_code=400, detail="Invalid asset symbol.")
+    if asset_type not in {"auto", "stock", "crypto"}:
+        raise HTTPException(status_code=400, detail="asset_type must be auto, stock, or crypto.")
     """
     Get current price for crypto or stock.
     
@@ -793,7 +870,17 @@ async def get_price_endpoint(symbol: str, asset_type: str = "auto"):
 
 
 @app.get("/api/realworld-data/exchange-rate", tags=["Real-World Data"])
-async def get_exchange_rate_endpoint(from_currency: str, to_currency: str):
+async def get_exchange_rate_endpoint(
+    request: Request,
+    from_currency: str,
+    to_currency: str,
+    user: dict = Depends(require_current_user),
+):
+    _enforce_rate_limit(request, "realworld", 30, user=user, window_seconds=60)
+    from_currency = from_currency.strip().upper()
+    to_currency = to_currency.strip().upper()
+    if not re.fullmatch(r"[A-Z]{3}", from_currency) or not re.fullmatch(r"[A-Z]{3}", to_currency):
+        raise HTTPException(status_code=400, detail="Currencies must be three-letter ISO codes.")
     """
     Get exchange rate between two currencies.
     
@@ -826,7 +913,7 @@ async def get_exchange_rate_endpoint(from_currency: str, to_currency: str):
 
 
 @app.get("/api/realworld-data/current-time", tags=["Real-World Data"])
-async def get_current_time_endpoint():
+async def get_current_time_endpoint(user: dict = Depends(require_current_user)):
     """
     Get current date and time in the configured timezone.
     
@@ -853,6 +940,73 @@ def _message_text_plain(content: Any) -> str:
                 parts.append(str(item.get("text") or ""))
         return "\n".join(p for p in parts if p)
     return ""
+
+
+def _normalize_chat_messages(messages: list[dict]) -> list[dict]:
+    """Validate client chat history and retain only the latest image turn."""
+
+    latest_image_index = -1
+    for index, message in enumerate(messages):
+        content = message.get("content")
+        if isinstance(content, list) and any(
+            isinstance(part, dict) and part.get("type") == "image_url"
+            for part in content
+        ):
+            latest_image_index = index
+
+    total_text_chars = 0
+    total_image_chars = 0
+    image_count = 0
+    normalized: list[dict] = []
+    for index, message in enumerate(messages):
+        content = message.get("content")
+        if isinstance(content, str):
+            total_text_chars += len(content)
+            normalized.append({**message, "content": content})
+            continue
+        if not isinstance(content, list) or len(content) > 12:
+            raise HTTPException(status_code=400, detail="Invalid message content.")
+        parts: list[dict] = []
+        omitted_old_image = False
+        for part in content:
+            if not isinstance(part, dict):
+                raise HTTPException(status_code=400, detail="Invalid message content part.")
+            part_type = part.get("type")
+            if part_type == "text":
+                text = str(part.get("text") or "")
+                total_text_chars += len(text)
+                parts.append({"type": "text", "text": text})
+                continue
+            if part_type != "image_url":
+                raise HTTPException(status_code=400, detail="Unsupported message content type.")
+            if index != latest_image_index:
+                omitted_old_image = True
+                continue
+            image_url = (part.get("image_url") or {}).get("url")
+            if not isinstance(image_url, str) or not re.match(
+                r"^data:image/(?:png|jpeg|webp);base64,",
+                image_url,
+                re.IGNORECASE,
+            ):
+                raise HTTPException(status_code=400, detail="Images must be uploaded through Vigzone.")
+            image_count += 1
+            total_image_chars += len(image_url)
+            if image_count > 5 or len(image_url) > 8_000_000 or total_image_chars > 22_000_000:
+                raise HTTPException(status_code=413, detail="Too many or oversized image attachments.")
+            parts.append({"type": "image_url", "image_url": {"url": image_url}})
+        if omitted_old_image:
+            parts.append({
+                "type": "text",
+                "text": "[An older image attachment was omitted from this request to control size.]",
+            })
+        normalized.append({**message, "content": parts})
+
+    if total_text_chars > 180_000:
+        raise HTTPException(
+            status_code=413,
+            detail="Conversation context is too large. Start a new chat or shorten attached text.",
+        )
+    return normalized
 
 
 def _is_simple_datetime_request(text: str) -> bool:
@@ -934,12 +1088,7 @@ async def _stream_direct_answer(stream_id: str, text: str):
 # ── Fact Verification & Accuracy endpoints ──────────────────────────────────
 
 try:
-    from fact_verification import (
-        verify_factual_claim,
-        score_response_accuracy,
-        ClaimClassifier,
-        AccuracyMetadata,
-    )
+    from fact_verification import verify_factual_claim
     HAS_FACT_VERIFICATION = True
 except ImportError:
     HAS_FACT_VERIFICATION = False
@@ -951,16 +1100,14 @@ class VerifyClaimRequest(BaseModel):
 
 
 @app.post("/api/verify-claim", tags=["Accuracy"])
-async def verify_claim_endpoint(req: VerifyClaimRequest):
-    """
-    Verify a factual claim and get confidence scoring.
-    
-    Returns:
-      - verified: true/false/null (if unable to verify)
-      - confidence: 0-100% confidence in the claim
-      - sources: List of sources used for verification
-      - reasoning: Explanation of verification result
-    """
+async def verify_claim_endpoint(
+    request: Request,
+    req: VerifyClaimRequest,
+    user: dict = Depends(require_current_user),
+):
+    """Retrieve attributable evidence without inventing a confidence score."""
+
+    _enforce_rate_limit(request, "verification", 15, user=user, window_seconds=60)
     if not HAS_FACT_VERIFICATION:
         raise HTTPException(
             status_code=503,
@@ -1092,26 +1239,36 @@ async def learning_delete_memory(memory_id: int, user: dict = Depends(require_cu
 
 
 class GroqKeyRequest(BaseModel):
-    api_key: str
+    api_key: str = Field(..., min_length=20, max_length=300)
 
 
 @app.post("/api/me/groq-key/validate", tags=["Account"])
-async def validate_my_groq_key(request: GroqKeyRequest, user: dict = Depends(require_current_user)):
+async def validate_my_groq_key(
+    http_request: Request,
+    req: GroqKeyRequest,
+    user: dict = Depends(require_current_user),
+):
     """Check whether a pasted Groq key actually works, WITHOUT saving it yet."""
-    result = await validate_groq_api_key(request.api_key)
+    _enforce_rate_limit(http_request, "key_validate", 10, user=user, window_seconds=3600)
+    result = await validate_groq_api_key(req.api_key)
     return JSONResponse(result)
 
 
 @app.post("/api/me/groq-key/activate", tags=["Account"])
-async def activate_my_groq_key(request: GroqKeyRequest, user: dict = Depends(require_current_user)):
+async def activate_my_groq_key(
+    http_request: Request,
+    req: GroqKeyRequest,
+    user: dict = Depends(require_current_user),
+):
     """
     Validate (again, server-side — never trust the client) and save the
     user's Groq key, then switch their chats over to using it.
     """
-    result = await validate_groq_api_key(request.api_key)
+    _enforce_rate_limit(http_request, "key_validate", 10, user=user, window_seconds=3600)
+    result = await validate_groq_api_key(req.api_key)
     if not result.get("valid"):
         raise HTTPException(status_code=400, detail=result.get("message", "That Groq key didn't validate."))
-    authmod.set_user_groq_key(user["id"], request.api_key.strip())
+    authmod.set_user_groq_key(user["id"], req.api_key.strip())
     return JSONResponse({"activated": True, "message": "Your Groq key is now powering your chats."})
 
 
@@ -1123,28 +1280,176 @@ async def deactivate_my_groq_key(user: dict = Depends(require_current_user)):
 
 
 # ── Auth endpoints ────────────────────────────────────────────────────────────
+def _public_base_url(request: Request) -> str:
+    configured = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
+    return configured or str(request.base_url).rstrip("/")
+
+
+async def _deliver_verification_email(user: dict, request: Request) -> bool:
+    if not mailer.is_configured() or user.get("email_verified"):
+        return False
+    token, email = authmod.create_email_verification_token(user["id"])
+    link = f"{_public_base_url(request)}/verify-email?token={token}"
+    text = (
+        f"Verify your {APP_NAME} email address:\n\n{link}\n\n"
+        "This link expires in 24 hours. If you did not create this account, "
+        "you can ignore this message."
+    )
+    await asyncio.to_thread(
+        mailer.send_email,
+        email,
+        f"Verify your {APP_NAME} email",
+        text,
+    )
+    return True
+
+
 @app.post("/api/auth/signup", tags=["Auth"])
-async def signup(req: SignupRequest):
+async def signup(request: Request, req: SignupRequest):
+    _enforce_rate_limit(request, "signup", 5, window_seconds=3600)
     try:
         user = authmod.create_user_with_password(req.email, req.password, req.name)
     except authmod.AuthError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    token    = authmod.create_session(user["id"])
-    response = JSONResponse({"user": user})
+    token = authmod.create_session(user["id"], request_fingerprint(request))
+    verification_sent = False
+    if mailer.is_configured():
+        try:
+            verification_sent = await _deliver_verification_email(user, request)
+        except (authmod.AuthError, mailer.MailError):
+            logger.warning("Could not deliver signup verification email")
+    response = JSONResponse({
+        "user": user,
+        "verification_sent": verification_sent,
+    })
     _set_session_cookie(response, token)
     return response
 
 
 @app.post("/api/auth/login", tags=["Auth"])
-async def login(req: LoginRequest):
+async def login(request: Request, req: LoginRequest):
+    _enforce_rate_limit(request, "login", 10, window_seconds=900)
     try:
         user = authmod.verify_password_login(req.email, req.password)
     except authmod.AuthError as e:
         raise HTTPException(status_code=401, detail=str(e))
-    token    = authmod.create_session(user["id"])
+    token = authmod.create_session(user["id"], request_fingerprint(request))
     response = JSONResponse({"user": user})
     _set_session_cookie(response, token)
     return response
+
+
+@app.post("/api/auth/verification/request", tags=["Auth"])
+async def request_email_verification(
+    request: Request,
+    user: dict = Depends(require_current_user),
+):
+    _enforce_rate_limit(request, "verify_email", 3, user=user, window_seconds=3600)
+    if not mailer.is_configured():
+        raise HTTPException(status_code=503, detail="Email delivery is not configured.")
+    try:
+        sent = await _deliver_verification_email(user, request)
+    except authmod.AuthError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except mailer.MailError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return JSONResponse({"ok": True, "sent": sent})
+
+
+@app.get("/verify-email", response_class=HTMLResponse, tags=["Auth"])
+async def verify_email_page(token: str = ""):
+    import html
+
+    try:
+        authmod.verify_email_token(token)
+        title = "Email verified"
+        message = "Your email is verified. You can return to Vigzone."
+    except authmod.AuthError:
+        title = "Verification failed"
+        message = "This verification link is invalid or expired."
+    return HTMLResponse(
+        "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' "
+        "content='width=device-width,initial-scale=1'><title>"
+        + html.escape(title)
+        + "</title><style>body{font:16px system-ui;background:#090a0f;color:#eceef4;"
+        "display:grid;place-items:center;min-height:100vh;margin:0}.card{max-width:520px;"
+        "padding:28px;border:1px solid #ffffff22;border-radius:22px;background:#161922}"
+        "a{color:#ff8064}</style></head><body><main class='card'><h1>"
+        + html.escape(title)
+        + "</h1><p>"
+        + html.escape(message)
+        + "</p><a href='/chat'>Open Vigzone</a></main></body></html>",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.post("/api/auth/password/forgot", tags=["Auth"])
+async def forgot_password(request: Request, req: EmailRequest):
+    _enforce_rate_limit(request, "forgot_password", 5, window_seconds=3600)
+    if not mailer.is_configured():
+        raise HTTPException(status_code=503, detail="Email delivery is not configured.")
+    item = authmod.create_password_reset_token(req.email)
+    if item:
+        token, email = item
+        link = f"{_public_base_url(request)}/reset-password?token={token}"
+        text = (
+            f"Reset your {APP_NAME} password:\n\n{link}\n\n"
+            "This link expires in 30 minutes. If you did not request it, ignore this message."
+        )
+        try:
+            await asyncio.to_thread(
+                mailer.send_email,
+                email,
+                f"Reset your {APP_NAME} password",
+                text,
+            )
+        except mailer.MailError:
+            logger.warning("Password reset email delivery failed")
+    return JSONResponse({
+        "ok": True,
+        "message": "If that account exists, a reset link has been sent.",
+    })
+
+
+@app.post("/api/auth/password/reset", tags=["Auth"])
+async def reset_password(request: Request, req: PasswordResetRequest):
+    _enforce_rate_limit(request, "reset_password", 10, window_seconds=3600)
+    try:
+        authmod.reset_password_with_token(req.token, req.new_password)
+    except authmod.AuthError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return JSONResponse({"ok": True, "message": "Password reset. Sign in again."})
+
+
+@app.get("/reset-password", response_class=HTMLResponse, tags=["Auth"])
+async def reset_password_page(token: str = ""):
+    import html
+
+    safe_token = html.escape(token[:256], quote=True)
+    return HTMLResponse(
+        """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport"
+content="width=device-width,initial-scale=1"><title>Reset password</title>
+<style>body{font:16px system-ui;background:#090a0f;color:#eceef4;display:grid;
+place-items:center;min-height:100vh;margin:0}.card{width:min(420px,calc(100% - 40px));
+padding:28px;border:1px solid #ffffff22;border-radius:22px;background:#161922}
+input,button{box-sizing:border-box;width:100%;margin-top:12px;padding:12px;border-radius:12px;
+border:1px solid #ffffff22}input{background:#090a0f;color:#fff}button{background:#ff6b4a;
+color:white;font-weight:800;cursor:pointer}.status{min-height:24px;margin-top:12px}</style>
+</head><body><main class="card"><h1>Reset password</h1><p>Use at least 10 characters.</p>
+<form id="form"><input id="password" type="password" minlength="10" maxlength="256"
+autocomplete="new-password" required><button>Save new password</button></form>
+<div class="status" id="status"></div></main><script>
+const token='"""
+        + safe_token
+        + """';document.getElementById('form').addEventListener('submit',async(e)=>{
+e.preventDefault();const status=document.getElementById('status');status.textContent='Saving…';
+const response=await fetch('/api/auth/password/reset',{method:'POST',
+headers:{'Content-Type':'application/json'},body:JSON.stringify({token,
+new_password:document.getElementById('password').value})});
+const data=await response.json().catch(()=>({}));status.textContent=response.ok
+?'Password reset. You can sign in now.':(data.detail||'Reset failed.');});</script></body></html>""",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.post("/api/auth/logout", tags=["Auth"])
@@ -1163,7 +1468,8 @@ async def me(user: Optional[dict] = Depends(get_current_user)):
 
 
 @app.get("/api/auth/google/login", tags=["Auth"])
-async def google_login():
+async def google_login(request: Request):
+    _enforce_rate_limit(request, "google_login", 20, window_seconds=900)
     if not authmod.google_is_configured():
         return RedirectResponse(url="/?error=google_not_configured")
     state    = _secrets.token_urlsafe(16)
@@ -1171,7 +1477,11 @@ async def google_login():
     response = RedirectResponse(url=auth_url)
     response.set_cookie(
         key="vigzone_oauth_state", value=state,
-        httponly=True, samesite="lax", max_age=600, path="/",
+        httponly=True,
+        secure=is_production(),
+        samesite="lax",
+        max_age=600,
+        path="/",
     )
     return response
 
@@ -1193,15 +1503,112 @@ async def google_callback(
         if not profile.get("google_id") or not profile.get("email"):
             return RedirectResponse(url="/?error=google_failed")
         user = authmod.get_or_create_google_user(
-            profile["google_id"], profile["email"], profile["name"]
+            profile["google_id"],
+            profile["email"],
+            profile["name"],
+            email_verified=profile.get("email_verified", False),
         )
     except authmod.AuthError:
         return RedirectResponse(url="/?error=google_failed")
-    token    = authmod.create_session(user["id"])
+    token = authmod.create_session(user["id"], request_fingerprint(request))
     response = RedirectResponse(url="/chat")
     _set_session_cookie(response, token)
     response.delete_cookie("vigzone_oauth_state", path="/")
     return response
+
+
+@app.post("/api/account/password", tags=["Account"])
+async def change_account_password(
+    req: PasswordChangeRequest,
+    user: dict = Depends(require_current_user),
+):
+    try:
+        authmod.change_password(user["id"], req.current_password, req.new_password)
+    except authmod.AuthError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    response = JSONResponse({
+        "ok": True,
+        "message": "Password changed. Sign in again on this device.",
+    })
+    response.delete_cookie(authmod.SESSION_COOKIE_NAME, path="/")
+    return response
+
+
+@app.get("/api/account/export", tags=["Account"])
+async def export_account_data(user: dict = Depends(require_current_user)):
+    payload = authmod.export_user_data(user["id"])
+    response = JSONResponse(payload)
+    response.headers["Content-Disposition"] = 'attachment; filename="vigzone-account-export.json"'
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.delete("/api/account", tags=["Account"])
+async def delete_my_account(
+    req: AccountDeleteRequest,
+    user: dict = Depends(require_current_user),
+):
+    if authmod.account_has_password(user["id"]) and not authmod.verify_user_password(
+        user["id"],
+        req.password,
+    ):
+        raise HTTPException(status_code=403, detail="Password confirmation failed.")
+    authmod.delete_account(user["id"])
+    response = JSONResponse({"ok": True, "deleted": True})
+    response.delete_cookie(authmod.SESSION_COOKIE_NAME, path="/")
+    return response
+
+
+@app.get("/api/conversations", tags=["Conversations"])
+async def list_my_conversations(user: dict = Depends(require_current_user)):
+    return JSONResponse({"conversations": authmod.list_conversations(user["id"])})
+
+
+@app.get("/api/conversations/{conversation_id}", tags=["Conversations"])
+async def get_my_conversation(
+    conversation_id: str,
+    user: dict = Depends(require_current_user),
+):
+    item = authmod.get_conversation(user["id"], conversation_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    return JSONResponse(item)
+
+
+@app.put("/api/conversations/{conversation_id}", tags=["Conversations"])
+async def sync_my_conversation(
+    conversation_id: str,
+    req: ConversationSyncRequest,
+    user: dict = Depends(require_current_user),
+):
+    if conversation_id != req.id:
+        raise HTTPException(status_code=400, detail="Conversation ID mismatch.")
+    try:
+        item = authmod.upsert_conversation(
+            user["id"],
+            req.id,
+            req.title,
+            req.messages,
+            req.base_revision,
+        )
+    except authmod.StateConflictError as exc:
+        return JSONResponse(
+            {"detail": str(exc), "current": exc.current},
+            status_code=409,
+        )
+    except authmod.AuthError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return JSONResponse(item)
+
+
+@app.delete("/api/conversations/{conversation_id}", tags=["Conversations"])
+async def delete_my_conversation(
+    conversation_id: str,
+    user: dict = Depends(require_current_user),
+):
+    if not authmod.delete_conversation(user["id"], conversation_id):
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    return JSONResponse({"ok": True, "deleted": True})
 
 
 
@@ -1265,17 +1672,28 @@ async def api_export_chat(req: ExportRequest, user: dict = Depends(require_curre
     title = (req.title or f"{APP_NAME} Export").strip()
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     if req.format == "html":
-        body = [f"<h1>{title}</h1><p>Exported {now}</p>"]
-        for m in req.messages:
-            role = str(m.get("role", "message")).title()
+        import html as html_lib
+
+        safe_title = html_lib.escape(title)
+        body = [f"<h1>{safe_title}</h1><p>Exported {now}</p>"]
+        for m in req.messages[:500]:
+            role = html_lib.escape(str(m.get("role", "message")).title())
             content = str(m.get("displayText") or m.get("content") or "")
-            body.append(f"<section><h2>{role}</h2><pre>{content.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')}</pre></section>")
-        data = "<!doctype html><meta charset='utf-8'><title>" + title + "</title><body>" + "\n".join(body) + "</body>"
+            body.append(
+                f"<section><h2>{role}</h2><pre>{html_lib.escape(content)}</pre></section>"
+            )
+        data = (
+            "<!doctype html><meta charset='utf-8'><title>"
+            + safe_title
+            + "</title><body>"
+            + "\n".join(body)
+            + "</body>"
+        )
         media = "text/html"
         filename = "vigzone-chat-export.html"
     else:
         chunks = [title, f"Exported {now}", ""]
-        for m in req.messages:
+        for m in req.messages[:500]:
             role = str(m.get("role", "message")).upper()
             content = str(m.get("displayText") or m.get("content") or "")
             chunks.append(f"[{role}]\n{content}\n")
@@ -1293,7 +1711,9 @@ async def api_export_website(req: WebsiteExportRequest, user: dict = Depends(req
         zf.writestr("index.html", html)
         zf.writestr("README.txt", f"Generated by {APP_NAME} Website Studio. Open index.html in a browser or upload it to your hosting provider.\n")
     data = buf.getvalue()
-    filename = req.filename if req.filename.endswith(".zip") else req.filename + ".zip"
+    requested = os.path.basename(req.filename)
+    stem = re.sub(r"[^A-Za-z0-9._-]", "-", requested).strip(".-")[:80] or "vigzone-website"
+    filename = stem if stem.lower().endswith(".zip") else stem + ".zip"
     return StreamingResponse(
         io.BytesIO(data),
         media_type="application/zip",
@@ -1357,6 +1777,33 @@ def _drive_name_from_headers(headers: dict, fallback: str, content_type: str = "
     return fallback
 
 
+async def _read_http_response_limited(
+    response: httpx.Response,
+    limit: int = MAX_UPLOAD_SIZE,
+) -> bytes:
+    content_length = response.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > limit:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Remote file exceeds the {limit // (1024 * 1024)} MB limit.",
+                )
+        except ValueError:
+            pass
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in response.aiter_bytes():
+        total += len(chunk)
+        if total > limit:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Remote file exceeds the {limit // (1024 * 1024)} MB limit.",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 async def _download_drive_with_token(file_id: str, access_token: str, supplied_name: str = "", supplied_mime: str = "") -> tuple[bytes, str, str]:
     headers = {"Authorization": f"Bearer {access_token}"}
     async with httpx.AsyncClient(timeout=httpx.Timeout(connect=8.0, read=45.0, write=8.0, pool=8.0), follow_redirects=True) as client:
@@ -1370,29 +1817,33 @@ async def _download_drive_with_token(file_id: str, access_token: str, supplied_n
         meta = meta_resp.json()
         name = supplied_name or meta.get("name") or f"drive-file-{file_id}"
         mime = supplied_mime or meta.get("mimeType") or ""
+        try:
+            if meta.get("size") and int(meta["size"]) > MAX_UPLOAD_SIZE:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f'"{name}" is larger than the {MAX_UPLOAD_SIZE // (1024 * 1024)} MB limit.',
+                )
+        except ValueError:
+            pass
 
         if mime.startswith("application/vnd.google-apps."):
             export_mime, ext = _DRIVE_EXPORT_MIME.get(mime, ("application/pdf", ".pdf"))
             if not name.lower().endswith(ext):
                 name += ext
-            resp = await client.get(
-                f"https://www.googleapis.com/drive/v3/files/{file_id}/export",
-                params={"mimeType": export_mime},
-                headers=headers,
-            )
+            url = f"https://www.googleapis.com/drive/v3/files/{file_id}/export"
+            params = {"mimeType": export_mime}
             content_type = export_mime
         else:
-            resp = await client.get(
-                f"https://www.googleapis.com/drive/v3/files/{file_id}",
-                params={"alt": "media", "supportsAllDrives": "true"},
-                headers=headers,
-            )
-            content_type = resp.headers.get("content-type", mime)
+            url = f"https://www.googleapis.com/drive/v3/files/{file_id}"
+            params = {"alt": "media", "supportsAllDrives": "true"}
+            content_type = mime
 
-        if resp.status_code >= 400:
-            raise HTTPException(status_code=403, detail="Could not download this Google Drive file.")
-        data = resp.content
-        return data, name, content_type
+        async with client.stream("GET", url, params=params, headers=headers) as resp:
+            if resp.status_code >= 400:
+                raise HTTPException(status_code=403, detail="Could not download this Google Drive file.")
+            content_type = resp.headers.get("content-type", content_type)
+            data = await _read_http_response_limited(resp)
+            return data, name, content_type
 
 
 async def _download_public_drive(file_id: str, source_url: str = "", supplied_name: str = "") -> tuple[bytes, str, str]:
@@ -1417,16 +1868,25 @@ async def _download_public_drive(file_id: str, source_url: str = "", supplied_na
     ])
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(connect=8.0, read=45.0, write=8.0, pool=8.0), follow_redirects=True) as client:
-        last_status = None
         for url, fallback_name, fallback_ct in candidates:
             try:
-                resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0 VigzoneDriveImport/1.0"})
-                last_status = resp.status_code
-                ct = resp.headers.get("content-type", fallback_ct)
-                body = resp.content or b""
-                if resp.status_code < 400 and body and not (b"<!DOCTYPE html" in body[:500].upper() and "text/html" in ct.lower()):
-                    name = _drive_name_from_headers(resp.headers, fallback_name, ct)
-                    return body, name, ct or fallback_ct
+                async with client.stream(
+                    "GET",
+                    url,
+                    headers={"User-Agent": "Mozilla/5.0 VigzoneDriveImport/1.0"},
+                ) as resp:
+                    ct = resp.headers.get("content-type", fallback_ct)
+                    if resp.status_code >= 400:
+                        continue
+                    body = await _read_http_response_limited(resp)
+                    if body and not (
+                        b"<!DOCTYPE html" in body[:500].upper()
+                        and "text/html" in ct.lower()
+                    ):
+                        name = _drive_name_from_headers(resp.headers, fallback_name, ct)
+                        return body, name, ct or fallback_ct
+            except HTTPException:
+                raise
             except Exception:
                 continue
 
@@ -1440,7 +1900,12 @@ async def _download_public_drive(file_id: str, source_url: str = "", supplied_na
 
 
 @app.post("/api/drive/import", tags=["Google Drive"])
-async def import_drive_file(req: DriveImportRequest, user: dict = Depends(require_current_user)):
+async def import_drive_file(
+    request: Request,
+    req: DriveImportRequest,
+    user: dict = Depends(require_current_user),
+):
+    _enforce_rate_limit(request, "drive_import", 20, user=user, window_seconds=3600)
     file_id = _extract_drive_file_id(req.file_id or req.url or "")
     if not file_id:
         raise HTTPException(status_code=400, detail="Paste a valid Google Drive file link or file ID.")
@@ -1455,29 +1920,15 @@ async def import_drive_file(req: DriveImportRequest, user: dict = Depends(requir
     if len(contents) > MAX_UPLOAD_SIZE:
         raise HTTPException(status_code=413, detail=f'"{filename}" is larger than the {MAX_UPLOAD_SIZE // (1024 * 1024)} MB limit.')
 
-    scan = _virus_scan(contents, filename)
+    scan = await asyncio.to_thread(_virus_scan, contents, filename)
     if not scan.clean:
         threat_label = scan.threat or "unknown threat"
         raise HTTPException(status_code=422, detail=f'"{filename}" was blocked by the virus scanner: {threat_label}.')
 
     try:
-        result = process_file(contents, filename)
+        result = await asyncio.to_thread(process_file, contents, filename)
     except FileProcessingError as e:
-        if filename.lower().endswith(".pdf"):
-            result = {
-                "name": filename,
-                "kind": "document",
-                "text": (
-                    f"[Google Drive PDF attached: {filename}]\n"
-                    "Vigzone imported this PDF from Google Drive, but could not extract readable text. "
-                    "It may be scanned/image-based, protected, or a design PDF."
-                ),
-                "truncated": False,
-                "pdf_fallback": True,
-                "processing_warning": str(e),
-            }
-        else:
-            raise HTTPException(status_code=422, detail=f'"{filename}": {e}')
+        raise HTTPException(status_code=422, detail=f'"{filename}": {e}')
 
     result["name"] = result.get("name") or filename
     result["drive_file_id"] = file_id
@@ -1490,17 +1941,19 @@ async def import_drive_file(req: DriveImportRequest, user: dict = Depends(requir
 
 # ── Upload endpoint ───────────────────────────────────────────────────────────
 @app.post("/api/upload", tags=["Chat"])
-async def upload_file(file: UploadFile = File(...), user: dict = Depends(require_current_user)):
-    filename = file.filename or "upload"
-    contents = await file.read()
+async def upload_file(
+    request: Request,
+    file: UploadFile = File(...),
+    user: dict = Depends(require_current_user),
+):
+    _enforce_rate_limit(request, "upload", 20, user=user, window_seconds=3600)
+    filename = os.path.basename((file.filename or "upload").replace("\x00", ""))[:240]
+    contents = await _read_upload_limited(file, MAX_UPLOAD_SIZE)
 
     if not contents:
         raise HTTPException(400, f'"{filename}" is empty.')
-    if len(contents) > MAX_UPLOAD_SIZE:
-        raise HTTPException(413, f'"{filename}" is larger than the {MAX_UPLOAD_SIZE // (1024 * 1024)} MB limit.')
-
     # ── Virus scan (runs before any processing) ────────────────────────────
-    scan = _virus_scan(contents, filename)
+    scan = await asyncio.to_thread(_virus_scan, contents, filename)
     if not scan.clean:
         threat_label = scan.threat or "unknown threat"
         logger.warning("Blocked upload '%s' — virus scan: %s", filename, threat_label)
@@ -1512,46 +1965,12 @@ async def upload_file(file: UploadFile = File(...), user: dict = Depends(require
 
     # ── Universal file processing ──────────────────────────────────────────
     try:
-        result = process_file(contents, filename)
+        result = await asyncio.to_thread(process_file, contents, filename)
     except FileProcessingError as e:
-        # UX rule for PDFs: never turn the PDF chip red only because extraction
-        # failed. Many real user PDFs are scanned/image-only, protected, or
-        # generated design PDFs. Accept the attachment with a clear note so the
-        # user can still include it in the conversation.
-        if filename.lower().endswith(".pdf"):
-            logger.warning("Accepted PDF with fallback note after processing error for %s: %s", filename, e)
-            result = {
-                "name": filename,
-                "kind": "document",
-                "text": (
-                    f"[PDF attached: {filename}]\n"
-                    "Vigzone accepted this PDF, but the server could not extract readable text from it. "
-                    "It may be scanned/image-based, protected, corrupted, or a design PDF. "
-                    "If you need visual analysis, upload screenshots/images of the PDF pages too."
-                ),
-                "truncated": False,
-                "pdf_fallback": True,
-                "processing_warning": str(e),
-            }
-        else:
-            raise HTTPException(422, f'"{filename}": {e}')
+        raise HTTPException(422, f'"{filename}": {e}')
     except Exception as e:
         logger.error("Unexpected error processing upload %s: %s", filename, e, exc_info=True)
-        if filename.lower().endswith(".pdf"):
-            result = {
-                "name": filename,
-                "kind": "document",
-                "text": (
-                    f"[PDF attached: {filename}]\n"
-                    "Vigzone accepted this PDF, but the server could not process it. "
-                    "If you need visual analysis, upload screenshots/images of the PDF pages too."
-                ),
-                "truncated": False,
-                "pdf_fallback": True,
-                "processing_warning": str(e),
-            }
-        else:
-            raise HTTPException(500, f'Couldn\'t process "{filename}".')
+        raise HTTPException(500, f'Couldn\'t process "{filename}".')
 
     # Attach scan metadata so the frontend can show a "scanned ✓" badge
     result["scan_clean"] = scan.clean
@@ -1575,7 +1994,7 @@ async def admin_overview(admin: dict = Depends(require_admin)):
     """Small production dashboard: users, today's tokens, top users."""
     import sqlite3
 
-    db_path = os.getenv("VIGZONE_DB_PATH", os.path.join("data", "vigzone.db"))
+    db_path = authmod.DB_PATH
     start_ts = _admin_today_start_ts()
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
@@ -1645,7 +2064,7 @@ async def admin_full_dashboard(admin: dict = Depends(require_admin)):
     import sqlite3
     from datetime import timedelta
 
-    db_path = os.getenv("VIGZONE_DB_PATH", os.path.join("data", "vigzone.db"))
+    db_path = authmod.DB_PATH
     tz_offset_minutes = int(os.getenv("USAGE_TZ_OFFSET_MINUTES", "330"))
     local_tz = timezone(timedelta(minutes=tz_offset_minutes))
     now_local = datetime.now(local_tz)
@@ -1717,6 +2136,19 @@ async def admin_full_dashboard(admin: dict = Depends(require_admin)):
             """,
             (week_start_ts,),
         ).fetchall()
+        brain_users = conn.execute("SELECT COUNT(*) AS c FROM brain_snapshots").fetchone()["c"]
+        share_count = conn.execute("SELECT COUNT(*) AS c FROM shared_chats").fetchone()["c"]
+        stored_feedback = conn.execute(
+            """
+            SELECT f.id, f.created_at, f.reason, f.assistant_text,
+                   f.message_text, f.conversation_id, f.context_json,
+                   f.rating, u.email
+            FROM feedback f
+            JOIN users u ON u.id = f.user_id
+            ORDER BY f.created_at DESC
+            LIMIT 1000
+            """
+        ).fetchall()
 
     # Build daily usage in the configured local timezone instead of UTC SQL dates.
     daily_buckets = {}
@@ -1740,25 +2172,15 @@ async def admin_full_dashboard(admin: dict = Depends(require_admin)):
             "users": len(r["users"]) if r else 0,
         })
 
-    users_dir = os.path.join(DATA_DIR, "users")
-    shares_dir = os.path.join(DATA_DIR, "shares")
-    brain_users = 0
     feedback_rows = []
-    negative_feedback = []
-    if os.path.isdir(users_dir):
-        for uid in os.listdir(users_dir):
-            udir = os.path.join(users_dir, uid)
-            if os.path.exists(os.path.join(udir, "brain_cloud.json")):
-                brain_users += 1
-            rows = _json_load(os.path.join(udir, "feedback.json"), [])
-            for row in rows:
-                row = dict(row)
-                feedback_rows.append(row)
-                if row.get("rating") == "down":
-                    negative_feedback.append(row)
-    feedback_rows.sort(key=lambda r: r.get("created_at", ""), reverse=True)
-    negative_feedback.sort(key=lambda r: r.get("created_at", ""), reverse=True)
-    share_count = len([p for p in os.listdir(shares_dir) if p.endswith(".json")]) if os.path.isdir(shares_dir) else 0
+    for stored in stored_feedback:
+        row = dict(stored)
+        try:
+            row["context"] = json.loads(row.pop("context_json") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            row["context"] = {}
+        feedback_rows.append(row)
+    negative_feedback = [row for row in feedback_rows if row.get("rating") == "down"]
 
     feedback_total = len(feedback_rows)
     feedback_bad = len(negative_feedback)
@@ -1850,7 +2272,7 @@ async def admin_reset_user_usage(user_id: int, admin: dict = Depends(require_adm
     """Delete today's tracked usage rows for a user. Groq-side usage is not reset."""
     import sqlite3
 
-    db_path = os.getenv("VIGZONE_DB_PATH", os.path.join("data", "vigzone.db"))
+    db_path = authmod.DB_PATH
     start_ts = _admin_today_start_ts()
     with sqlite3.connect(db_path) as conn:
         cur = conn.execute("DELETE FROM token_usage WHERE user_id = ? AND ts >= ?", (user_id, start_ts))
@@ -2063,7 +2485,7 @@ async def transcribe_voice(
     reliable server fallback, using either the user's activated Groq key or the
     deployment default key.
     """
-    _check_chat_rate_limit(request, user)
+    _enforce_rate_limit(request, "voice", 10, user=user, window_seconds=60)
 
     provider_override, _ = _resolve_provider_for_user(user)
     if provider_override is None and not await is_configured():
@@ -2072,15 +2494,17 @@ async def transcribe_voice(
             detail=f"{APP_NAME} isn't configured — set GROQ_API_KEY before using voice transcription.",
         )
 
-    audio = await file.read()
+    content_type = (file.content_type or "audio/webm").split(";", 1)[0]
+    filename = os.path.basename((file.filename or "voice.webm").replace("\x00", ""))[:240]
+    audio = await _read_upload_limited(file, MAX_VOICE_UPLOAD_SIZE)
     if not audio:
         raise HTTPException(status_code=400, detail="Voice recording was empty.")
-    if len(audio) > MAX_VOICE_UPLOAD_SIZE:
-        raise HTTPException(status_code=413, detail="Voice recording is too large. Try a shorter message.")
 
-    content_type = (file.content_type or "audio/webm").split(";", 1)[0]
     if not content_type.startswith("audio/") and content_type not in {"video/webm", "application/octet-stream"}:
         raise HTTPException(status_code=415, detail="Unsupported voice recording format.")
+    scan = await asyncio.to_thread(_virus_scan, audio, filename)
+    if not scan.clean:
+        raise HTTPException(status_code=422, detail="The voice upload was blocked by the virus scanner.")
 
     using_override = provider_override is not None
     api_url = provider_override["api_url"] if using_override else f"{OLLAMA_BASE_URL}/chat/completions"
@@ -2104,7 +2528,7 @@ async def transcribe_voice(
                         transcribe_url,
                         api_key,
                         audio,
-                        file.filename or "voice.webm",
+                        filename,
                         content_type,
                         lang,
                         model,
@@ -2177,7 +2601,14 @@ async def transcribe_voice(
         from vigzone_ai import track_token_usage, _estimate_tokens
 
         if not IS_TESTING:
-            track_token_usage(user["id"], prompt_tokens=0, completion_tokens=_estimate_tokens(text), provider="groq")
+            track_token_usage(
+                user["id"],
+                prompt_tokens=0,
+                completion_tokens=_estimate_tokens(text),
+                provider="groq_audio",
+                estimated=True,
+                model=best_model,
+            )
     except Exception:
         logger.debug("Voice transcription usage tracking failed", exc_info=True)
 
@@ -2212,11 +2643,15 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
     """
     provider_override, override_model = _resolve_provider_for_user(user)
     _check_chat_rate_limit(request, user)
+    messages = _normalize_chat_messages([
+        {"role": message.role, "content": message.content}
+        for message in chat_request.messages
+    ])
 
     # Real backend quota guard: do not start a Groq call when this user's
     # Vigzone daily plan is exhausted or too close to exhausted.
     key_status = authmod.get_user_key_status(user["id"])
-    estimated_request_tokens = estimate_messages_tokens([{"role": m.role, "content": m.content} for m in chat_request.messages])
+    estimated_request_tokens = estimate_messages_tokens(messages)
     try:
         assert_user_can_chat(user["id"], has_own_key=key_status["active"], estimated_request_tokens=estimated_request_tokens)
     except UsageLimitError as e:
@@ -2231,7 +2666,6 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
             ),
         )
 
-    messages  = [{"role": m.role, "content": m.content} for m in chat_request.messages]
     last_user_query = ""
     for m in reversed(messages):
         if m.get("role") == "user":
@@ -2240,7 +2674,7 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
 
     if _is_simple_datetime_request(last_user_query):
         stream_id = create_stream_id()
-        register_stream(stream_id)
+        register_stream(stream_id, user["id"])
         direct_answer = _build_datetime_answer(last_user_query, chat_request.client_timezone)
         async def direct_event_stream():
             try:
@@ -2260,18 +2694,13 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
         authmod.get_learning_context(user["id"], last_user_query),
     )
     stream_id = create_stream_id()
-    register_stream(stream_id)
+    register_stream(stream_id, user["id"])
 
     async def event_stream():
         try:
-            yield f'data: {{"stream_id": "{stream_id}"}}\n\n'
+            yield f"data: {json.dumps({'stream_id': stream_id})}\n\n"
 
             reply_accum    = ""
-            last_user_text = None
-            for m in reversed(messages):
-                if m.get("role") == "user":
-                    last_user_text = m.get("content") if isinstance(m.get("content"), str) else None
-                    break
 
             try:
                 async for chunk in stream_chat(
@@ -2286,26 +2715,17 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
                     if is_cancelled(stream_id):
                         break
                     reply_accum += chunk
-                    payload = chunk.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
-                    yield f'data: {{"content": "{payload}"}}\n\n'
+                    yield f"data: {json.dumps({'content': chunk}, ensure_ascii=False)}\n\n"
 
                 if not is_cancelled(stream_id):
-                    try:
-                        if last_user_text and reply_accum:
-                            safe = sanitize_assistant_for_memory(reply_accum)
-                            if safe:
-                                add_interaction(last_user_text, safe)
-                    except Exception:
-                        logger.exception("Failed to save interaction to KB")
                     yield "data: [DONE]\n\n"
                 else:
                     yield "data: [CANCELLED]\n\n"
 
             except VigzoneAIError as e:
                 logger.error("Chat stream failed: %s", e)
-                err = str(e).replace('"', "'")
-                yield f'data: {{"error": "{err}"}}\n\n'
-            except Exception as e:
+                yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+            except Exception:
                 # Safety net: any *unexpected* exception (e.g. a malformed
                 # streaming API chunk) used to propagate out of this generator
                 # uncaught, which silently kills the SSE stream with zero
@@ -2313,8 +2733,11 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
                 # generic "No response received." with no clue why. Surface
                 # it as a real error instead so it's actually debuggable.
                 logger.exception("Unexpected error in chat stream")
-                err = str(e).replace('"', "'") or e.__class__.__name__
-                yield f'data: {{"error": "Unexpected server error: {err}"}}\n\n'
+                request_id = getattr(request.state, "request_id", None)
+                message = "Unexpected server error."
+                if request_id:
+                    message += f" Reference: {request_id}"
+                yield f"data: {json.dumps({'error': message}, ensure_ascii=False)}\n\n"
         finally:
             unregister_stream(stream_id)
 
@@ -2330,9 +2753,13 @@ async def chat_sync(request: Request, chat_request: ChatRequest, user: dict = De
     """Non-streaming variant — returns the full reply in one JSON response."""
     provider_override, override_model = _resolve_provider_for_user(user)
     _check_chat_rate_limit(request, user)
+    messages = _normalize_chat_messages([
+        {"role": message.role, "content": message.content}
+        for message in chat_request.messages
+    ])
 
     key_status = authmod.get_user_key_status(user["id"])
-    estimated_request_tokens = estimate_messages_tokens([{"role": m.role, "content": m.content} for m in chat_request.messages])
+    estimated_request_tokens = estimate_messages_tokens(messages)
     try:
         assert_user_can_chat(user["id"], has_own_key=key_status["active"], estimated_request_tokens=estimated_request_tokens)
     except UsageLimitError as e:
@@ -2346,7 +2773,6 @@ async def chat_sync(request: Request, chat_request: ChatRequest, user: dict = De
                 f"or in your deployment Variables (get a free key at {GROQ_KEYS_URL})."
             ),
         )
-    messages = [{"role": m.role, "content": m.content} for m in chat_request.messages]
     last_user_query = ""
     for m in reversed(messages):
         if m.get("role") == "user":
@@ -2374,45 +2800,48 @@ async def chat_sync(request: Request, chat_request: ChatRequest, user: dict = De
         logger.error("Chat failed: %s", e)
         raise HTTPException(status_code=502, detail=str(e))
 
-    try:
-        last_user_text = None
-        for m in reversed(messages):
-            if m.get("role") == "user":
-                last_user_text = m.get("content") if isinstance(m.get("content"), str) else None
-                break
-        if last_user_text and reply:
-            add_interaction(last_user_text, reply)
-    except Exception:
-        logger.exception("Failed to save interaction to KB")
-
     return JSONResponse({"role": "assistant", "content": reply})
 
 
 # ── Stream control ────────────────────────────────────────────────────────────
 @app.post("/api/cancel-stream", tags=["Chat"])
-async def cancel_stream_endpoint(req: StreamControlRequest):
-    if cancel_stream(req.stream_id):
+async def cancel_stream_endpoint(
+    req: StreamControlRequest,
+    user: dict = Depends(require_current_user),
+):
+    if cancel_stream(req.stream_id, user["id"]):
         return JSONResponse({"status": "cancelled", "stream_id": req.stream_id})
     return JSONResponse({"status": "not_found", "stream_id": req.stream_id}, status_code=404)
 
 
 @app.post("/api/pause-stream", tags=["Chat"])
-async def pause_stream_endpoint(req: StreamControlRequest):
-    if pause_stream(req.stream_id):
+async def pause_stream_endpoint(
+    req: StreamControlRequest,
+    user: dict = Depends(require_current_user),
+):
+    if pause_stream(req.stream_id, user["id"]):
         return JSONResponse({"status": "paused", "stream_id": req.stream_id})
     return JSONResponse({"status": "not_found", "stream_id": req.stream_id}, status_code=404)
 
 
 @app.post("/api/resume-stream", tags=["Chat"])
-async def resume_stream_endpoint(req: StreamControlRequest):
-    if resume_stream(req.stream_id):
+async def resume_stream_endpoint(
+    req: StreamControlRequest,
+    user: dict = Depends(require_current_user),
+):
+    if resume_stream(req.stream_id, user["id"]):
         return JSONResponse({"status": "resumed", "stream_id": req.stream_id})
     return JSONResponse({"status": "not_found", "stream_id": req.stream_id}, status_code=404)
 
 
 # ── Image generation ──────────────────────────────────────────────────────────
 @app.post("/api/generate-image", tags=["Image"])
-async def api_generate_image(req: ImageRequest, user: dict = Depends(require_current_user)):
+async def api_generate_image(
+    request: Request,
+    req: ImageRequest,
+    user: dict = Depends(require_current_user),
+):
+    _enforce_rate_limit(request, "image_generate", 10, user=user, window_seconds=3600)
     try:
         result = await generate_image(req.prompt, size=req.size or "1024x1024")
     except ImageGenError as e:
@@ -2420,11 +2849,27 @@ async def api_generate_image(req: ImageRequest, user: dict = Depends(require_cur
     except Exception:
         logger.exception("Unexpected error in image generation")
         raise HTTPException(status_code=500, detail="Image generation failed")
+    if not IS_TESTING:
+        from vigzone_ai import track_token_usage
+
+        track_token_usage(
+            user["id"],
+            0,
+            0,
+            provider=f"{result.get('provider', 'image')}_image",
+            estimated=False,
+            model=str(result.get("model") or ""),
+        )
     return JSONResponse(result)
 
 
 @app.post("/api/edit-image", tags=["Image"])
-async def api_edit_image(req: EditImageRequest, user: dict = Depends(require_current_user)):
+async def api_edit_image(
+    request: Request,
+    req: EditImageRequest,
+    user: dict = Depends(require_current_user),
+):
+    _enforce_rate_limit(request, "image_edit", 10, user=user, window_seconds=3600)
     try:
         result = await edit_image(req.image_data_uri, req.prompt, size=req.size or "1024x1024")
     except ImageGenError as e:
@@ -2432,6 +2877,17 @@ async def api_edit_image(req: EditImageRequest, user: dict = Depends(require_cur
     except Exception:
         logger.exception("Unexpected error in image editing")
         raise HTTPException(status_code=500, detail="Image editing failed")
+    if not IS_TESTING:
+        from vigzone_ai import track_token_usage
+
+        track_token_usage(
+            user["id"],
+            0,
+            0,
+            provider=f"{result.get('provider', 'image')}_image",
+            estimated=False,
+            model=str(result.get("model") or ""),
+        )
     return JSONResponse(result)
 
 
@@ -2499,14 +2955,35 @@ async def chat_page(vigzone_session: Optional[str] = Cookie(default=None)):
 # ── Error handlers ────────────────────────────────────────────────────────────
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
-    logger.error("HTTP Exception: %s - %s", exc.status_code, exc.detail)
-    return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
+    logger.info(
+        "http_exception request_id=%s status=%s path=%s",
+        getattr(request.state, "request_id", ""),
+        exc.status_code,
+        request.url.path,
+    )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers=exc.headers or {},
+    )
 
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request, exc):
-    logger.error("Unexpected error: %s", str(exc), exc_info=True)
-    return JSONResponse(status_code=500, content={"error": "Internal server error"})
+    request_id = getattr(request.state, "request_id", "")
+    logger.error(
+        "unexpected_error request_id=%s path=%s",
+        request_id,
+        request.url.path,
+        exc_info=True,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Internal server error.",
+            "request_id": request_id or None,
+        },
+    )
 
 
 # ── Static files ──────────────────────────────────────────────────────────────
@@ -2518,6 +2995,6 @@ if os.path.exists("static"):
 if __name__ == "__main__":
     import uvicorn
     port   = int(os.getenv("PORT", "8000"))
-    reload = os.getenv("ENV", "development") == "development"
+    reload = not is_production() and os.getenv("ENV", "development") == "development"
     logger.info("Starting Vigzone AI server on port %d…", port)
     uvicorn.run("app:app", host="0.0.0.0", port=port, reload=reload, log_level="info")

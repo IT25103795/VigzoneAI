@@ -1,5 +1,5 @@
 /* Vigzone AI offline service worker */
-const VIGZONE_SW_VERSION = 'offline-v1.4.0-hardcode-cleanup';
+const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r3';
 const SHELL_CACHE = `vigzone-shell-${VIGZONE_SW_VERSION}`;
 const RUNTIME_CACHE = `vigzone-runtime-${VIGZONE_SW_VERSION}`;
 
@@ -10,6 +10,7 @@ const APP_SHELL = [
   '/static/index.html',
   '/static/landing.html',
   '/static/offline.html',
+  '/static/vendor/jszip.min.js',
   '/manifest.json',
   '/static/icons/favicon.svg',
   '/static/icons/vigzone-icon.svg',
@@ -90,7 +91,13 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (request.mode === 'navigate') {
-    event.respondWith(networkFirst(request, '/static/index.html').catch(() => caches.match('/static/offline.html')));
+    // Cache only the fixed app shell. Token-bearing account pages (verification,
+    // password reset) and public share URLs must never be persisted by the PWA.
+    if (['/', '/chat', '/offline'].includes(url.pathname) && !url.search) {
+      event.respondWith(networkFirst(request, '/static/index.html').catch(() => caches.match('/static/offline.html')));
+    } else {
+      event.respondWith(fetch(request).catch(() => caches.match('/static/offline.html')));
+    }
     return;
   }
 

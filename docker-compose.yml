@@ -1,29 +1,36 @@
-version: '3.9'
-
 services:
   vigzone-api:
     build:
       context: .
       dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      APP_MODE: production
+      ENV: production
+      COOKIE_SECURE: "true"
+      VIRUS_SCAN_STRICT: "true"
+      VIGZONE_DATA_DIR: /app/data
+      WORKERS: "1"
+      GROQ_API_KEY: ${GROQ_API_KEY:?Set GROQ_API_KEY in .env}
+      ENCRYPTION_SECRET: ${ENCRYPTION_SECRET:?Set a random 32+ character ENCRYPTION_SECRET in .env}
+      CORS_ORIGINS: ${CORS_ORIGINS:?Set your public HTTPS origin in .env}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?Set your public HTTPS URL in .env}
     ports:
       - "8000:8000"
-    environment:
-      - ENV=production
-      - PORT=8000
-      - LOG_LEVEL=INFO
-      - CORS_ORIGINS=*
-      - GROQ_API_KEY=${GROQ_API_KEY}
-      - GROQ_MODEL=${GROQ_MODEL:-llama-3.3-70b-versatile}
+    volumes:
+      - vigzone-data:/app/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=5)"
       interval: 30s
-      timeout: 10s
+      timeout: 8s
       retries: 3
-      start_period: 5s
-    networks:
-      - vigzone-net
+      start_period: 10s
 
-networks:
-  vigzone-net:
-    driver: bridge
+volumes:
+  vigzone-data:

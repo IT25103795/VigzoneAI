@@ -10,7 +10,7 @@ Providers:
 Important env vars:
   IMAGE_API_PROVIDER=auto|openai|pollinations
   OPENAI_API_KEY=...
-  OPENAI_IMAGE_MODEL=gpt-image-1
+  OPENAI_IMAGE_MODEL=gpt-image-2
   OPENAI_IMAGE_QUALITY=high
   OPENAI_IMAGE_OUTPUT_FORMAT=png
   IMAGE_PROMPT_ENHANCER=auto|groq|off
@@ -19,6 +19,9 @@ Important env vars:
 from __future__ import annotations
 
 import base64
+import binascii
+import io
+import logging
 import os
 import random
 import re
@@ -26,6 +29,10 @@ import urllib.parse
 from typing import Dict, Optional
 
 import httpx
+from PIL import Image
+
+
+logger = logging.getLogger("vigzone.images")
 
 
 class ImageGenError(Exception):
@@ -41,6 +48,9 @@ _VALID_OPENAI_SIZES = {"1024x1024", "1024x1536", "1536x1024", "auto"}
 _VALID_QUALITIES = {"low", "medium", "high", "auto"}
 _VALID_OUTPUT_FORMATS = {"png", "webp", "jpeg"}
 _VALID_BACKGROUNDS = {"transparent", "opaque", "auto"}
+MAX_SOURCE_IMAGE_BYTES = int(os.getenv("MAX_SOURCE_IMAGE_BYTES", str(20 * 1024 * 1024)))
+MAX_GENERATED_IMAGE_BYTES = int(os.getenv("MAX_GENERATED_IMAGE_BYTES", str(25 * 1024 * 1024)))
+MAX_IMAGE_PIXELS = 40_000_000
 
 
 def _safe_env(name: str, default: str = "") -> str:
@@ -99,6 +109,34 @@ def _select_provider() -> str:
 
 def _clean_prompt(prompt: str) -> str:
     return re.sub(r"\s+", " ", (prompt or "").strip())
+
+
+def _validated_generated_image_data_uri(image_bytes: bytes) -> tuple[str, str]:
+    """Validate provider bytes and return a MIME-accurate browser data URI."""
+
+    if not image_bytes or len(image_bytes) > MAX_GENERATED_IMAGE_BYTES:
+        raise ImageGenError("Generated image exceeded the safe response limit.")
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as image:
+            width, height = image.size
+            if width <= 0 or height <= 0 or width * height > MAX_IMAGE_PIXELS:
+                raise ImageGenError("Generated image dimensions are too large.")
+            detected = (image.format or "").upper()
+            image.verify()
+    except ImageGenError:
+        raise
+    except Exception as exc:
+        raise ImageGenError("Image provider returned invalid image data.") from exc
+
+    mime = {
+        "PNG": "image/png",
+        "JPEG": "image/jpeg",
+        "WEBP": "image/webp",
+    }.get(detected)
+    if not mime:
+        raise ImageGenError("Image provider returned an unsupported image format.")
+    encoded = base64.b64encode(image_bytes).decode("ascii")
+    return f"data:{mime};base64,{encoded}", mime
 
 
 def _detect_intent_tags(prompt: str) -> dict:
@@ -211,7 +249,7 @@ async def _groq_enhance_prompt(prompt: str, *, edit: bool = False) -> str:
             {"role": "user", "content": user},
         ],
         "temperature": 0.25,
-        "max_tokens": 900,
+        "max_completion_tokens": 900,
     }
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
@@ -264,22 +302,33 @@ async def _pollinations_generate(prompt: str, size: str = "1024x1024") -> Dict:
 
     async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
         try:
-            resp = await client.get(url, params=params)
-        except httpx.RequestError as e:
-            raise ImageGenError(f"Could not reach the image generation service: {e}") from e
-
-    if resp.status_code != 200:
-        raise ImageGenError(
-            f"Image generation service error {resp.status_code}: {resp.text[:300]}"
-        )
-
-    content_type = resp.headers.get("content-type", "image/jpeg")
-    if not content_type.startswith("image/"):
-        raise ImageGenError("Image generation service returned an unexpected response.")
-
-    encoded = base64.b64encode(resp.content).decode("ascii")
+            async with client.stream("GET", url, params=params) as resp:
+                if resp.status_code != 200:
+                    await resp.aread()
+                    logger.warning(
+                        "Pollinations image request failed status=%s",
+                        resp.status_code,
+                    )
+                    raise ImageGenError(
+                        f"Image generation service failed (HTTP {resp.status_code})."
+                    )
+                content_type = resp.headers.get("content-type", "image/jpeg")
+                if not content_type.startswith("image/"):
+                    raise ImageGenError("Image generation service returned an unexpected response.")
+                chunks: list[bytes] = []
+                total = 0
+                async for chunk in resp.aiter_bytes():
+                    total += len(chunk)
+                    if total > MAX_GENERATED_IMAGE_BYTES:
+                        raise ImageGenError("Generated image exceeded the safe response limit.")
+                    chunks.append(chunk)
+                image_bytes = b"".join(chunks)
+        except httpx.RequestError as exc:
+            logger.warning("Pollinations image request failed: %s", type(exc).__name__)
+            raise ImageGenError("Could not reach the image generation service.") from exc
+    data_uri, _detected_mime = _validated_generated_image_data_uri(image_bytes)
     return {
-        "data_uri": f"data:{content_type};base64,{encoded}",
+        "data_uri": data_uri,
         "provider": "pollinations",
         "quality_note": "Free fallback provider. For best accuracy, set IMAGE_API_PROVIDER=openai and OPENAI_API_KEY.",
     }
@@ -296,7 +345,7 @@ def _require_openai_key() -> str:
 
 
 def _openai_image_payload(prompt: str, size: str, *, edit: bool = False) -> dict:
-    model = _safe_env("OPENAI_IMAGE_MODEL", "gpt-image-1")
+    model = _safe_env("OPENAI_IMAGE_MODEL", "gpt-image-2")
     quality = (_safe_env("OPENAI_IMAGE_QUALITY", "high") or "high").lower()
     output_format = (_safe_env("OPENAI_IMAGE_OUTPUT_FORMAT", "png") or "png").lower()
     background = (_safe_env("OPENAI_IMAGE_BACKGROUND", "auto") or "auto").lower()
@@ -325,27 +374,40 @@ async def _post_openai_image(url: str, headers: dict, payload: dict) -> dict:
     async with httpx.AsyncClient(timeout=180.0) as client:
         try:
             resp = await client.post(url, headers=headers, json=payload)
-        except httpx.RequestError as e:
-            raise ImageGenError(f"Could not reach OpenAI Images API: {e}") from e
+        except httpx.RequestError as exc:
+            logger.warning("OpenAI image request failed: %s", type(exc).__name__)
+            raise ImageGenError("Could not reach the configured image provider.") from exc
 
     if resp.status_code == 200:
-        return resp.json()
+        try:
+            return resp.json()
+        except ValueError as exc:
+            raise ImageGenError("Image provider returned an invalid response.") from exc
 
     # Some accounts/models may reject newer optional params. Retry minimal but keep model/prompt/size.
     if resp.status_code in (400, 422):
         minimal = {
-            "model": payload.get("model", "gpt-image-1"),
+            "model": payload.get("model", "gpt-image-2"),
             "prompt": payload["prompt"],
             "n": 1,
             "size": payload.get("size", "1024x1024"),
         }
-        async with httpx.AsyncClient(timeout=180.0) as client:
-            retry = await client.post(url, headers=headers, json=minimal)
+        try:
+            async with httpx.AsyncClient(timeout=180.0) as client:
+                retry = await client.post(url, headers=headers, json=minimal)
+        except httpx.RequestError as exc:
+            logger.warning("OpenAI image retry failed: %s", type(exc).__name__)
+            raise ImageGenError("Could not reach the configured image provider.") from exc
         if retry.status_code == 200:
-            return retry.json()
-        raise ImageGenError(f"Images API error {retry.status_code}: {retry.text[:500]}")
+            try:
+                return retry.json()
+            except ValueError as exc:
+                raise ImageGenError("Image provider returned an invalid response.") from exc
+        logger.warning("OpenAI image retry failed status=%s", retry.status_code)
+        raise ImageGenError(f"Image provider rejected the request (HTTP {retry.status_code}).")
 
-    raise ImageGenError(f"Images API error {resp.status_code}: {resp.text[:500]}")
+    logger.warning("OpenAI image request failed status=%s", resp.status_code)
+    raise ImageGenError(f"Image provider rejected the request (HTTP {resp.status_code}).")
 
 
 async def _openai_generate(prompt: str, size: str = "1024x1024") -> Dict:
@@ -370,17 +432,23 @@ def _extract_openai_image(data: dict, *, provider: str, model: Optional[str] = N
     b64 = first.get("b64_json")
     if b64:
         try:
-            base64.b64decode(b64)
+            raw = base64.b64decode(b64, validate=True)
+            data_uri, _mime = _validated_generated_image_data_uri(raw)
             return {
-                "data_uri": "data:image/png;base64," + b64,
+                "data_uri": data_uri,
                 "provider": provider,
                 "model": model,
             }
+        except ImageGenError:
+            raise
         except Exception:
             raise ImageGenError("Images API returned invalid base64 data")
     url_out = first.get("url")
     if url_out:
-        return {"url": url_out, "provider": provider, "model": model}
+        parsed = urllib.parse.urlparse(str(url_out))
+        if parsed.scheme != "https" or not parsed.hostname:
+            raise ImageGenError("Images API returned an unsafe image URL.")
+        return {"url": str(url_out), "provider": provider, "model": model}
     raise ImageGenError("Images API returned an unexpected response format")
 
 
@@ -389,9 +457,34 @@ def _decode_data_uri(data_uri: str) -> tuple[bytes, str]:
         raise ImageGenError("Expected a base64 data URI for the source image.")
     try:
         header, b64data = data_uri.split(",", 1)
-        mime = header.split(";")[0][len("data:"):] or "image/png"
-        return base64.b64decode(b64data), mime
-    except (ValueError, IndexError) as e:
+        mime = header.split(";")[0][len("data:"):].lower()
+        if ";base64" not in header.lower():
+            raise ImageGenError("Source image must use base64 encoding.")
+        if mime not in {"image/png", "image/jpeg", "image/webp"}:
+            raise ImageGenError("Source image must be PNG, JPEG, or WEBP.")
+        if len(b64data) > ((MAX_SOURCE_IMAGE_BYTES * 4) // 3) + 16:
+            raise ImageGenError("Source image exceeds the 20 MB limit.")
+        image_bytes = base64.b64decode(b64data, validate=True)
+        if not image_bytes or len(image_bytes) > MAX_SOURCE_IMAGE_BYTES:
+            raise ImageGenError("Source image exceeds the 20 MB limit.")
+        with Image.open(io.BytesIO(image_bytes)) as image:
+            image.verify()
+        with Image.open(io.BytesIO(image_bytes)) as image:
+            width, height = image.size
+            if width <= 0 or height <= 0 or width * height > 40_000_000:
+                raise ImageGenError("Source image dimensions are too large.")
+            detected = (image.format or "").upper()
+        detected_mime = {
+            "PNG": "image/png",
+            "JPEG": "image/jpeg",
+            "WEBP": "image/webp",
+        }.get(detected)
+        if not detected_mime:
+            raise ImageGenError("Source image format is not supported.")
+        return image_bytes, detected_mime
+    except ImageGenError:
+        raise
+    except (ValueError, IndexError, binascii.Error, OSError) as e:
         raise ImageGenError("Couldn't read the uploaded image data.") from e
 
 
@@ -409,7 +502,7 @@ async def _openai_edit(
     ext = "png" if "png" in image_mime else ("webp" if "webp" in image_mime else "jpg")
     files = {"image": (f"source.{ext}", image_bytes, image_mime or "image/png")}
 
-    model = _safe_env("OPENAI_IMAGE_MODEL", "gpt-image-1")
+    model = _safe_env("OPENAI_IMAGE_MODEL", "gpt-image-2")
     quality = (_safe_env("OPENAI_IMAGE_QUALITY", "high") or "high").lower()
     output_format = (_safe_env("OPENAI_IMAGE_OUTPUT_FORMAT", "png") or "png").lower()
     if quality not in _VALID_QUALITIES:
@@ -429,19 +522,33 @@ async def _openai_edit(
     async with httpx.AsyncClient(timeout=180.0) as client:
         try:
             resp = await client.post(url, headers=headers, files=files, data=data)
-        except httpx.RequestError as e:
-            raise ImageGenError(f"Could not reach OpenAI Images API: {e}") from e
+        except httpx.RequestError as exc:
+            logger.warning("OpenAI image edit request failed: %s", type(exc).__name__)
+            raise ImageGenError("Could not reach the configured image provider.") from exc
 
     if resp.status_code != 200:
         # Retry minimal if quality/output_format rejected.
         minimal = {"prompt": enhanced_prompt, "model": model, "n": "1", "size": _normalize_openai_size(size)}
-        async with httpx.AsyncClient(timeout=180.0) as client:
-            retry = await client.post(url, headers=headers, files=files, data=minimal)
+        try:
+            async with httpx.AsyncClient(timeout=180.0) as client:
+                retry = await client.post(url, headers=headers, files=files, data=minimal)
+        except httpx.RequestError as exc:
+            logger.warning("OpenAI image edit retry failed: %s", type(exc).__name__)
+            raise ImageGenError("Could not reach the configured image provider.") from exc
         if retry.status_code != 200:
-            raise ImageGenError(f"Image edit API error {retry.status_code}: {retry.text[:500]}")
-        result = retry.json()
+            logger.warning("OpenAI image edit retry failed status=%s", retry.status_code)
+            raise ImageGenError(
+                f"Image provider rejected the edit request (HTTP {retry.status_code})."
+            )
+        try:
+            result = retry.json()
+        except ValueError as exc:
+            raise ImageGenError("Image provider returned an invalid response.") from exc
     else:
-        result = resp.json()
+        try:
+            result = resp.json()
+        except ValueError as exc:
+            raise ImageGenError("Image provider returned an invalid response.") from exc
 
     return _extract_openai_image(result, provider="openai-edit", model=model)
 

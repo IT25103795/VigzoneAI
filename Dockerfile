@@ -1,51 +1,43 @@
-FROM python:3.11-slim
+FROM python:3.13.14-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    APP_MODE=production \
+    ENV=production \
+    COOKIE_SECURE=true \
+    VIRUS_SCAN_STRICT=true \
+    VIGZONE_DATA_DIR=/app/data \
+    WORKERS=1
 
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    clamav \
+    clamav-freshclam \
+    libmagic1 \
+    tesseract-ocr \
+    tesseract-ocr-eng \
+    tesseract-ocr-sin \
+    tesseract-ocr-tam \
+    && freshclam --quiet \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m pip install --no-cache-dir -r requirements.txt
 
-# Every Python module app.py (directly or indirectly) imports at startup —
-# missing any of these causes an ImportError and the container crashes
-# before it can bind to a port, which shows up on Railway as
-# "Application failed to respond".
-COPY app.py .
-COPY vigzone_ai.py .
-COPY auth.py .
-COPY file_processing.py .
-COPY self_learning.py .
-COPY image_generation.py .
-COPY web_search.py .
-COPY stream_manager.py .
-COPY virus_scanner.py .
-COPY start.py .
-# Optional modules — imported inside try/except in app.py. They do
-# exist in this project, so copy them directly (if you ever delete them,
-# switch these two lines to a wildcard COPY or remove them).
-COPY realworld_data.py .
-COPY website_builder.py .
-COPY fact_verification.py .
-COPY static/ static/
+RUN groupadd --gid 10001 vigzone \
+    && useradd --uid 10001 --gid vigzone --create-home --shell /usr/sbin/nologin vigzone
 
-ENV PYTHONUNBUFFERED=1 \
-    ENV=production
+COPY --chown=vigzone:vigzone . .
+RUN mkdir -p /app/data && chown -R vigzone:vigzone /app/data
 
-# NOTE: no hardcoded PORT here — Railway (and most hosts) inject their own
-# PORT value at runtime, and the app must listen on THAT port, not a fixed
-# one, or the platform's proxy can never reach it.
-
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import os,urllib.request; urllib.request.urlopen('http://localhost:' + os.environ.get('PORT','8000') + '/health')" || exit 1
+USER vigzone
 
 EXPOSE 8000
 
-# start.py reads PORT itself in Python — no reliance on the host actually
-# running this command through a shell that expands $PORT (some platforms'
-# "custom start command" features run commands without a shell, which left
-# a literal "$PORT" string being passed to uvicorn instead of a number).
-CMD ["python", "start.py"]
+HEALTHCHECK --interval=30s --timeout=8s --start-period=10s --retries=3 \
+    CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('PORT','8000') + '/health/live', timeout=5)" || exit 1
 
+CMD ["python", "start.py"]

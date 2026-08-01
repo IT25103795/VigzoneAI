@@ -13,11 +13,15 @@ NC='\033[0m'
 
 echo -e "${BLUE}Checking Python installation...${NC}"
 if ! command -v python3 &> /dev/null; then
-    echo "❌ Python 3 not found! Please install Python 3.10+"
+    echo "❌ Python 3 not found! Please install Python 3.11–3.14"
     exit 1
 fi
 PYTHON_VERSION=$(python3 --version | cut -d' ' -f2)
 echo -e "${GREEN}✓ Python ${PYTHON_VERSION} found${NC}"
+if ! python3 -c 'import sys; raise SystemExit(0 if (3, 11) <= sys.version_info[:2] < (3, 15) else 1)'; then
+    echo "❌ Unsupported Python ${PYTHON_VERSION}. Install Python 3.11–3.14."
+    exit 1
+fi
 
 if [ ! -d "venv" ]; then
     echo -e "${BLUE}Creating virtual environment...${NC}"

@@ -949,6 +949,9 @@
                 <label for="loginPassword">Password</label>
                 <input id="loginPassword" type="password" autocomplete="current-password" required />
               </div>
+              <div class="swap-note" style="text-align:right;margin:0 0 12px;">
+                <button id="forgotPasswordBtn" type="button">Forgot password?</button>
+              </div>
               <button class="primary-btn" type="submit" id="loginSubmitBtn">Sign in</button>
             </form>
             <div class="divider">or</div>
@@ -971,7 +974,7 @@
               </div>
               <div class="field">
                 <label for="signupPassword">Password</label>
-                <input id="signupPassword" type="password" autocomplete="new-password" minlength="8" required />
+                <input id="signupPassword" type="password" autocomplete="new-password" minlength="10" required />
               </div>
               <button class="primary-btn" type="submit" id="signupSubmitBtn">Create account</button>
             </form>
@@ -1090,6 +1093,18 @@
     } catch (err) {
       showError(err.message);
       btn.disabled = false; btn.textContent = 'Create account';
+    }
+  });
+
+  $('#forgotPasswordBtn').addEventListener('click', async () => {
+    hideError();
+    const email = $('#loginEmail').value.trim() || window.prompt('Enter your account email:') || '';
+    if (!email) return;
+    try {
+      const data = await postJSON('/api/auth/password/forgot', {email});
+      showError(data.message || 'If that account exists, a reset link has been sent.');
+    } catch (err) {
+      showError(err.message);
     }
   });
 

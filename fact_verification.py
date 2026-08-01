@@ -1,276 +1,144 @@
+"""Evidence retrieval for factual claims.
+
+This module never invents a probability from the wording of a claim.  Search
+snippets can help a person verify a statement, but they are not a substitute for
+reading authoritative sources.  The API therefore returns attributable evidence
+and an explicit ``verified: null`` unless a future deterministic verifier is
+added for a specific data domain.
 """
-Vigzone AI - Accuracy & Fact Verification
-===========================================
-Provides confidence scoring, fact verification, and source attribution for responses.
-Helps ensure 100% real-world accuracy.
-"""
+
+from __future__ import annotations
 
 import asyncio
-import logging
 import re
-from typing import Optional, Dict, List, Tuple, Any
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import Any, Optional
 
-logger = logging.getLogger(__name__)
-
-# Confidence scoring weights for different claim types
-CONFIDENCE_WEIGHTS = {
-    "date_time": 0.99,  # Server-injected date/time = extremely high confidence
-    "current_prices": 0.95,  # Real-time API data = very high
-    "weather": 0.90,  # Weather APIs are usually accurate
-    "news": 0.75,  # News from DuckDuckGo = moderate confidence
-    "factual_claim": 0.70,  # Factual claims from LLM = lower confidence without verification
-    "speculation": 0.50,  # Speculation/opinion = low confidence
-}
+from web_search import search_evidence
 
 
 class FactVerificationResult:
-    """Result of fact verification with confidence scoring."""
-
     def __init__(
         self,
         claim: str,
-        verified: Optional[bool] = None,
-        confidence: float = 0.0,
-        sources: Optional[List[str]] = None,
+        *,
+        evidence: Optional[list[dict]] = None,
+        status: str = "unverified",
         reasoning: str = "",
     ):
         self.claim = claim
-        self.verified = verified
-        self.confidence = max(0.0, min(1.0, confidence))  # Clamp 0-1
-        self.sources = sources or []
+        self.evidence = evidence or []
+        self.status = status
         self.reasoning = reasoning
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "claim": self.claim,
-            "verified": self.verified,
-            "confidence": f"{self.confidence:.0%}",
-            "sources": self.sources,
+            "verified": None,
+            "confidence": None,
+            "status": self.status,
+            "sources": self.evidence,
             "reasoning": self.reasoning,
+            "retrieved_at": datetime.now(timezone.utc).isoformat(),
+            "warning": (
+                "Search snippets are evidence leads, not a factual verdict. "
+                "Open the cited sources and prefer primary/official material."
+            ),
         }
-
-    def add_source(self, source: str) -> "FactVerificationResult":
-        if source not in self.sources:
-            self.sources.append(source)
-        return self
 
 
 class ClaimClassifier:
-    """Classify claims by type to assign appropriate confidence scores."""
-
-    # Regex patterns for different claim types
-    DATE_TIME_PATTERN = re.compile(
-        r"\b(today|tomorrow|yesterday|date|time|current|right now|"
-        r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|"
-        r"monday|tuesday|wednesday|thursday|friday|saturday|sunday|"
-        r"\d{1,2}:\d{2}|am|pm)\b",
-        re.IGNORECASE,
-    )
-
-    PRICE_PATTERN = re.compile(
-        r"\b(price|cost|usd|eur|gbp|inr|lkr|btc|eth|\$|₹|£|€|cryptocurrency|bitcoin|ethereum)\b",
-        re.IGNORECASE,
-    )
-
-    WEATHER_PATTERN = re.compile(
-        r"\b(weather|temperature|rain|humidity|wind|forecast|climate|celsius|fahrenheit)\b",
-        re.IGNORECASE,
-    )
-
-    NEWS_PATTERN = re.compile(
-        r"\b(news|breaking|latest|current event|just happened|announced|"
-        r"breaking news|update|headline|reported)\b",
-        re.IGNORECASE,
-    )
-
-    SPECULATION_PATTERN = re.compile(
-        r"\b(probably|maybe|likely|might|could|should|i think|in my opinion|"
-        r"it seems|it appears|appears to be|allegedly|supposedly|rumor)\b",
-        re.IGNORECASE,
-    )
+    """Lightweight routing only; it does not assign confidence."""
 
     @classmethod
-    def classify(cls, text: str) -> Tuple[str, float]:
-        """
-        Classify a claim into one of the confidence categories.
-        Returns: (category, base_confidence)
-        """
-        if cls.DATE_TIME_PATTERN.search(text):
-            return "date_time", CONFIDENCE_WEIGHTS["date_time"]
-
-        if cls.PRICE_PATTERN.search(text):
-            return "current_prices", CONFIDENCE_WEIGHTS["current_prices"]
-
-        if cls.WEATHER_PATTERN.search(text):
-            return "weather", CONFIDENCE_WEIGHTS["weather"]
-
-        if cls.NEWS_PATTERN.search(text):
-            return "news", CONFIDENCE_WEIGHTS["news"]
-
-        if cls.SPECULATION_PATTERN.search(text):
-            return "speculation", CONFIDENCE_WEIGHTS["speculation"]
-
-        # Default to factual claim
-        return "factual_claim", CONFIDENCE_WEIGHTS["factual_claim"]
-
-
-class AnswerQualityAnalyzer:
-    """Analyze answer quality and assign confidence scores."""
-
-    # Warning signs in responses that lower confidence
-    HEDGING_PHRASES = (
-        "i'm not sure",
-        "i'm not certain",
-        "i don't know",
-        "i can't confirm",
-        "i'm unable to",
-        "unverified",
-        "unconfirmed",
-        "alleged",
-        "rumor has it",
-        "it's unclear",
-        "it's unknown",
-    )
-
-    # Positive indicators that raise confidence
-    SOURCE_INDICATORS = (
-        "according to",
-        "reported by",
-        "confirmed by",
-        "verified by",
-        "official",
-        "announcement",
-        "statement",
-        "sources say",
-        "as of",
-    )
-
-    @classmethod
-    def adjust_confidence(cls, text: str, base_confidence: float) -> float:
-        """Adjust confidence based on answer quality indicators."""
-        lower_text = text.lower()
-
-        # Reduce confidence for hedging language
-        hedging_count = sum(1 for phrase in cls.HEDGING_PHRASES if phrase in lower_text)
-        reduction = hedging_count * 0.1  # Each hedging phrase reduces by 10%
-
-        # Increase confidence for source attribution
-        source_count = sum(1 for phrase in cls.SOURCE_INDICATORS if phrase in lower_text)
-        increase = source_count * 0.05  # Each source indicator increases by 5%
-
-        adjusted = base_confidence - reduction + increase
-        return max(0.0, min(1.0, adjusted))  # Clamp 0-1
+    def classify(cls, text: str) -> tuple[str, None]:
+        lowered = text.lower()
+        if re.search(r"\b(weather|temperature|forecast|rain|humidity)\b", lowered):
+            return "weather", None
+        if re.search(r"\b(price|stock|crypto|exchange rate|currency)\b", lowered):
+            return "price", None
+        if re.search(r"\b(news|latest|announced|reported|election|score)\b", lowered):
+            return "current_event", None
+        if re.search(r"\b(time|date|today|tomorrow|timezone)\b", lowered):
+            return "date_time", None
+        return "general", None
 
 
 async def verify_factual_claim(claim: str) -> FactVerificationResult:
-    """
-    Verify a factual claim and return verification result with confidence.
-    This is a framework; actual verification would integrate with fact-check APIs.
-    """
-    category, base_confidence = ClaimClassifier.classify(claim)
+    cleaned = re.sub(r"\s+", " ", (claim or "").strip())[:1000]
+    if not cleaned:
+        return FactVerificationResult(
+            cleaned,
+            status="invalid",
+            reasoning="A non-empty claim is required.",
+        )
 
-    result = FactVerificationResult(
-        claim=claim,
-        confidence=base_confidence,
-        reasoning=f"Claim classified as '{category}'. "
-        f"Based on expected accuracy of {category} data sources.",
-    )
+    try:
+        evidence = await asyncio.wait_for(search_evidence(cleaned, max_results=6), timeout=10.0)
+    except asyncio.TimeoutError:
+        evidence = []
+    except Exception:
+        evidence = []
 
-    # Map to common sources based on claim type
-    if category == "date_time":
-        result.add_source("Server-side system time")
-    elif category == "current_prices":
-        result.add_source("CoinGecko / Yahoo Finance")
-    elif category == "weather":
-        result.add_source("OpenWeather / DuckDuckGo")
-    elif category == "news":
-        result.add_source("DuckDuckGo News")
-
-    return result
-
-
-def score_response_accuracy(
-    response_text: str, claim_category: str = "factual_claim"
-) -> Dict[str, Any]:
-    """
-    Score the accuracy/quality of a full response.
-    Returns confidence score and quality assessment.
-    """
-    base_confidence = CONFIDENCE_WEIGHTS.get(claim_category, 0.70)
-    adjusted_confidence = AnswerQualityAnalyzer.adjust_confidence(response_text, base_confidence)
-
-    # Analyze response characteristics
-    has_sources = any(
-        phrase in response_text.lower() for phrase in AnswerQualityAnalyzer.SOURCE_INDICATORS
-    )
-    has_citations = bool(re.search(r"\[.*?\]|\(.*?https?://", response_text))
-    has_disclaimers = bool(re.search(r"\b(disclaimer|note|caveat|important)\b", response_text, re.IGNORECASE))
-
-    quality_indicators = {
-        "has_source_attribution": has_sources,
-        "has_citations": has_citations,
-        "has_disclaimers": has_disclaimers,
-        "length_chars": len(response_text),
-        "length_words": len(response_text.split()),
-    }
-
-    return {
-        "confidence": adjusted_confidence,
-        "confidence_pct": f"{adjusted_confidence:.0%}",
-        "quality_indicators": quality_indicators,
-        "recommendation": (
-            "✅ High confidence - can cite to users"
-            if adjusted_confidence >= 0.85
-            else "⚠️ Medium confidence - add source citations"
-            if adjusted_confidence >= 0.70
-            else "❌ Low confidence - verify before presenting"
+    if not evidence:
+        return FactVerificationResult(
+            cleaned,
+            status="evidence_unavailable",
+            reasoning=(
+                "No attributable search evidence was available. Vigzone did not "
+                "guess a verdict or confidence score."
+            ),
+        )
+    return FactVerificationResult(
+        cleaned,
+        evidence=evidence,
+        status="evidence_found",
+        reasoning=(
+            f"Retrieved {len(evidence)} attributable result(s). Compare dates, "
+            "open the sources, and use primary or official evidence for a final verdict."
         ),
-    }
-
-
-def format_response_with_confidence(
-    response: str, confidence: float, sources: Optional[List[str]] = None
-) -> str:
-    """
-    Format a response with confidence badge and source citations.
-    This is shown to the user to indicate how trustworthy the answer is.
-    """
-    confidence_badge = (
-        "🟢 **Very High Confidence**"
-        if confidence >= 0.90
-        else "🟡 **Moderate Confidence**"
-        if confidence >= 0.70
-        else "🔴 **Low Confidence - Verify Independently**"
     )
 
-    formatted = f"{response}\n\n---\n{confidence_badge} ({confidence:.0%})"
 
-    if sources:
-        formatted += f"\n**Sources:** {', '.join(sources)}"
+def score_response_accuracy(response_text: str, claim_category: str = "general") -> dict[str, Any]:
+    """Return observable quality signals without a fabricated accuracy score."""
 
-    return formatted
+    urls = re.findall(r"https?://[^\s)>\]]+", response_text or "")
+    return {
+        "confidence": None,
+        "verification_status": "unverified",
+        "quality_indicators": {
+            "source_url_count": len(urls),
+            "has_uncertainty_language": bool(
+                re.search(
+                    r"\b(unverified|uncertain|could not confirm|may have changed)\b",
+                    response_text or "",
+                    re.IGNORECASE,
+                )
+            ),
+            "length_words": len((response_text or "").split()),
+        },
+        "recommendation": "Verify material claims against the cited primary sources.",
+    }
 
-
-# ── API Response Schemas ──────────────────────────────────────────────────────
 
 class AccuracyMetadata:
-    """Metadata about answer accuracy attached to API responses."""
+    """Compatibility container with no synthetic confidence percentage."""
 
     def __init__(
         self,
-        confidence: float,
-        sources: Optional[List[str]] = None,
+        confidence: Optional[float] = None,
+        sources: Optional[list[str]] = None,
         verification_status: str = "unverified",
     ):
-        self.confidence = max(0.0, min(1.0, confidence))
+        self.confidence = None
         self.sources = sources or []
-        self.verification_status = verification_status  # unverified, verified, contradicted
-        self.timestamp = datetime.utcnow().isoformat()
+        self.verification_status = verification_status
+        self.timestamp = datetime.now(timezone.utc).isoformat()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
-            "confidence": f"{self.confidence:.0%}",
+            "confidence": None,
             "sources": self.sources,
             "verification_status": self.verification_status,
             "timestamp": self.timestamp,

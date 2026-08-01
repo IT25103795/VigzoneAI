@@ -6,15 +6,18 @@ polling with asyncio.sleep(0.1). This gives zero-latency resume
 (no 100 ms delay) and zero CPU spin while paused.
 """
 import asyncio
+import time
 import uuid
-from typing import Dict
+from typing import Dict, Optional
 
 
 class _StreamState:
-    __slots__ = ("cancelled", "_pause_event")
+    __slots__ = ("cancelled", "_pause_event", "owner_id", "created_at")
 
-    def __init__(self) -> None:
+    def __init__(self, owner_id: int) -> None:
         self.cancelled   = False
+        self.owner_id = int(owner_id)
+        self.created_at = time.monotonic()
         # Event starts set (not paused). Cleared = paused, set = running.
         self._pause_event = asyncio.Event()
         self._pause_event.set()
@@ -35,12 +38,19 @@ def create_stream_id() -> str:
     return str(uuid.uuid4())
 
 
-def register_stream(stream_id: str) -> None:
-    _active_streams[stream_id] = _StreamState()
+def register_stream(stream_id: str, owner_id: int) -> None:
+    _active_streams[stream_id] = _StreamState(owner_id)
 
 
-def cancel_stream(stream_id: str) -> bool:
+def _owned(stream_id: str, owner_id: Optional[int]) -> Optional[_StreamState]:
     s = _active_streams.get(stream_id)
+    if not s or owner_id is None or s.owner_id != int(owner_id):
+        return None
+    return s
+
+
+def cancel_stream(stream_id: str, owner_id: int) -> bool:
+    s = _owned(stream_id, owner_id)
     if s:
         s.cancelled = True
         s.resume()   # unblock any waiting coroutine so it can exit
@@ -53,16 +63,16 @@ def is_cancelled(stream_id: str) -> bool:
     return s.cancelled if s else False
 
 
-def pause_stream(stream_id: str) -> bool:
-    s = _active_streams.get(stream_id)
+def pause_stream(stream_id: str, owner_id: int) -> bool:
+    s = _owned(stream_id, owner_id)
     if s and not s.cancelled:
         s.pause()
         return True
     return False
 
 
-def resume_stream(stream_id: str) -> bool:
-    s = _active_streams.get(stream_id)
+def resume_stream(stream_id: str, owner_id: int) -> bool:
+    s = _owned(stream_id, owner_id)
     if s:
         s.resume()
         return True
@@ -83,3 +93,20 @@ async def wait_if_paused(stream_id: str) -> None:
 
 def unregister_stream(stream_id: str) -> None:
     _active_streams.pop(stream_id, None)
+
+
+def purge_stale_streams(max_age_seconds: int = 900) -> int:
+    """Remove abandoned stream state left by disconnected clients."""
+
+    now = time.monotonic()
+    stale = [
+        stream_id
+        for stream_id, state in _active_streams.items()
+        if now - state.created_at > max_age_seconds
+    ]
+    for stream_id in stale:
+        state = _active_streams.pop(stream_id, None)
+        if state:
+            state.cancelled = True
+            state.resume()
+    return len(stale)

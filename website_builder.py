@@ -66,8 +66,8 @@ INDUSTRY_KEYWORDS: Dict[str, List[str]] = {
 INDUSTRY_GUIDANCE: Dict[str, Dict[str, str]] = {
     "hotel": {
         "sections": "hero with destination promise, room cards, amenities, local experiences, gallery, reviews, booking CTA/contact",
-        "design": "luxury hospitality: cinematic hero, warm ambient imagery/placeholders, calm spacing, premium room cards, trust badges and booking-first CTAs",
-        "interactions": "room filter chips, booking date UI mock, sticky reservation bar on desktop, mobile-friendly CTA",
+        "design": "luxury hospitality: cinematic hero, warm ambient illustrations or sourced imagery, calm spacing, premium room cards, trust badges and booking-first CTAs",
+        "interactions": "working room filter chips, validated booking inquiry form, sticky reservation bar on desktop, mobile-friendly CTA",
     },
     "hospital": {
         "sections": "hero with emergency/contact CTA, departments, doctor cards, appointment form, patient trust stats, services, location/footer",
@@ -81,7 +81,7 @@ INDUSTRY_GUIDANCE: Dict[str, Dict[str, str]] = {
     },
     "education": {
         "sections": "hero, programs/courses, outcomes, faculty, admissions steps, testimonials, contact/enroll CTA",
-        "design": "optimistic academic: structured grids, friendly illustrations/placeholders, credibility stats and clear enrollment journey",
+        "design": "optimistic academic: structured grids, friendly original illustrations, credibility stats and clear enrollment journey",
         "interactions": "course cards, FAQ accordion, enroll/contact form",
     },
     "real_estate": {
@@ -92,7 +92,7 @@ INDUSTRY_GUIDANCE: Dict[str, Dict[str, str]] = {
     "fitness": {
         "sections": "hero, classes/programs, trainers, schedule, pricing, transformations, join CTA",
         "design": "energetic performance: bold typography, strong contrast, motion used for energy, clear membership CTAs",
-        "interactions": "class tabs, pricing toggle/mock, join form",
+        "interactions": "working class tabs, pricing toggle, validated join inquiry form",
     },
     "portfolio": {
         "sections": "hero, selected work, about, skills/process, testimonials, contact",
@@ -100,19 +100,19 @@ INDUSTRY_GUIDANCE: Dict[str, Dict[str, str]] = {
         "interactions": "project hover states, filter chips, contact form",
     },
     "ecommerce": {
-        "sections": "hero offer, product grid, benefits/trust, reviews, cart/checkout mock or CTA, footer",
+        "sections": "hero offer, product grid, benefits/trust, reviews, functional local cart, clearly labelled checkout integration CTA, footer",
         "design": "conversion-first shop: scannable product cards, clear prices, ratings, trust badges, mobile shopping flow",
-        "interactions": "product filters, add-to-cart microcopy, quantity/cart summary mock",
+        "interactions": "working product filters, local add-to-cart state, quantity controls and cart summary",
     },
     "saas": {
-        "sections": "hero, product demo/mockup, problem-solution, features, metrics, pricing, testimonials, CTA",
-        "design": "modern product site: crisp hierarchy, bento feature blocks, product UI mock, polished gradients used sparingly",
-        "interactions": "tabs, pricing toggle, animated counters/mock status cards",
+        "sections": "hero, honest product interface preview, problem-solution, features, metrics, pricing, testimonials, CTA",
+        "design": "modern product site: crisp hierarchy, bento feature blocks, clearly labelled product preview, polished gradients used sparingly",
+        "interactions": "working tabs, pricing toggle, counters derived from declared page data",
     },
     "nonprofit": {
         "sections": "hero mission, impact stats, programs, stories, donation CTA, volunteers, footer",
         "design": "human impact: warm but not generic, story cards, strong donation/volunteer CTAs, trust and transparency",
-        "interactions": "donation amount selector mock, story cards, volunteer form",
+        "interactions": "donation selector linked to a clearly labelled payment integration step, story cards, validated volunteer form",
     },
     "automotive": {
         "sections": "hero, services/vehicles, inspection checklist, packages, reviews, booking/contact",
@@ -280,7 +280,7 @@ class WebsiteSystemPrompt:
         """
         subject = request.subject or "the user's requested website"
         prompt_lines = [
-            "WEBSITE CREATION MODE — VIGZONE WEBSITE STUDIO V3",
+            "WEBSITE CREATION MODE — VIGZONE WEBSITE STUDIO V5",
             "=" * 76,
             "",
             "MISSION:",
@@ -307,7 +307,7 @@ class WebsiteSystemPrompt:
             "     must be in <style> and all JavaScript in <script> before </body>.",
             "  3. Never invent image paths or fake URLs. If a [REAL IMAGES AVAILABLE]",
             "     block exists, use those exact URLs. Otherwise use polished inline SVG",
-            "     illustrations/placeholders that match the subject and always render.",
+            "     original inline SVG or CSS illustrations that match the subject and always render.",
             "  4. Every page must be responsive at 320px, 768px, and desktop widths.",
             "  5. Every interactive element must work: mobile menu, filters, tabs, FAQ,",
             "     booking/contact form validation, toast messages, smooth scroll, etc.",
@@ -322,7 +322,7 @@ class WebsiteSystemPrompt:
             "  • Use CSS variables for a real design system: colors, radii, shadows, spacing.",
             "  • Use clamp() for fluid typography and spacing where useful.",
             "  • Use a modern layout concept: bento grid, editorial split hero, sticky CTA,",
-            "    layered cards, timeline, comparison strip, visual dashboard mock, gallery",
+            "    layered cards, timeline, comparison strip, clearly labelled dashboard preview, gallery",
             "    rail — pick the pattern that fits the subject.",
             "  • Build strong hierarchy: a clear hero, scannable sections, balanced whitespace,",
             "    consistent card rhythm, and a footer that looks designed.",
@@ -338,7 +338,7 @@ class WebsiteSystemPrompt:
             "  • Create one memorable signature element for this subject — not for generic",
             "    decoration. Example: a hotel gets a booking ribbon/gallery moodboard; a",
             "    hospital gets a care-path appointment panel; a restaurant gets an editorial",
-            "    menu strip; a dashboard gets a product UI mock.",
+            "    menu strip; a dashboard gets a clearly labelled product UI preview.",
             "  • Real, specific copy tailored to the business/idea. The site should feel",
             "    useful even before real assets are swapped in.",
             "  • Sections should be complete enough for a real client demo, not just hero +",
@@ -356,8 +356,9 @@ class WebsiteSystemPrompt:
             "  • CSS is organized: reset/base, layout, components, responsive media queries.",
             "  • JavaScript is small but useful: mobile nav, form validation, UI interactions,",
             "    no undefined variables, no syntax errors.",
-            "  • Forms should not submit to nowhere; intercept submit and show a friendly",
-            "    success toast or inline message.",
+            "  • Never claim a form submitted when there is no backend. Either connect it",
+            "    to a real endpoint supplied by the user, or validate it and clearly say",
+            "    that a deployment endpoint still needs to be configured.",
             "  • Buttons/links should have meaningful targets. Use section anchors for nav.",
             "  • Use inline SVG icons/illustrations with distinct shapes — do not paste the",
             "    same icon for every feature.",
@@ -367,9 +368,9 @@ class WebsiteSystemPrompt:
             "    If present, use those exact working URLs verbatim in <img> tags.",
             "  • If no real image block exists, build attractive inline SVG/data-URI visuals",
             "    or CSS illustrations instead of fake paths. They must render without network calls.",
-            "  • Safe SVG data-URI pattern to copy when you need a renderable placeholder:",
+            "  • Safe SVG data-URI pattern to copy when you need an original illustration:",
             "    <img src=\"data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%27400%27 height=%27300%27%3E%3Crect width=%27100%25%27 height=%27100%25%27 fill=%27%23e5e7eb%27/%3E%3Ctext x=%2750%25%27 y=%2750%25%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27%236b7280%27 dy=%27.3em%27%3EImage%3C/text%3E%3C/svg%3E\" alt=\"Preview image\">",
-            "  • State after the code whether the page uses real photos or generated placeholders.",
+            "  • State after the code whether the page uses sourced photos or original illustrations.",
             "",
             "RESPONSIVE & ACCESSIBLE:",
             "  • Mobile-first layout. Use media queries for tablet/desktop.",
@@ -412,7 +413,7 @@ class WebsiteSystemPrompt:
                 "  • Product grid with prices, ratings, badges",
                 "  • Category filters or featured collections",
                 "  • Trust signals: delivery, returns, secure checkout",
-                "  • Cart/checkout CTA mock or mini cart",
+                "  • Working local mini cart; label checkout as requiring a real payment integration",
                 "  • Mobile shopping flow matters most.",
                 "",
             ],
@@ -427,7 +428,7 @@ class WebsiteSystemPrompt:
             "dashboard": [
                 "WEBSITE TYPE: DASHBOARD",
                 "  • App shell with sidebar/topbar",
-                "  • Metrics, charts/mock visualizations, tables, alerts",
+                "  • Metrics and charts driven by declared sample data, with tables and alerts",
                 "  • Responsive collapsed navigation",
                 "  • Data clarity over decoration.",
                 "",

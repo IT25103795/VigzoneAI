@@ -4,7 +4,13 @@ echo ======================================
 
 where python >nul 2>nul
 if %errorlevel% neq 0 (
-    echo Python not found! Please install Python 3.10+
+    echo Python not found! Please install Python 3.11-3.14
+    exit /b 1
+)
+
+python -c "import sys; raise SystemExit(0 if (3, 11) ^<= sys.version_info[:2] ^< (3, 15) else 1)"
+if %errorlevel% neq 0 (
+    echo Unsupported Python version. Install Python 3.11-3.14.
     exit /b 1
 )
 
