@@ -42,11 +42,7 @@ def is_production() -> bool:
 
 
 def allowed_origins() -> list[str]:
-    raw = os.getenv("CORS_ORIGINS", "")
-    # If CORS_ORIGINS is empty, we're on back4app with temp URL
-    # Allow requests from the same origin (auto-detected per request in middleware)
-    if not raw.strip():
-        return ["http://localhost:8000"]  # Default for development
+    raw = os.getenv("CORS_ORIGINS", "http://localhost:8000")
     return [item.strip().rstrip("/") for item in raw.split(",") if item.strip()]
 
 
@@ -93,9 +89,7 @@ def validate_production_settings() -> None:
         errors.append("COOKIE_SECURE must be true")
 
     origins = allowed_origins()
-    # Allow empty CORS_ORIGINS for back4app temporary URLs that change every 60min
-    # The CORS middleware will fall back to localhost for development/testing
-    if origins and "*" in origins:
+    if not origins or "*" in origins:
         errors.append("CORS_ORIGINS must list explicit HTTPS origins; wildcard origins are forbidden")
     for origin in origins:
         parsed = urlparse(origin)
@@ -119,12 +113,11 @@ def validate_production_settings() -> None:
         errors.append("GROQ_API_KEY is required for the default chat plan")
 
     public_base = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
-    # Allow empty PUBLIC_BASE_URL for back4app temporary URLs that change every 60min
-    # The app will auto-detect the URL from incoming requests in that case
-    if public_base:
-        parsed_base = urlparse(public_base)
-        if parsed_base.scheme != "https" and not _is_loopback_origin(public_base):
-            errors.append("PUBLIC_BASE_URL must use HTTPS outside local development")
+    parsed_base = urlparse(public_base)
+    if not public_base:
+        errors.append("PUBLIC_BASE_URL must be set to the deployment's public URL")
+    elif parsed_base.scheme != "https" and not _is_loopback_origin(public_base):
+        errors.append("PUBLIC_BASE_URL must use HTTPS outside local development")
 
     if env_bool("VIRUS_SCAN_STRICT", True):
         from virus_scanner import scanner_healthcheck
