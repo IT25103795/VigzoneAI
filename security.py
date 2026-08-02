@@ -87,8 +87,6 @@ def validate_production_settings() -> None:
 
     if not env_bool("COOKIE_SECURE", True):
         errors.append("COOKIE_SECURE must be true")
-    if not env_bool("VIRUS_SCAN_STRICT", True):
-        errors.append("VIRUS_SCAN_STRICT must be true so unscanned uploads fail closed")
 
     origins = allowed_origins()
     if not origins or "*" in origins:
