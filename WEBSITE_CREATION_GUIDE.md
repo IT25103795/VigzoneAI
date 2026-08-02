@@ -272,3 +272,7 @@ A: Vigzone can build the design; pair with a CMS like Contentful, Strapi, or a s
 ✓ Ready to deploy immediately  
 
 **Try asking Vigzone to build something amazing! 🚀**
+
+
+## Website Studio V3 Upgrade
+Vigzone now uses an upgraded Website Studio prompt for modern website generation. It detects natural requests like "write a website for a hotel", applies industry-specific section guidance, requires complete self-contained code, and adds a browser Preview button for generated HTML blocks.
