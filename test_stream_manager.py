@@ -7,30 +7,30 @@ def test_stream_manager():
 
     # Test 1: Create a stream ID
     sid = create_stream_id()
-    print(f"✓ Created stream ID: {sid}")
+    print(f"[OK] Created stream ID: {sid}")
 
     # Test 2: Register and check initial state
-    register_stream(sid)
+    register_stream(sid, 1)
     assert not is_cancelled(sid), "Stream should not be cancelled initially"
-    print("✓ Stream registered and not cancelled")
+    print("[OK] Stream registered and not cancelled")
 
     # Test 3: Cancel the stream
-    result = cancel_stream(sid)
+    result = cancel_stream(sid, 1)
     assert result == True, "Cancel should return True"
     assert is_cancelled(sid), "Stream should be cancelled"
-    print("✓ Stream cancelled successfully")
+    print("[OK] Stream cancelled successfully")
 
     # Test 4: Unregister
     unregister_stream(sid)
     assert not is_cancelled(sid), "Stream should not be found after unregister"
-    print("✓ Stream unregistered")
+    print("[OK] Stream unregistered")
 
     # Test 5: Try to cancel non-existent stream
-    result = cancel_stream("non-existent")
+    result = cancel_stream("non-existent", 1)
     assert result == False, "Cancelling non-existent stream should return False"
-    print("✓ Cannot cancel non-existent stream")
+    print("[OK] Cannot cancel non-existent stream")
 
-    print("\n✅ All tests passed!")
+    print("\n[SUCCESS] All tests passed!")
 
 if __name__ == '__main__':
     test_stream_manager()

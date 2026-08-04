@@ -1,5 +1,5 @@
 /* Vigzone AI offline service worker */
-const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r3';
+const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r4';
 const SHELL_CACHE = `vigzone-shell-${VIGZONE_SW_VERSION}`;
 const RUNTIME_CACHE = `vigzone-runtime-${VIGZONE_SW_VERSION}`;
 
@@ -8,6 +8,8 @@ const APP_SHELL = [
   '/chat',
   '/offline',
   '/static/index.html',
+  '/static/css/styles.css',
+  '/static/js/app.js',
   '/static/landing.html',
   '/static/offline.html',
   '/static/vendor/jszip.min.js',
