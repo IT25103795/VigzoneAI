@@ -1017,24 +1017,25 @@ def _normalize_chat_messages(messages: list[dict]) -> list[dict]:
 
 
 def _is_simple_datetime_request(text: str) -> bool:
-    q = re.sub(r"[^\w\s?.!:/+-]+", " ", (text or "").lower())
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    q = re.sub(r"[^\w\s]+", " ", raw.lower())
     q = re.sub(r"\s+", " ", q).strip()
-    if not q:
+    if not q or len(q.split()) > 12:
         return False
-    keywords = (
-        "date", "today", "day", "weekday", "calendar", "time", "now",
-        "දිනය", "අද", "දවස", "වේලාව", "වෙලාව",
-        "தேதி", "இன்று", "நாள்", "நேரம்", "மணி"
-    )
-    if not any(k in q for k in keywords):
-        return False
-    non_dt_task_words = (
-        "schedule", "meeting", "remind", "deadline", "history", "code",
-        "website", "image", "weather", "news", "price", "stock", "birthday"
-    )
-    if any(w in q for w in non_dt_task_words) and not re.search(r"\b(current|today|now|what|tell|date|time|day)\b", q):
-        return False
-    return len(q.split()) <= 18 or bool(re.search(r"\b(what|tell|give|show).{0,40}\b(date|time|day|today|now)\b", q))
+
+    dt_patterns = [
+        r"\bwhat\s+time\s+(is\s+it|is\s+it\s+now)\b",
+        r"\bwhat\s+(is\s+)?(the\s+)?(current\s+)?(time|date|day)\b",
+        r"\bwhat\s+day\s+is\s+it\b",
+        r"\bwhat\s+is\s+today\s*s?\s+date\b",
+        r"\b(tell|give|show)\s+(me\s+)?(the\s+)?(current\s+)?(time|date|day)\b",
+        r"^(current\s+)?(date|time|day|time now|date today)\??$",
+        r"^(දිනය|අද\s+දිනය|වේලාව|වෙලාව|දැනට\s+වේලාව)\??$",
+        r"^(தேதி|இன்று\s+தேதி|நேரம்|மணி)\??$",
+    ]
+    return any(re.search(pat, q) for pat in dt_patterns)
 
 
 def _datetime_info_for_client(client_timezone: Optional[str] = None) -> dict:

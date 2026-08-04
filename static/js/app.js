@@ -4124,7 +4124,8 @@ A strong website should include: hero section, clear navigation, services/featur
     const shortQ = offlineNormalize(typed);
 
 
-    if (/\b(date|today|day|weekday|calendar|time|now)\b|දිනය|අද|දවස|වේලාව|වෙලාව|தேதி|இன்று|நாள்|நேரம்|மணி/i.test(typed)) {
+    const isExplicitDateTimeReq = /^(what|tell|give|show|whats|what's)?.*?\b(date|time|today'?s date|current time)\b/i.test(typed) && typed.split(/\s+/).length <= 10;
+    if (isExplicitDateTimeReq) {
       const now = new Date();
       const fmtDate = now.toLocaleDateString(undefined, {weekday:'long', year:'numeric', month:'long', day:'numeric'});
       const fmtTime = now.toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit'});
@@ -4784,7 +4785,7 @@ A strong website should include: hero section, clear navigation, services/featur
 
   async function openGoogleDrivePicker(){
     if (!(liveConfig.google_drive_api_key && liveConfig.google_drive_client_id)) {
-      setDriveStatus('Private Drive Picker needs GOOGLE_DRIVE_CLIENT_ID and GOOGLE_DRIVE_API_KEY in Railway. Shared Drive links work now without those.', 'error');
+      setDriveStatus('Private Drive Picker needs GOOGLE_CLIENT_ID and GOOGLE_API_KEY in Render. Shared Drive links work now without those.', 'error');
       return;
     }
     try {
