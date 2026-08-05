@@ -3483,6 +3483,9 @@
       border-radius:18px !important;
       max-width:min(300px, 46vw) !important;
     }
+    body.sidebar-expanded .main-col > header .brand{
+      display:none !important;
+    }
     .main-col > header .brand-mark{
       width:34px !important;
       height:34px !important;
@@ -4359,14 +4362,4 @@
     }
 
 
-/* Secondary Modal Styles */
-    :root{--bg:#0b1020;--card:#151b2e;--text:#f6f7fb;--muted:#aab1c5;--accent:#ff6b4a}
-    *{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--text)}
-    header{padding:22px 8%;display:flex;justify-content:space-between;align-items:center}
-    nav a{color:var(--muted);margin-left:18px;text-decoration:none}
-    .hero{padding:80px 8%;display:grid;gap:22px;min-height:72vh;align-content:center;background:radial-gradient(circle at top right,#ff6b4a44,transparent 35%)}
-    h1{font-size:clamp(38px,7vw,76px);line-height:.95;margin:0}.hero p{max-width:620px;color:var(--muted);font-size:18px}
-    .btn{display:inline-block;background:var(--accent);color:white;padding:13px 18px;border-radius:14px;text-decoration:none;font-weight:800}
-    .grid{padding:40px 8%;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
-    .card{background:var(--card);border:1px solid #ffffff18;border-radius:18px;padding:22px}
-    footer{padding:28px 8%;color:var(--muted);border-top:1px solid #ffffff18}
+/* Secondary modal preview styles must stay component-scoped; global overrides removed. */
