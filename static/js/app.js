@@ -1663,9 +1663,14 @@
   function isMobile(){ return window.innerWidth <= 760; }
 
   function setSidebarCollapsed(collapsed){
+    const expanded = !collapsed;
     sidebar.classList.toggle('collapsed', collapsed);
-    sidebarOverlay.classList.toggle('visible', isMobile() && !collapsed);
-    if (!collapsed) closeQuickLauncher?.();
+    sidebarOverlay.classList.toggle('visible', isMobile() && expanded);
+    document.body.classList.toggle('sidebar-expanded', expanded);
+    document.querySelector('.main-col > header .brand')
+      ?.setAttribute('aria-hidden', expanded ? 'true' : 'false');
+    sidebarToggleBtn?.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    if (expanded) closeQuickLauncher?.();
     if (!isMobile()) localStorage.setItem(SIDEBAR_KEY, collapsed ? '1' : '0');
   }
 
