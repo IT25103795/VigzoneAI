@@ -1,5 +1,6 @@
 /* Vigzone AI offline service worker */
-const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r4';
+const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r5';
+const UI_ASSET_REVISION = 'ui-refresh-r5';
 const SHELL_CACHE = `vigzone-shell-${VIGZONE_SW_VERSION}`;
 const RUNTIME_CACHE = `vigzone-runtime-${VIGZONE_SW_VERSION}`;
 
@@ -8,8 +9,8 @@ const APP_SHELL = [
   '/chat',
   '/offline',
   '/static/index.html',
-  '/static/css/styles.css',
-  '/static/js/app.js',
+  `/static/css/styles.css?v=${UI_ASSET_REVISION}`,
+  `/static/js/app.js?v=${UI_ASSET_REVISION}`,
   '/static/landing.html',
   '/static/offline.html',
   '/static/vendor/jszip.min.js',
@@ -21,6 +22,11 @@ const APP_SHELL = [
   '/api/public/config',
   '/api/app/version'
 ];
+
+const CRITICAL_UI_ASSETS = new Set([
+  '/static/css/styles.css',
+  '/static/js/app.js'
+]);
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -39,17 +45,26 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+async function matchAppCache(request) {
+  const runtimeCache = await caches.open(RUNTIME_CACHE);
+  const runtimeResponse = await runtimeCache.match(request);
+  if (runtimeResponse) return runtimeResponse;
+
+  const shellCache = await caches.open(SHELL_CACHE);
+  return shellCache.match(request);
+}
+
 async function networkFirst(request, fallbackUrl) {
   const cache = await caches.open(RUNTIME_CACHE);
   try {
-    const response = await fetch(request);
+    const response = await fetch(request, {cache: 'no-store'});
     if (response && response.ok) cache.put(request, response.clone()).catch(() => undefined);
     return response;
   } catch (error) {
-    const cached = await caches.match(request);
+    const cached = await matchAppCache(request);
     if (cached) return cached;
     if (fallbackUrl) {
-      const fallback = await caches.match(fallbackUrl);
+      const fallback = await matchAppCache(fallbackUrl);
       if (fallback) return fallback;
     }
     throw error;
@@ -58,7 +73,7 @@ async function networkFirst(request, fallbackUrl) {
 
 async function staleWhileRevalidate(request) {
   const cache = await caches.open(RUNTIME_CACHE);
-  const cached = await caches.match(request);
+  const cached = await matchAppCache(request);
   const fetchPromise = fetch(request).then(response => {
     if (response && response.ok) cache.put(request, response.clone()).catch(() => undefined);
     return response;
@@ -105,6 +120,13 @@ self.addEventListener('fetch', (event) => {
 
   if (url.pathname === '/api/public/config' || url.pathname === '/api/app/version') {
     event.respondWith(networkFirst(request, null).catch(() => caches.match(request).then(cached => cached || offlineJson('Offline mode: using saved app settings.'))));
+    return;
+  }
+
+  // CSS and application JavaScript must be current whenever the network is
+  // available. Fall back to the app caches only when the request is offline.
+  if (CRITICAL_UI_ASSETS.has(url.pathname)) {
+    event.respondWith(networkFirst(request, null));
     return;
   }
 
