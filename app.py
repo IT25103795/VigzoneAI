@@ -38,6 +38,9 @@ from file_processing import (
 from virus_scanner import scan_bytes as _virus_scan
 from vigzone_ai import (
     DEFAULT_MODEL,
+    FAST_MODEL,
+    COMPLEX_MODEL,
+    MODEL_ROUTING_ENABLED,
     OLLAMA_BASE_URL,
     GROQ_BYOK_API_URL,
     GROQ_BYOK_MODEL,
@@ -195,7 +198,10 @@ class ModelInfoResponse(BaseModel):
     name: str
     version: str
     model: str
+    fast_model: str
+    complex_model: str
     vision_model: str
+    routing_enabled: bool
     backend: str
     status: str
     mode: str
@@ -744,7 +750,10 @@ async def get_model_info():
         name="Vigzone AI",
         version=APP_VERSION,
         model=DEFAULT_MODEL,
+        fast_model=FAST_MODEL,
+        complex_model=COMPLEX_MODEL,
         vision_model=VISION_MODEL,
+        routing_enabled=MODEL_ROUTING_ENABLED,
         backend=_backend_label(),
         status="ready" if await is_configured() else "groq_not_configured",
         mode="testing" if IS_TESTING else "production",
@@ -2719,6 +2728,7 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
                     user_name=user.get("name") or "",
                     provider_override=provider_override,
                     user_learning_context=user_learning_context,
+                    routing_mode=chat_request.ai_mode or "general",
                 ):
                     if is_cancelled(stream_id):
                         break
@@ -2803,6 +2813,7 @@ async def chat_sync(request: Request, chat_request: ChatRequest, user: dict = De
             user_name=user.get("name") or "",
             provider_override=provider_override,
             user_learning_context=user_learning_context,
+            routing_mode=chat_request.ai_mode or "general",
         )
     except VigzoneAIError as e:
         logger.error("Chat failed: %s", e)
