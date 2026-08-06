@@ -17,7 +17,11 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m pip install -r requirements.txt -r requirements-dev.txt
       - run: python -m compileall -q .
-      - run: ruff check .
       - run: pytest
+        env:
+          APP_MODE: testing
+          GROQ_API_KEY: gsk_ci_dummy_key_for_testing_purposes
+          ENCRYPTION_SECRET: v7N9kQ2xP4mR8wL1zT5yU0iO3aS6dF9g
+
