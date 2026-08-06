@@ -53,7 +53,7 @@ from vigzone_ai import (
     get_user_token_stats,
     get_user_daily_usage,
     assert_user_can_chat,
-    estimate_messages_tokens,
+    estimate_budgeted_request_tokens,
     is_configured,
     stream_chat,
     validate_groq_api_key,
@@ -172,6 +172,7 @@ class ChatRequest(BaseModel):
     model: str = Field(default=DEFAULT_MODEL, max_length=120)
     ai_mode: Optional[str] = Field(default="general", max_length=40)
     workspace_id: Optional[int] = Field(default=None)
+    conversation_id: Optional[str] = Field(default=None, max_length=120)
     # Browser-provided timezone lets Vigzone answer date/time correctly
     # without requiring a Railway USER_TIMEZONE variable.
     client_timezone: Optional[str] = Field(default=None, max_length=80)
@@ -605,27 +606,6 @@ async def public_share_page(request: Request, share_id: str):
 @app.get("/api/admin/analytics", tags=["Admin"])
 async def admin_analytics(user: dict = Depends(require_admin)):
     return JSONResponse({**authmod.product_analytics(), "version": APP_VERSION})
-
-
-AI_MODE_PROMPTS = {
-    "general": "Mode: General Chat. Be helpful, direct, and accurate.",
-    "website": "Mode: Website Studio. Prioritize modern responsive UI, complete runnable HTML/CSS/JS, strong visual hierarchy, mobile-first layout, CTAs, SEO basics, accessibility, and downloadable file structure when useful.",
-    "code": "Mode: Code Fixer. Diagnose issues, explain the exact cause briefly, and provide complete corrected files or patches. Prefer runnable, production-safe code.",
-    "study": "Mode: Study Helper. Teach clearly with exam-focused summaries, examples, quick revision, and practice questions where useful.",
-    "file": "Mode: File Analyzer. Extract key facts, summarize, compare, find risks/errors, and give action items based only on the provided file content.",
-    "business": "Mode: Business Writer. Write polished, persuasive, practical business content with clear structure and professional tone.",
-    "voice": "Mode: Voice Assistant. Keep replies conversational, concise, and easy to listen to aloud.",
-}
-
-
-def _mode_context(mode: Optional[str]) -> str:
-    key = (mode or "general").strip().lower()
-    return AI_MODE_PROMPTS.get(key, AI_MODE_PROMPTS["general"])
-
-
-def _combine_context(*parts: str) -> str:
-    clean = [p.strip() for p in parts if p and p.strip()]
-    return "\n\n".join(clean)
 
 
 def _simple_file_intel(name: str, kind: str, text: str) -> dict:
@@ -2104,7 +2084,11 @@ async def admin_full_dashboard(admin: dict = Depends(require_admin)):
             SELECT COALESCE(SUM(prompt_tokens),0) AS prompt_tokens,
                    COALESCE(SUM(completion_tokens),0) AS completion_tokens,
                    COALESCE(SUM(total_tokens),0) AS total_tokens,
-                   COUNT(*) AS requests
+                   COUNT(*) AS requests,
+                   COALESCE(SUM(fallback_used),0) AS fallbacks,
+                   COALESCE(AVG(latency_ms),0) AS avg_latency_ms,
+                   COALESCE(AVG(time_to_first_token_ms),0) AS avg_ttft_ms,
+                   COALESCE(SUM(cached_tokens),0) AS cached_tokens
             FROM token_usage WHERE ts >= ?
             """,
             (today_start_ts,),
@@ -2153,6 +2137,41 @@ async def admin_full_dashboard(admin: dict = Depends(require_admin)):
             """,
             (week_start_ts,),
         ).fetchall()
+        route_rows = conn.execute(
+            """
+            SELECT COALESCE(model, 'unknown') AS model,
+                   COALESCE(NULLIF(routed_model, ''), model, 'unknown') AS routed_model,
+                   COALESCE(NULLIF(route_reason, ''), 'legacy') AS route_reason,
+                   COALESCE(NULLIF(routing_mode, ''), 'general') AS routing_mode,
+                   COUNT(*) AS requests,
+                   COALESCE(SUM(total_tokens),0) AS tokens,
+                   COALESCE(SUM(fallback_used),0) AS fallbacks,
+                   COALESCE(SUM(retry_count),0) AS retries,
+                   COALESCE(AVG(latency_ms),0) AS avg_latency_ms,
+                   COALESCE(AVG(time_to_first_token_ms),0) AS avg_ttft_ms,
+                   COALESCE(SUM(cached_tokens),0) AS cached_tokens
+            FROM token_usage
+            WHERE ts >= ? AND provider = 'groq'
+            GROUP BY model, routed_model, route_reason, routing_mode
+            ORDER BY requests DESC, tokens DESC
+            LIMIT 30
+            """,
+            (week_start_ts,),
+        ).fetchall()
+        context_totals = conn.execute(
+            """
+            SELECT COALESCE(SUM(system_tokens),0) AS system_tokens,
+                   COALESCE(SUM(history_tokens),0) AS history_tokens,
+                   COALESCE(SUM(summary_tokens),0) AS summary_tokens,
+                   COALESCE(SUM(memory_tokens),0) AS memory_tokens,
+                   COALESCE(SUM(workspace_tokens),0) AS workspace_tokens,
+                   COALESCE(SUM(search_tokens),0) AS search_tokens,
+                   COALESCE(SUM(user_tokens),0) AS user_tokens
+            FROM token_usage
+            WHERE ts >= ? AND provider = 'groq'
+            """,
+            (week_start_ts,),
+        ).fetchone()
         brain_users = conn.execute("SELECT COUNT(*) AS c FROM brain_snapshots").fetchone()["c"]
         share_count = conn.execute("SELECT COUNT(*) AS c FROM shared_chats").fetchone()["c"]
         stored_feedback = conn.execute(
@@ -2202,6 +2221,38 @@ async def admin_full_dashboard(admin: dict = Depends(require_admin)):
     feedback_total = len(feedback_rows)
     feedback_bad = len(negative_feedback)
     feedback_good = max(feedback_total - feedback_bad, 0)
+    quality_buckets: dict[tuple[str, str], dict] = {}
+    for row in feedback_rows:
+        context = row.get("context") or {}
+        model = str(context.get("model") or "unknown")
+        route_reason = str(context.get("route_reason") or "unknown")
+        bucket = quality_buckets.setdefault(
+            (model, route_reason),
+            {
+                "model": model,
+                "route_reason": route_reason,
+                "positive": 0,
+                "negative": 0,
+            },
+        )
+        if row.get("rating") == "down":
+            bucket["negative"] += 1
+        else:
+            bucket["positive"] += 1
+
+    quality_by_route = []
+    for bucket in quality_buckets.values():
+        total = bucket["positive"] + bucket["negative"]
+        quality_by_route.append(
+            {
+                **bucket,
+                "total": total,
+                "positive_rate": round(bucket["positive"] * 100 / total, 1)
+                if total
+                else 0,
+            }
+        )
+    quality_by_route.sort(key=lambda item: item["total"], reverse=True)
 
     return JSONResponse({
         "admin": {"email": admin.get("email"), "name": admin.get("name")},
@@ -2219,6 +2270,10 @@ async def admin_full_dashboard(admin: dict = Depends(require_admin)):
             "positive_feedback": feedback_good,
             "today_tokens": int(totals_today["total_tokens"]),
             "today_requests": int(totals_today["requests"]),
+            "today_fallbacks": int(totals_today["fallbacks"]),
+            "average_latency_ms": round(float(totals_today["avg_latency_ms"] or 0)),
+            "average_ttft_ms": round(float(totals_today["avg_ttft_ms"] or 0)),
+            "today_cached_tokens": int(totals_today["cached_tokens"]),
             "week_tokens": int(totals_week["total_tokens"]),
             "week_requests": int(totals_week["requests"]),
             "week_active_users": int(totals_week["active_users"]),
@@ -2245,6 +2300,35 @@ async def admin_full_dashboard(admin: dict = Depends(require_admin)):
             }
             for r in by_provider
         ],
+        "routing_usage": [
+            {
+                "model": r["model"],
+                "routed_model": r["routed_model"],
+                "route_reason": r["route_reason"],
+                "routing_mode": r["routing_mode"],
+                "requests": int(r["requests"]),
+                "tokens": int(r["tokens"]),
+                "fallbacks": int(r["fallbacks"]),
+                "retries": int(r["retries"]),
+                "average_latency_ms": round(float(r["avg_latency_ms"] or 0)),
+                "average_ttft_ms": round(float(r["avg_ttft_ms"] or 0)),
+                "cached_tokens": int(r["cached_tokens"]),
+            }
+            for r in route_rows
+        ],
+        "context_token_mix": [
+            {"name": name, "tokens": int(context_totals[name] or 0)}
+            for name in (
+                "system_tokens",
+                "history_tokens",
+                "summary_tokens",
+                "memory_tokens",
+                "workspace_tokens",
+                "search_tokens",
+                "user_tokens",
+            )
+        ],
+        "quality_by_route": quality_by_route[:30],
         "system_notes": [
             {
                 "title": "Timezone",
@@ -2668,7 +2752,7 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
     # Real backend quota guard: do not start a Groq call when this user's
     # Vigzone daily plan is exhausted or too close to exhausted.
     key_status = authmod.get_user_key_status(user["id"])
-    estimated_request_tokens = estimate_messages_tokens(messages)
+    estimated_request_tokens = estimate_budgeted_request_tokens(messages)
     try:
         assert_user_can_chat(user["id"], has_own_key=key_status["active"], estimated_request_tokens=estimated_request_tokens)
     except UsageLimitError as e:
@@ -2705,15 +2789,17 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
         )
 
-    user_learning_context = _combine_context(
-        _mode_context(chat_request.ai_mode),
-        authmod.get_workspace_context(user["id"], chat_request.workspace_id, last_user_query),
-        authmod.get_learning_context(user["id"], last_user_query),
-    )
+    context_parts = {
+        "workspace": authmod.get_workspace_context(
+            user["id"], chat_request.workspace_id, last_user_query
+        ),
+        "memory": authmod.get_learning_context(user["id"], last_user_query),
+    }
     stream_id = create_stream_id()
     register_stream(stream_id, user["id"])
 
     async def event_stream():
+        response_meta: dict = {}
         try:
             yield f"data: {json.dumps({'stream_id': stream_id})}\n\n"
 
@@ -2727,14 +2813,18 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
                     user_id=user["id"],
                     user_name=user.get("name") or "",
                     provider_override=provider_override,
-                    user_learning_context=user_learning_context,
+                    context_parts=context_parts,
                     routing_mode=chat_request.ai_mode or "general",
+                    conversation_id=chat_request.conversation_id or "",
+                    metadata_callback=response_meta.update,
                 ):
                     if is_cancelled(stream_id):
                         break
                     reply_accum += chunk
                     yield f"data: {json.dumps({'content': chunk}, ensure_ascii=False)}\n\n"
 
+                if response_meta:
+                    yield f"data: {json.dumps({'meta': response_meta}, ensure_ascii=False)}\n\n"
                 if not is_cancelled(stream_id):
                     yield "data: [DONE]\n\n"
                 else:
@@ -2777,7 +2867,7 @@ async def chat_sync(request: Request, chat_request: ChatRequest, user: dict = De
     ])
 
     key_status = authmod.get_user_key_status(user["id"])
-    estimated_request_tokens = estimate_messages_tokens(messages)
+    estimated_request_tokens = estimate_budgeted_request_tokens(messages)
     try:
         assert_user_can_chat(user["id"], has_own_key=key_status["active"], estimated_request_tokens=estimated_request_tokens)
     except UsageLimitError as e:
@@ -2800,11 +2890,13 @@ async def chat_sync(request: Request, chat_request: ChatRequest, user: dict = De
     if _is_simple_datetime_request(last_user_query):
         return JSONResponse({"role": "assistant", "content": _build_datetime_answer(last_user_query, chat_request.client_timezone)})
 
-    user_learning_context = _combine_context(
-        _mode_context(chat_request.ai_mode),
-        authmod.get_workspace_context(user["id"], chat_request.workspace_id, last_user_query),
-        authmod.get_learning_context(user["id"], last_user_query),
-    )
+    context_parts = {
+        "workspace": authmod.get_workspace_context(
+            user["id"], chat_request.workspace_id, last_user_query
+        ),
+        "memory": authmod.get_learning_context(user["id"], last_user_query),
+    }
+    response_meta: dict = {}
     try:
         reply = await chat_once(
             messages,
@@ -2812,14 +2904,16 @@ async def chat_sync(request: Request, chat_request: ChatRequest, user: dict = De
             user_id=user["id"],
             user_name=user.get("name") or "",
             provider_override=provider_override,
-            user_learning_context=user_learning_context,
+            context_parts=context_parts,
             routing_mode=chat_request.ai_mode or "general",
+            conversation_id=chat_request.conversation_id or "",
+            metadata_callback=response_meta.update,
         )
     except VigzoneAIError as e:
         logger.error("Chat failed: %s", e)
         raise HTTPException(status_code=502, detail=str(e))
 
-    return JSONResponse({"role": "assistant", "content": reply})
+    return JSONResponse({"role": "assistant", "content": reply, "meta": response_meta})
 
 
 # ── Stream control ────────────────────────────────────────────────────────────

@@ -2407,6 +2407,8 @@
   const adminProSubtitle = $('#adminProSubtitle');
   const adminTopUsersTable = $('#adminTopUsersTable');
   const adminProviderUsageTable = $('#adminProviderUsageTable');
+  const adminRoutingUsageTable = $('#adminRoutingUsageTable');
+  const adminContextTokenTable = $('#adminContextTokenTable');
   const adminSystemNotes = $('#adminSystemNotes');
   const adminBadFeedbackList = $('#adminBadFeedbackList');
   const adminProRefreshBtn = $('#adminProRefreshBtn');
@@ -2601,6 +2603,8 @@
       ['Weekly tokens', s.week_tokens, `${adminFmt(s.week_active_users)} active users`],
       ['Own Groq keys', s.own_key_users, `${adminFmt(s.default_plan_users)} default plan users`],
       ['Feedback total', s.feedback_total, 'feedback records saved'],
+      ['Fallbacks today', s.today_fallbacks, `${adminFmt(s.today_cached_tokens)} cached tokens`],
+      ['Average latency', s.average_latency_ms, `${adminFmt(s.average_ttft_ms)} ms to first token`],
       ['Build', data.version || 'unknown', data.app_name || 'Vigzone AI'],
     ];
     if (adminProKpis) adminProKpis.innerHTML = cards.map(c => `<div class="admin-pro-card admin-pro-kpi"><div class="admin-pro-kpi-label">${escapeHtml(c[0])}</div><div class="admin-pro-kpi-value">${typeof c[1] === 'number' ? adminFmt(c[1]) : escapeHtml(c[1])}</div><div class="admin-pro-kpi-note">${escapeHtml(c[2] || '')}</div></div>`).join('');
@@ -2612,12 +2616,25 @@
       const providerRows = (data.provider_usage || []).map(p => `<tr><td><strong>${escapeHtml(p.label || p.provider || 'Provider')}</strong><div class="admin-user-sub">${escapeHtml(p.provider || '')}</div></td><td>${adminFmt(p.tokens)}</td><td>${adminFmt(p.requests)}</td></tr>`).join('');
       adminProviderUsageTable.innerHTML = `<thead><tr><th>Provider</th><th>Tokens</th><th>Req</th></tr></thead><tbody>${providerRows || '<tr><td colspan="3">No provider usage yet.</td></tr>'}</tbody>`;
     }
+    if (adminRoutingUsageTable) {
+      const quality = new Map((data.quality_by_route || []).map(item => [`${item.model || 'unknown'}|${item.route_reason || 'unknown'}`, item]));
+      const routeRows = (data.routing_usage || []).map(item => {
+        const q = quality.get(`${item.model || 'unknown'}|${item.route_reason || 'unknown'}`);
+        const qualityText = q ? `${q.positive_rate}% (${q.total})` : '—';
+        return `<tr><td><strong>${escapeHtml(item.model || 'unknown')}</strong><div class="admin-user-sub">${escapeHtml(item.route_reason || 'legacy')} · ${escapeHtml(item.routing_mode || 'general')}</div></td><td>${adminFmt(item.requests)}</td><td>${adminFmt(item.tokens)}</td><td>${adminFmt(item.fallbacks)}</td><td>${adminFmt(item.average_latency_ms)} ms</td><td>${escapeHtml(qualityText)}</td></tr>`;
+      }).join('');
+      adminRoutingUsageTable.innerHTML = `<thead><tr><th>Model / route</th><th>Req</th><th>Tokens</th><th>Fallback</th><th>Latency</th><th>👍 rate</th></tr></thead><tbody>${routeRows || '<tr><td colspan="6">No routed usage yet.</td></tr>'}</tbody>`;
+    }
+    if (adminContextTokenTable) {
+      const contextRows = (data.context_token_mix || []).map(item => `<tr><td><strong>${escapeHtml(String(item.name || 'context').replace(/_tokens$/,'').replaceAll('_',' '))}</strong></td><td>${adminFmt(item.tokens)}</td></tr>`).join('');
+      adminContextTokenTable.innerHTML = `<thead><tr><th>Component</th><th>Estimated tokens</th></tr></thead><tbody>${contextRows || '<tr><td colspan="2">No context telemetry yet.</td></tr>'}</tbody>`;
+    }
     if (adminSystemNotes) {
       const notes = data.system_notes || [];
       adminSystemNotes.innerHTML = notes.map(n => `<div class="admin-feedback-item"><div class="admin-feedback-top"><span>${escapeHtml(n.title || 'System')}</span><span>${escapeHtml(n.status || '')}</span></div><div class="admin-feedback-reason">${escapeHtml(n.value || '')}</div><div class="admin-feedback-text">${escapeHtml(n.note || '')}</div></div>`).join('') || '<div class="brain-empty">No system notes.</div>';
     }
     if (adminBadFeedbackList) {
-      adminBadFeedbackList.innerHTML = (data.bad_feedback || []).map(f => `<div class="admin-feedback-item"><div class="admin-feedback-top"><span>${escapeHtml(f.email || 'Unknown user')}</span><span>${escapeHtml(adminShortDate(f.created_at))}</span></div><div class="admin-feedback-reason">${escapeHtml(f.reason || 'No reason provided')}</div><div class="admin-feedback-text">${escapeHtml(f.assistant_text || '')}</div></div>`).join('') || '<div class="brain-empty">No bad feedback yet. Great bro 😁</div>';
+      adminBadFeedbackList.innerHTML = (data.bad_feedback || []).map(f => `<div class="admin-feedback-item"><div class="admin-feedback-top"><span>${escapeHtml(f.email || 'Unknown user')}</span><span>${escapeHtml(adminShortDate(f.created_at))}</span></div><div class="admin-feedback-reason">${escapeHtml(f.reason || 'No reason provided')}</div><div class="admin-user-sub">${escapeHtml(f.context?.model || 'unknown model')} · ${escapeHtml(f.context?.route_reason || 'unknown route')}</div><div class="admin-feedback-text">${escapeHtml(f.assistant_text || '')}</div></div>`).join('') || '<div class="brain-empty">No bad feedback yet. Great bro 😁</div>';
     }
     adminLastDailyRows = data.daily || [];
     adminLastFeedbackMix = data.feedback_mix || [];
@@ -3519,7 +3536,7 @@
   // message. `getText` is called lazily when the speaker button is clicked,
   // so it always reads the final text even if it changed after the row
   // was created (e.g. a streaming reply still arriving).
-  function buildMessageActions(getText) {
+  function buildMessageActions(getText, getMeta = null) {
     const row = document.createElement('div');
     row.className = 'msg-feedback';
 
@@ -3533,6 +3550,16 @@
       vigzoneSpeak(text, speakerBtn);
     });
     row.appendChild(speakerBtn);
+
+    const actionMeta = typeof getMeta === 'function' ? getMeta() : (getMeta || {});
+    if (actionMeta && Number(actionMeta.total_tokens) > 0) {
+      const usageChip = document.createElement('span');
+      usageChip.className = 'response-usage-chip';
+      const modelLabel = String(actionMeta.model || '').split('/').pop().replace(/^gpt-oss-/,'');
+      usageChip.textContent = `${adminFmt(Number(actionMeta.total_tokens))} tokens${modelLabel ? ` · ${modelLabel}` : ''}`;
+      usageChip.title = `Prompt ${adminFmt(Number(actionMeta.prompt_tokens || 0))} · Reply ${adminFmt(Number(actionMeta.completion_tokens || 0))}${actionMeta.fallback_used ? ' · fallback used' : ''}`;
+      row.appendChild(usageChip);
+    }
 
     const upBtn = document.createElement('button');
     upBtn.className = 'feedback-btn feedback-up';
@@ -3548,6 +3575,11 @@
 
     async function sendFeedback(rating, reason=''){
       const text = typeof getText === 'function' ? getText() : String(getText || '');
+      const rawMeta = typeof getMeta === 'function' ? getMeta() : (getMeta || {});
+      const responseMeta = {};
+      ['usage_id','model','routed_model','route_reason','routing_mode','fallback_used','retry_count','prompt_tokens','completion_tokens','total_tokens','cached_tokens','latency_ms','time_to_first_token_ms'].forEach(key => {
+        if (rawMeta && rawMeta[key] !== undefined && rawMeta[key] !== null) responseMeta[key] = rawMeta[key];
+      });
       upBtn.classList.toggle('done', rating === 'up');
       downBtn.classList.toggle('done', rating === 'down');
       try {
@@ -3560,7 +3592,7 @@
             reason,
             assistant_text:text,
             conversation_id:store?.activeId || null,
-            context:{mode:currentMode?.() || 'general'}
+            context:{mode:currentMode?.() || 'general', ...responseMeta}
           })
         });
         if (!response.ok) throw new Error('Feedback could not be saved.');
@@ -3646,7 +3678,7 @@
     // Add feedback + speaker actions (skip placeholders still streaming/loading —
     // those get the row appended once their final text is known)
     if (role === 'assistant' && !opts.typing && !opts.imageLoading && content) {
-      bubble.appendChild(buildMessageActions(() => content));
+      bubble.appendChild(buildMessageActions(() => content, () => opts.responseMeta || {}));
     }
 
     if (typeof opts.index === 'number') {
@@ -3703,9 +3735,9 @@
     messagesToRender.forEach((m, idx) => {
       const text = m.displayText !== undefined ? m.displayText : (typeof m.content === 'string' ? m.content : '');
       if (m.imageSrc) {
-        renderMessage(m.role, text, { imageSrc: m.imageSrc, quote: m.quote, index: startIndex + idx });
+        renderMessage(m.role, text, { imageSrc: m.imageSrc, quote: m.quote, responseMeta: m.responseMeta, index: startIndex + idx });
       } else {
-        renderMessage(m.role, text, { attachments: m.attachments, quote: m.quote, index: startIndex + idx });
+        renderMessage(m.role, text, { attachments: m.attachments, quote: m.quote, responseMeta: m.responseMeta, index: startIndex + idx });
       }
     });
   }
@@ -4301,6 +4333,7 @@ A strong website should include: hero section, clear navigation, services/featur
 
     let fullReply = '';
     let firstToken = true;
+    let responseMeta = {};
     getActiveStreamReply = () => fullReply;
 
     try {
@@ -4308,7 +4341,7 @@ A strong website should include: hero section, clear navigation, services/featur
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages(), ai_mode: currentMode(), workspace_id: activeWorkspaceId || null, client_timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone || null), client_now_iso: new Date().toISOString() })
+        body: JSON.stringify({ messages: apiMessages(), ai_mode: currentMode(), workspace_id: activeWorkspaceId || null, conversation_id: store?.activeId || null, client_timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone || null), client_now_iso: new Date().toISOString() })
       });
 
       if (!res.ok || !res.body) {
@@ -4342,6 +4375,9 @@ A strong website should include: hero section, clear navigation, services/featur
             currentStreamId = parsed.stream_id;
             console.log('Stream ID:', currentStreamId);
           }
+          if (parsed.meta && typeof parsed.meta === 'object') {
+            responseMeta = { ...responseMeta, ...parsed.meta };
+          }
           if (parsed.content) {
             if (firstToken) {
               assistantBubble.innerHTML = '';
@@ -4367,8 +4403,8 @@ A strong website should include: hero section, clear navigation, services/featur
       assistantBubble.innerHTML = renderContent(fullReply); // drop the cursor, final text only
       enhanceCodeBlocks(assistantBubble);
       attachFileBundleIfHeavy(assistantBubble, fullReply, combinedText);
-      assistantBubble.appendChild(buildMessageActions(() => fullReply));
-      messages.push({ role: 'assistant', content: fullReply, displayText: fullReply });
+      assistantBubble.appendChild(buildMessageActions(() => fullReply, () => responseMeta));
+      messages.push({ role: 'assistant', content: fullReply, displayText: fullReply, responseMeta });
       saveConversation();
 
     } catch (err) {
@@ -5292,13 +5328,14 @@ A strong website should include: hero section, clear navigation, services/featur
     avatarEl.classList.add(requestIsComplex ? 'thinking-glitch' : 'pulsing');
     const thinkingTagEl = requestIsComplex ? showThinkingTag(avatarEl) : null;
     let fullReply = '';
+    let responseMeta = {};
 
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages(), ai_mode: currentMode(), workspace_id: activeWorkspaceId || null, client_timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone || null), client_now_iso: new Date().toISOString() })
+        body: JSON.stringify({ messages: apiMessages(), ai_mode: currentMode(), workspace_id: activeWorkspaceId || null, conversation_id: store?.activeId || null, client_timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone || null), client_now_iso: new Date().toISOString() })
       });
 
       if (!response.ok || !response.body) {
@@ -5329,6 +5366,7 @@ A strong website should include: hero section, clear navigation, services/featur
           let parsed;
           try { parsed = JSON.parse(raw); } catch { continue; }
           if (parsed.error) throw new Error(parsed.error);
+          if (parsed.meta && typeof parsed.meta === 'object') responseMeta = { ...responseMeta, ...parsed.meta };
           if (parsed.content) {
             if (firstToken) { assistantBubble.innerHTML = ''; firstToken = false; }
             fullReply += parsed.content;
@@ -5343,8 +5381,8 @@ A strong website should include: hero section, clear navigation, services/featur
 
       enhanceCodeBlocks(assistantBubble);
       attachFileBundleIfHeavy(assistantBubble, fullReply, userText);
-      assistantBubble.appendChild(buildMessageActions(() => fullReply));
-      messages.push({ role: 'assistant', content: fullReply, displayText: fullReply });
+      assistantBubble.appendChild(buildMessageActions(() => fullReply, () => responseMeta));
+      messages.push({ role: 'assistant', content: fullReply, displayText: fullReply, responseMeta });
       saveConversation();
     } catch (err) {
       assistantBubble.classList.add('error-bubble');
@@ -5677,13 +5715,14 @@ A strong website should include: hero section, clear navigation, services/featur
     avatarEl.classList.add(requestIsComplex ? 'thinking-glitch' : 'pulsing');
     const thinkingTagEl = requestIsComplex ? showThinkingTag(avatarEl) : null;
     let fullReply = '';
+    let responseMeta = {};
 
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages(), ai_mode: currentMode(), workspace_id: activeWorkspaceId || null, client_timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone || null), client_now_iso: new Date().toISOString() })
+        body: JSON.stringify({ messages: apiMessages(), ai_mode: currentMode(), workspace_id: activeWorkspaceId || null, conversation_id: store?.activeId || null, client_timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone || null), client_now_iso: new Date().toISOString() })
       });
       if (!response.ok || !response.body) {
         const errData = await response.json().catch(() => ({}));
@@ -5708,6 +5747,7 @@ A strong website should include: hero section, clear navigation, services/featur
           let parsed;
           try { parsed = JSON.parse(raw); } catch { continue; }
           if (parsed.error) throw new Error(parsed.error);
+          if (parsed.meta && typeof parsed.meta === 'object') responseMeta = { ...responseMeta, ...parsed.meta };
           if (parsed.content) {
             if (firstToken) { assistantBubble.innerHTML = ''; firstToken = false; }
             fullReply += parsed.content;
@@ -5721,8 +5761,8 @@ A strong website should include: hero section, clear navigation, services/featur
       if (!fullReply) throw new Error('No response received.');
       enhanceCodeBlocks(assistantBubble);
       attachFileBundleIfHeavy(assistantBubble, fullReply, text);
-      assistantBubble.appendChild(buildMessageActions(() => fullReply));
-      messages.push({ role: 'assistant', content: fullReply, displayText: fullReply });
+      assistantBubble.appendChild(buildMessageActions(() => fullReply, () => responseMeta));
+      messages.push({ role: 'assistant', content: fullReply, displayText: fullReply, responseMeta });
       saveConversation();
       clearAvatarThinkingState(avatarEl, thinkingTagEl);
       stopUsageCycleLiveUpdates();

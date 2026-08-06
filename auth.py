@@ -154,7 +154,23 @@ def init_db() -> None:
                 prompt_tokens     INTEGER NOT NULL DEFAULT 0,
                 completion_tokens INTEGER NOT NULL DEFAULT 0,
                 total_tokens      INTEGER NOT NULL DEFAULT 0,
-                ts                INTEGER NOT NULL
+                ts                INTEGER NOT NULL,
+                routed_model      TEXT,
+                route_reason      TEXT,
+                routing_mode      TEXT,
+                fallback_used     INTEGER NOT NULL DEFAULT 0,
+                retry_count       INTEGER NOT NULL DEFAULT 0,
+                latency_ms        INTEGER NOT NULL DEFAULT 0,
+                time_to_first_token_ms INTEGER NOT NULL DEFAULT 0,
+                cached_tokens     INTEGER NOT NULL DEFAULT 0,
+                system_tokens     INTEGER NOT NULL DEFAULT 0,
+                history_tokens    INTEGER NOT NULL DEFAULT 0,
+                summary_tokens    INTEGER NOT NULL DEFAULT 0,
+                memory_tokens     INTEGER NOT NULL DEFAULT 0,
+                workspace_tokens  INTEGER NOT NULL DEFAULT 0,
+                search_tokens     INTEGER NOT NULL DEFAULT 0,
+                user_tokens       INTEGER NOT NULL DEFAULT 0,
+                conversation_id   TEXT
             )
             """
         )
@@ -214,6 +230,33 @@ def init_db() -> None:
             conn.execute("ALTER TABLE token_usage ADD COLUMN model TEXT")
         if "provider_request_id" not in existing_usage_cols:
             conn.execute("ALTER TABLE token_usage ADD COLUMN provider_request_id TEXT")
+        usage_migrations = {
+            "routed_model": "TEXT",
+            "route_reason": "TEXT",
+            "routing_mode": "TEXT",
+            "fallback_used": "INTEGER NOT NULL DEFAULT 0",
+            "retry_count": "INTEGER NOT NULL DEFAULT 0",
+            "latency_ms": "INTEGER NOT NULL DEFAULT 0",
+            "time_to_first_token_ms": "INTEGER NOT NULL DEFAULT 0",
+            "cached_tokens": "INTEGER NOT NULL DEFAULT 0",
+            "system_tokens": "INTEGER NOT NULL DEFAULT 0",
+            "history_tokens": "INTEGER NOT NULL DEFAULT 0",
+            "summary_tokens": "INTEGER NOT NULL DEFAULT 0",
+            "memory_tokens": "INTEGER NOT NULL DEFAULT 0",
+            "workspace_tokens": "INTEGER NOT NULL DEFAULT 0",
+            "search_tokens": "INTEGER NOT NULL DEFAULT 0",
+            "user_tokens": "INTEGER NOT NULL DEFAULT 0",
+            "conversation_id": "TEXT",
+        }
+        for column, definition in usage_migrations.items():
+            if column not in existing_usage_cols:
+                conn.execute(
+                    f"ALTER TABLE token_usage ADD COLUMN {column} {definition}"
+                )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_token_usage_route "
+            "ON token_usage(route_reason, model, ts)"
+        )
 
 
         # Deep Features v3: private per-user workspaces and lightweight workspace notes/assets.
@@ -1328,7 +1371,11 @@ def export_user_data(user_id: int) -> dict:
         usage = [dict(row) for row in conn.execute(
             """
             SELECT prompt_tokens, completion_tokens, total_tokens, ts, provider,
-                   estimated, model, provider_request_id
+                   estimated, model, provider_request_id, routed_model,
+                   route_reason, routing_mode, fallback_used, retry_count,
+                   latency_ms, time_to_first_token_ms, cached_tokens,
+                   system_tokens, history_tokens, summary_tokens, memory_tokens,
+                   workspace_tokens, search_tokens, user_tokens, conversation_id
             FROM token_usage WHERE user_id = ? ORDER BY ts
             """,
             (user_id,),

@@ -21,7 +21,7 @@
       document.documentElement.setAttribute('data-theme', theme);
     })();
   </script>
-  <link rel="stylesheet" href="/static/css/styles.css?v=ui-refresh-r5">
+  <link rel="stylesheet" href="/static/css/styles.css?v=context-efficiency-r1">
 </head>
 <body style="display: none;">
 <div class="offline-status-banner" id="offlineStatusBanner" role="status" aria-live="polite">
@@ -69,6 +69,21 @@
           <div><h2>Feedback quality</h2><p>Positive vs bad feedback</p></div>
         </div>
         <div class="admin-chart-wrap"><canvas id="adminFeedbackChart" height="170"></canvas></div>
+      </div>
+    </section>
+
+    <section class="admin-pro-grid two">
+      <div class="admin-pro-card">
+        <div class="admin-pro-card-head">
+          <div><h2>Model routing</h2><p>Weekly route, fallback, speed, tokens, and feedback quality</p></div>
+        </div>
+        <div class="admin-pro-table-wrap"><table class="admin-pro-table" id="adminRoutingUsageTable"></table></div>
+      </div>
+      <div class="admin-pro-card">
+        <div class="admin-pro-card-head">
+          <div><h2>Prompt token mix</h2><p>Estimated weekly system and context components</p></div>
+        </div>
+        <div class="admin-pro-table-wrap"><table class="admin-pro-table" id="adminContextTokenTable"></table></div>
       </div>
     </section>
 
@@ -742,6 +757,6 @@
 </div>
 
 
-  <script src="/static/js/app.js?v=ui-refresh-r5"></script>
+  <script src="/static/js/app.js?v=context-efficiency-r1"></script>
 </body>
 </html>

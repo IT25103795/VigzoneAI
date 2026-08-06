@@ -38,3 +38,29 @@ deployment variables should still be updated to the current values above.
 
 Voice messages use Groq Whisper at `/api/transcribe`. A signed-in user can
 activate a personal Groq API key, and the same routing policy applies to it.
+
+## Prompt and context efficiency
+
+The efficiency engine is enabled by default and needs no new variable. Ordinary
+turns use a stable compact core prompt; code, website, live-data, study, file,
+business, and voice instructions are loaded only when relevant. Recent history
+is selected by token budget, older relevant context is compacted, and duplicate
+memory/workspace/search units are removed before the Groq request.
+
+These optional Render variables tune the conservative defaults:
+
+```env
+CONTEXT_MAX_RECENT_MESSAGES=10
+CONTEXT_HISTORY_TOKEN_BUDGET=2400
+CONTEXT_SUMMARY_TOKEN_BUDGET=600
+CONTEXT_MEMORY_TOKEN_BUDGET=450
+CONTEXT_WORKSPACE_TOKEN_BUDGET=650
+CONTEXT_LIVE_TOKEN_BUDGET=1800
+CONTEXT_IMAGE_SEARCH_TOKEN_BUDGET=1200
+ROUTING_ANALYTICS_ENABLED=true
+```
+
+Each production usage row records the selected route, final model, fallback and
+retry state, latency, cached tokens when reported by Groq, and an estimated
+system/history/summary/memory/workspace/search/user token breakdown. Existing
+SQLite databases are migrated automatically during startup.

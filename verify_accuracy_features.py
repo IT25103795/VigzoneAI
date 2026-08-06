@@ -28,7 +28,6 @@ except ImportError as e:
 try:
     from fact_verification import (
         ClaimClassifier,
-        AnswerQualityAnalyzer,
         verify_factual_claim,
         score_response_accuracy,
     )
@@ -51,7 +50,7 @@ def demo_datetime():
     print(f"  Current datetime: {dt}")
     
     info = get_datetime_info()
-    print(f"  Structured info:")
+    print("  Structured info:")
     for key, value in info.items():
         print(f"    • {key}: {value}")
     
@@ -251,7 +250,7 @@ async def main():
 
 
 if __name__ == "__main__":
-    print(f"Vigzone AI Accuracy Features Verification")
+    print("Vigzone AI Accuracy Features Verification")
     print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print()
     

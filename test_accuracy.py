@@ -4,10 +4,7 @@ Vigzone AI - Accuracy & Real-World Data Tests
 Tests for 100% accuracy real-world data access.
 """
 
-import asyncio
 import pytest
-from datetime import datetime
-from unittest.mock import patch, AsyncMock, MagicMock
 
 # Import modules to test
 try:

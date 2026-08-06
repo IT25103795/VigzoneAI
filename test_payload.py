@@ -2,7 +2,6 @@ import asyncio
 import json
 
 from vigzone_ai import _build_payload, DEFAULT_MODEL
-import auth
 
 async def main():
     payload = await _build_payload([{"role": "user", "content": "How can I center something horizontally in CSS?"}], DEFAULT_MODEL, stream=False)

@@ -477,9 +477,10 @@ def test_website_studio_forbids_deceptive_integrations():
 
 def test_generated_website_preview_is_sandboxed():
     frontend = Path("static/index.html").read_text(encoding="utf-8")
+    frontend_js = Path("static/js/app.js").read_text(encoding="utf-8")
     assert 'sandbox="allow-scripts allow-modals"' in frontend
-    assert "openSandboxedWebsitePreview(raw)" in frontend
-    assert "new Blob([raw], { type: 'text/html' })" not in frontend
+    assert "openSandboxedWebsitePreview(raw)" in frontend_js
+    assert "new Blob([raw], { type: 'text/html' })" not in frontend_js
 
 
 def test_service_worker_does_not_cache_token_bearing_navigations():
@@ -490,10 +491,10 @@ def test_service_worker_does_not_cache_token_bearing_navigations():
 
 
 def test_download_bundle_library_is_local_and_csp_compatible():
-    frontend = Path("static/index.html").read_text(encoding="utf-8")
+    frontend_js = Path("static/js/app.js").read_text(encoding="utf-8")
     service_worker = Path("static/service-worker.js").read_text(encoding="utf-8")
-    assert "s.src = '/static/vendor/jszip.min.js'" in frontend
-    assert "cdnjs.cloudflare.com" not in frontend
+    assert "s.src = '/static/vendor/jszip.min.js'" in frontend_js
+    assert "cdnjs.cloudflare.com" not in frontend_js
     assert "'/static/vendor/jszip.min.js'" in service_worker
     assert Path("static/vendor/jszip.min.js").stat().st_size > 90_000
     assert Path("static/vendor/JSZIP-LICENSE.md").is_file()

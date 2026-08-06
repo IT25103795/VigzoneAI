@@ -1,15 +1,16 @@
 #!/usr/bin/env python
 """Verify pause feature integration."""
+import importlib
 import sys
 
 def test_imports():
     """Test that all modules import cleanly."""
     try:
         print("Testing imports...")
-        import stream_manager
+        importlib.import_module("stream_manager")
         print("  ✓ stream_manager imported")
 
-        import app
+        importlib.import_module("app")
         print("  ✓ app imported")
 
         print("\n✅ All imports successful!")

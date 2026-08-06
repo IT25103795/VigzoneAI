@@ -16,7 +16,7 @@ def test_stream_manager():
 
     # Test 3: Cancel the stream
     result = cancel_stream(sid, 1)
-    assert result == True, "Cancel should return True"
+    assert result, "Cancel should return True"
     assert is_cancelled(sid), "Stream should be cancelled"
     print("[OK] Stream cancelled successfully")
 
@@ -27,11 +27,10 @@ def test_stream_manager():
 
     # Test 5: Try to cancel non-existent stream
     result = cancel_stream("non-existent", 1)
-    assert result == False, "Cancelling non-existent stream should return False"
+    assert not result, "Cancelling non-existent stream should return False"
     print("[OK] Cannot cancel non-existent stream")
 
     print("\n[SUCCESS] All tests passed!")
 
 if __name__ == '__main__':
     test_stream_manager()
-
