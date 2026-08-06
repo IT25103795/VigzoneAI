@@ -1,6 +1,6 @@
 /* Vigzone AI offline service worker */
-const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r6';
-const UI_ASSET_REVISION = 'context-efficiency-r1';
+const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r7';
+const UI_ASSET_REVISION = 'clean-chat-r1';
 const SHELL_CACHE = `vigzone-shell-${VIGZONE_SW_VERSION}`;
 const RUNTIME_CACHE = `vigzone-runtime-${VIGZONE_SW_VERSION}`;
 

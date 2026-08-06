@@ -3551,16 +3551,6 @@
     });
     row.appendChild(speakerBtn);
 
-    const actionMeta = typeof getMeta === 'function' ? getMeta() : (getMeta || {});
-    if (actionMeta && Number(actionMeta.total_tokens) > 0) {
-      const usageChip = document.createElement('span');
-      usageChip.className = 'response-usage-chip';
-      const modelLabel = String(actionMeta.model || '').split('/').pop().replace(/^gpt-oss-/,'');
-      usageChip.textContent = `${adminFmt(Number(actionMeta.total_tokens))} tokens${modelLabel ? ` · ${modelLabel}` : ''}`;
-      usageChip.title = `Prompt ${adminFmt(Number(actionMeta.prompt_tokens || 0))} · Reply ${adminFmt(Number(actionMeta.completion_tokens || 0))}${actionMeta.fallback_used ? ' · fallback used' : ''}`;
-      row.appendChild(usageChip);
-    }
-
     const upBtn = document.createElement('button');
     upBtn.className = 'feedback-btn feedback-up';
     upBtn.setAttribute('aria-label', 'Upvote this response');
