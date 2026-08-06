@@ -182,31 +182,58 @@ _GROQ_API_KEY = _clean_api_key(os.getenv("GROQ_API_KEY", ""))
 
 # Variable names are kept for backward compatibility with the rest of the code,
 # but these now point to Groq's OpenAI-compatible endpoint.
+_DEPRECATED_MODEL_REPLACEMENTS = {
+    "llama-3.1-8b-instant": "openai/gpt-oss-20b",
+    "llama-3.3-70b-versatile": "openai/gpt-oss-120b",
+    "meta-llama/llama-4-scout-17b-16e-instruct": "qwen/qwen3.6-27b",
+}
+
+
+def _current_model(model: str) -> str:
+    cleaned = (model or "").strip()
+    return _DEPRECATED_MODEL_REPLACEMENTS.get(cleaned, cleaned)
+
+
+def _configured_model(name: str, default: str) -> str:
+    configured = (os.getenv(name, default) or "").strip() or default
+    current = _current_model(configured)
+    if current != configured:
+        logger.warning("Migrating deprecated %s model %s to %s", name, configured, current)
+    return current
+
+
 OLLAMA_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1").rstrip("/")
-OLLAMA_API_URL  = f"{OLLAMA_BASE_URL}/chat/completions"
-DEFAULT_MODEL   = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-VISION_MODEL    = os.getenv("GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
+OLLAMA_API_URL = f"{OLLAMA_BASE_URL}/chat/completions"
+
+# Stable text models: GPT-OSS 20B handles clearly simple requests quickly and
+# cheaply; GPT-OSS 120B remains the quality-first default for everything else.
+# Qwen 3.6 is the current Groq model that accepts image input.
+DEFAULT_MODEL = _configured_model("GROQ_MODEL", "openai/gpt-oss-120b")
+FAST_MODEL = _configured_model("GROQ_FAST_MODEL", "openai/gpt-oss-20b")
+COMPLEX_MODEL = _configured_model("GROQ_COMPLEX_MODEL", DEFAULT_MODEL)
+VISION_MODEL = _configured_model("GROQ_VISION_MODEL", "qwen/qwen3.6-27b")
 VISION_FALLBACK_MODELS = [
-    m.strip()
-    for m in os.getenv("GROQ_VISION_FALLBACK_MODELS", "meta-llama/llama-4-scout-17b-16e-instruct").split(",")
+    _current_model(m)
+    for m in os.getenv("GROQ_VISION_FALLBACK_MODELS", VISION_MODEL).split(",")
     if m.strip()
 ]
-API_KEY         = _GROQ_API_KEY
+API_KEY = _GROQ_API_KEY
 
 _DEFAULT_ALLOWED_CHAT_MODELS = (
-    "llama-3.3-70b-versatile,"
-    "llama-3.1-8b-instant,"
     "openai/gpt-oss-120b,"
-    "openai/gpt-oss-20b"
+    "openai/gpt-oss-20b,"
+    "qwen/qwen3.6-27b"
 )
 ALLOWED_CHAT_MODELS = {
-    item.strip()
+    _current_model(item)
     for item in os.getenv("GROQ_ALLOWED_MODELS", _DEFAULT_ALLOWED_CHAT_MODELS).split(",")
     if item.strip()
 }
-ALLOWED_CHAT_MODELS.add(DEFAULT_MODEL)
+ALLOWED_CHAT_MODELS.update(
+    model for model in (DEFAULT_MODEL, FAST_MODEL, COMPLEX_MODEL) if model
+)
 ALLOWED_VISION_MODELS = {
-    item.strip()
+    _current_model(item)
     for item in os.getenv("GROQ_ALLOWED_VISION_MODELS", VISION_MODEL).split(",")
     if item.strip()
 }
@@ -221,8 +248,9 @@ _AUTH_HEADERS = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
 # whenever a user has activated their own personal Groq key, REGARDLESS of
 # what AI_PROVIDER the deployment defaults to for everyone else.
 GROQ_BYOK_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1").rstrip("/")
-GROQ_BYOK_API_URL  = f"{GROQ_BYOK_BASE_URL}/chat/completions"
-GROQ_BYOK_MODEL    = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_BYOK_API_URL = f"{GROQ_BYOK_BASE_URL}/chat/completions"
+GROQ_BYOK_MODEL = _configured_model("GROQ_BYOK_MODEL", DEFAULT_MODEL)
+ALLOWED_CHAT_MODELS.add(GROQ_BYOK_MODEL)
 
 # The Groq API key configured on the deployment is shared by users who do not
 # bring their own key. Vigzone enforces an app-level daily token plan per user
@@ -250,18 +278,32 @@ ENFORCE_DEFAULT_DAILY_LIMIT = _env_bool("ENFORCE_DEFAULT_DAILY_LIMIT", True)
 ENFORCE_BYOK_DAILY_LIMIT = _env_bool("ENFORCE_BYOK_DAILY_LIMIT", True)
 USAGE_RESERVE_TOKENS = _env_int("USAGE_RESERVE_TOKENS", 800)
 
+# Deterministic model routing. Only clearly simple, low-risk requests use the
+# fast model. Ambiguous, context-heavy, specialist, and high-stakes requests
+# stay on the complex model so optimization never silently lowers answer quality.
+MODEL_ROUTING_ENABLED = _env_bool("MODEL_ROUTING_ENABLED", True)
+MODEL_ROUTING_FAST_MAX_WORDS = max(
+    8, _env_int("MODEL_ROUTING_FAST_MAX_WORDS", 45)
+)
+MODEL_ROUTING_FAST_MAX_CHARS = max(
+    80, _env_int("MODEL_ROUTING_FAST_MAX_CHARS", 320)
+)
+MODEL_ROUTING_FAST_MAX_CONTEXT_TOKENS = max(
+    256, _env_int("MODEL_ROUTING_FAST_MAX_CONTEXT_TOKENS", 2500)
+)
+
 # Model fallback: if the primary Groq model is temporarily rate-limited or down,
 # try these backup models before failing the user-facing request. Use a comma
 # separated GROQ_BACKUP_MODELS value, or a single GROQ_BACKUP_MODEL.
-_DEFAULT_GROQ_BACKUP_MODELS = "openai/gpt-oss-20b,llama-3.1-8b-instant"
+_DEFAULT_GROQ_BACKUP_MODELS = "openai/gpt-oss-120b,openai/gpt-oss-20b"
 _raw_backup_models = os.getenv(
     "GROQ_BACKUP_MODELS",
     os.getenv("GROQ_BACKUP_MODEL", _DEFAULT_GROQ_BACKUP_MODELS),
 ).strip()
 GROQ_BACKUP_MODELS = [
-    model
-    for model in (m.strip() for m in _raw_backup_models.split(","))
-    if model and model in ALLOWED_CHAT_MODELS
+    current
+    for current in (_current_model(m) for m in _raw_backup_models.split(","))
+    if current and current in ALLOWED_CHAT_MODELS
 ]
 
 # Backup models often have lower per-minute token limits than the primary
@@ -583,6 +625,32 @@ _CONTINUATION_RE = re.compile(
     re.IGNORECASE,
 )
 
+_ROUTER_COMPLEX_RE = re.compile(
+    r"\b(analy[sz]e|evaluate|research|investigate|reason|prove|derive|"
+    r"solve|calculate|equation|integral|derivative|matrix|probability|"
+    r"statistics|architecture|design pattern|security|vulnerabilit|"
+    r"authenticate|database|deploy|production|performance|optimi[sz]e|"
+    r"strategy|plan|recommend|decision|trade[- ]?off)\w*\b",
+    re.IGNORECASE,
+)
+_ROUTER_HIGH_STAKES_RE = re.compile(
+    r"\b(medical|medicine|medication|dosage|symptom|diagnos|treatment|"
+    r"emergency|legal|lawyer|lawsuit|contract|tax|investment|trading|"
+    r"loan|mortgage|insurance|credit score|cybersecurity)\w*\b",
+    re.IGNORECASE,
+)
+_ROUTER_CURRENT_RE = re.compile(
+    r"\b(latest|current|today|tonight|tomorrow|right now|live|recent|"
+    r"news|weather|forecast|price|exchange rate|score|standings|schedule|"
+    r"election|president|prime minister|ceo|release|version|rate limit)\b",
+    re.IGNORECASE,
+)
+_ROUTER_AMBIGUOUS_FOLLOWUP_RE = re.compile(
+    r"^\s*(yes|no|ok(?:ay)?|do it|fix it|change it|that one|same|again|"
+    r"why|how|what about(?: that| it)?|continue|more|next)\s*[.!?]*$",
+    re.IGNORECASE,
+)
+
 
 def _last_user_text(messages: list[dict]) -> str:
     for m in reversed(messages):
@@ -674,6 +742,68 @@ def _message_content_as_text(content) -> str:
 def estimate_messages_tokens(messages: list[dict]) -> int:
     """Cheap estimator used before a request to protect the daily limit."""
     return _estimate_tokens(" ".join(_message_content_as_text(m.get("content")) for m in messages))
+
+
+def select_chat_model(
+    messages: list[dict],
+    requested_model: str = DEFAULT_MODEL,
+    *,
+    contains_image: bool = False,
+    ai_mode: str = "general",
+) -> tuple[str, str]:
+    """Choose a model without spending another model call on classification.
+
+    The fast path is intentionally narrow. Anything ambiguous or likely to need
+    careful reasoning stays on the complex model. The second return value is a
+    privacy-safe route reason for server logs and tests.
+    """
+
+    requested = _current_model((requested_model or "").strip())
+    if requested not in ALLOWED_CHAT_MODELS:
+        requested = DEFAULT_MODEL
+
+    if contains_image:
+        return VISION_MODEL, "vision"
+    if not MODEL_ROUTING_ENABLED:
+        return requested, "routing_disabled"
+
+    fast_model = FAST_MODEL if FAST_MODEL in ALLOWED_CHAT_MODELS else requested
+    complex_model = (
+        COMPLEX_MODEL if COMPLEX_MODEL in ALLOWED_CHAT_MODELS else requested
+    )
+    latest = _last_user_text(messages).strip()
+    effective = _effective_context_text(messages)
+    mode = (ai_mode or "general").strip().lower()
+
+    if not latest:
+        return complex_model, "empty_or_ambiguous"
+    if mode in {"website", "code", "study", "file", "business"}:
+        return complex_model, f"specialist_mode:{mode}"
+    if len(messages) > 1 and _ROUTER_AMBIGUOUS_FOLLOWUP_RE.fullmatch(latest):
+        return complex_model, "contextual_followup"
+    if _is_code_request(messages) or _LONG_FORM_RE.search(effective):
+        return complex_model, "code_or_long_form"
+    if (
+        _ROUTER_COMPLEX_RE.search(effective)
+        or _ROUTER_HIGH_STAKES_RE.search(effective)
+        or _ROUTER_CURRENT_RE.search(effective)
+    ):
+        return complex_model, "reasoning_or_high_stakes"
+    if any(character.isalpha() and ord(character) > 127 for character in latest):
+        return complex_model, "multilingual_quality"
+    if latest.count("?") + latest.count("？") > 1:
+        return complex_model, "multi_question"
+
+    word_count = len(re.findall(r"[\w'-]+", latest, flags=re.UNICODE))
+    if (
+        len(latest) > MODEL_ROUTING_FAST_MAX_CHARS
+        or word_count > MODEL_ROUTING_FAST_MAX_WORDS
+    ):
+        return complex_model, "large_request"
+    if estimate_messages_tokens(messages) > MODEL_ROUTING_FAST_MAX_CONTEXT_TOKENS:
+        return complex_model, "context_heavy"
+
+    return fast_model, "simple_request"
 
 
 def _estimate_payload_prompt_tokens(messages: list[dict]) -> int:
@@ -956,7 +1086,12 @@ def _model_candidates(requested_model: str, contains_image: bool = False) -> lis
     candidates = (
         [VISION_MODEL, *VISION_FALLBACK_MODELS]
         if contains_image
-        else [requested_model, *GROQ_BACKUP_MODELS]
+        else [
+            requested_model,
+            *GROQ_BACKUP_MODELS,
+            COMPLEX_MODEL,
+            FAST_MODEL,
+        ]
     )
     seen = set()
     out = []
@@ -1091,18 +1226,27 @@ async def _build_payload(
         "model": effective_model,
         "messages": system_messages + patched_messages,
         "stream": stream,
-        # Code/website requests get a lower, more deterministic temperature
-        # (accuracy matters more than variety) and frequency/presence
-        # penalties near zero — those penalties are great for prose but they
-        # actively damage code, since code legitimately reuses the same
-        # tokens over and over (closing tags, braces, indentation, repeated
-        # class names) and a penalty pushes the model to avoid that, which is
-        # how you end up with mismatched tags or broken syntax.
-        "temperature": 0.35 if code_request else 0.7,
+        # Groq recommends the 0.5-0.7 range for its reasoning models. Do not
+        # send frequency/presence penalties: Groq's API documents that no
+        # current model supports them.
+        "temperature": 0.55 if code_request else 0.65,
         "max_completion_tokens": _adaptive_max_tokens(messages),
-        "frequency_penalty": 0.0 if code_request else 0.6,
-        "presence_penalty": 0.0 if code_request else 0.4,
     }
+
+    # Keep private reasoning out of the user-visible stream and spend less of
+    # the completion budget on simple turns. Model-specific values avoid 400s:
+    # GPT-OSS accepts low/medium, while Qwen accepts none/default.
+    if effective_model.startswith("openai/gpt-oss-"):
+        payload["include_reasoning"] = False
+        payload["reasoning_effort"] = (
+            "low" if effective_model == FAST_MODEL and not code_request else "medium"
+        )
+    elif effective_model == "qwen/qwen3.6-27b":
+        payload["reasoning_format"] = "hidden"
+        payload["reasoning_effort"] = (
+            "default" if code_request or _contains_image(messages) else "none"
+        )
+
     if stream:
         payload["stream_options"] = {"include_usage": True}
 
@@ -1391,6 +1535,7 @@ async def stream_chat(
     user_name: Optional[str] = None,
     provider_override: Optional[dict] = None,
     user_learning_context: str = "",
+    routing_mode: str = "general",
 ) -> AsyncGenerator[str, None]:
     """Stream a chat completion token-by-token with Groq model fallback."""
     using_override = provider_override is not None
@@ -1402,7 +1547,20 @@ async def stream_chat(
     client = _get_client()
     last_error: Optional[VigzoneAIError] = None
     contains_image = _contains_image(messages)
-    candidates = _model_candidates(model, contains_image=contains_image)
+    routed_model, route_reason = select_chat_model(
+        messages,
+        model,
+        contains_image=contains_image,
+        ai_mode=routing_mode,
+    )
+    candidates = _model_candidates(routed_model, contains_image=contains_image)
+    logger.info(
+        "model_route reason=%s model=%s mode=%s image=%s",
+        route_reason,
+        candidates[0],
+        (routing_mode or "general").strip().lower(),
+        contains_image,
+    )
 
     for candidate_index, candidate_model in enumerate(candidates):
         is_fallback = candidate_index > 0 and not contains_image
@@ -1619,8 +1777,9 @@ async def chat_once(
     user_name: Optional[str] = None,
     provider_override: Optional[dict] = None,
     user_learning_context: str = "",
+    routing_mode: str = "general",
 ) -> str:
-    """Non-streaming convenience wrapper with Groq model fallback."""
+    """Non-streaming convenience wrapper with routing and Groq fallback."""
     using_override = provider_override is not None
     effective_api_url = provider_override["api_url"] if using_override else OLLAMA_API_URL
     effective_headers = (
@@ -1630,7 +1789,20 @@ async def chat_once(
     client = _get_client()
     last_error: Optional[VigzoneAIError] = None
     contains_image = _contains_image(messages)
-    candidates = _model_candidates(model, contains_image=contains_image)
+    routed_model, route_reason = select_chat_model(
+        messages,
+        model,
+        contains_image=contains_image,
+        ai_mode=routing_mode,
+    )
+    candidates = _model_candidates(routed_model, contains_image=contains_image)
+    logger.info(
+        "model_route reason=%s model=%s mode=%s image=%s",
+        route_reason,
+        candidates[0],
+        (routing_mode or "general").strip().lower(),
+        contains_image,
+    )
 
     for candidate_index, candidate_model in enumerate(candidates):
         is_fallback = candidate_index > 0 and not contains_image
