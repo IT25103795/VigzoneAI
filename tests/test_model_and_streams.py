@@ -18,6 +18,120 @@ def test_requested_models_are_allowlisted():
     assert vigzone_ai._should_try_fallback(401) is False
 
 
+def test_model_router_uses_fast_model_only_for_clear_low_risk_requests(monkeypatch):
+    import vigzone_ai
+
+    fast = "test/fast"
+    complex_model = "test/complex"
+    vision = "test/vision"
+    monkeypatch.setattr(vigzone_ai, "MODEL_ROUTING_ENABLED", True)
+    monkeypatch.setattr(vigzone_ai, "FAST_MODEL", fast)
+    monkeypatch.setattr(vigzone_ai, "COMPLEX_MODEL", complex_model)
+    monkeypatch.setattr(vigzone_ai, "VISION_MODEL", vision)
+    monkeypatch.setattr(
+        vigzone_ai,
+        "ALLOWED_CHAT_MODELS",
+        {fast, complex_model, vision},
+    )
+
+    assert vigzone_ai.select_chat_model(
+        [{"role": "user", "content": "Hi bro"}]
+    ) == (fast, "simple_request")
+    assert vigzone_ai.select_chat_model(
+        [{"role": "user", "content": "What is RAM?"}]
+    )[0] == fast
+
+    complex_cases = [
+        ([{"role": "user", "content": "Explain SQL joins step by step"}], "general"),
+        ([{"role": "user", "content": "Debug this Python authentication function"}], "general"),
+        ([{"role": "user", "content": "What is the latest exchange rate?"}], "general"),
+        ([{"role": "user", "content": "What medicine dosage is safe?"}], "general"),
+        ([{"role": "user", "content": "මේක පැහැදිලි කරන්න"}], "general"),
+        ([{"role": "user", "content": "Write a short landing page"}], "website"),
+    ]
+    for messages, mode in complex_cases:
+        assert vigzone_ai.select_chat_model(messages, ai_mode=mode)[0] == complex_model
+
+    follow_up = [
+        {"role": "user", "content": "Build a Python API"},
+        {"role": "assistant", "content": "Here is the first version."},
+        {"role": "user", "content": "fix it"},
+    ]
+    assert vigzone_ai.select_chat_model(follow_up)[0] == complex_model
+    assert vigzone_ai.select_chat_model(
+        [{"role": "user", "content": "What is shown?"}],
+        contains_image=True,
+    ) == (vision, "vision")
+
+
+def test_current_model_migration_and_complementary_fallbacks():
+    import vigzone_ai
+
+    assert (
+        vigzone_ai._current_model("llama-3.1-8b-instant")
+        == "openai/gpt-oss-20b"
+    )
+    assert (
+        vigzone_ai._current_model("llama-3.3-70b-versatile")
+        == "openai/gpt-oss-120b"
+    )
+    candidates = vigzone_ai._model_candidates(vigzone_ai.FAST_MODEL)
+    assert candidates[0] == vigzone_ai.FAST_MODEL
+    assert vigzone_ai.COMPLEX_MODEL in candidates
+
+
+def test_payload_uses_model_specific_supported_reasoning_settings(monkeypatch):
+    import vigzone_ai
+
+    async def no_realtime(_text):
+        return "", ""
+
+    monkeypatch.setattr(vigzone_ai, "HAS_REALWORLD_DATA", True)
+    monkeypatch.setattr(vigzone_ai, "get_realworld_data_context", no_realtime)
+
+    fast_payload = asyncio.run(
+        vigzone_ai._build_payload(
+            [{"role": "user", "content": "Hi bro"}],
+            "openai/gpt-oss-20b",
+            False,
+        )
+    )
+    assert fast_payload["include_reasoning"] is False
+    assert fast_payload["reasoning_effort"] == "low"
+    assert "frequency_penalty" not in fast_payload
+    assert "presence_penalty" not in fast_payload
+
+    complex_payload = asyncio.run(
+        vigzone_ai._build_payload(
+            [{"role": "user", "content": "Debug this Python function"}],
+            "openai/gpt-oss-120b",
+            False,
+        )
+    )
+    assert complex_payload["reasoning_effort"] == "medium"
+
+    vision_payload = asyncio.run(
+        vigzone_ai._build_payload(
+            [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Read this image"},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": "data:image/png;base64,AA=="},
+                        },
+                    ],
+                }
+            ],
+            "qwen/qwen3.6-27b",
+            False,
+        )
+    )
+    assert vision_payload["reasoning_format"] == "hidden"
+    assert vision_payload["reasoning_effort"] == "default"
+
+
 def test_private_context_is_fenced_and_stream_usage_requested(monkeypatch):
     import vigzone_ai
 
