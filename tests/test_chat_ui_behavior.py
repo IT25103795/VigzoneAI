@@ -36,10 +36,26 @@ def test_streaming_is_paced_and_reader_scroll_is_not_forced():
     assert "scrollLatestIfFollowing();" in js
 
 
+def test_feedback_icons_match_the_transparent_message_actions():
+    css = _read("static/css/styles.css")
+    js = _read("static/js/app.js")
+
+    assert "const ICON_THUMBS_UP" in js
+    assert "const ICON_THUMBS_DOWN" in js
+    assert "upBtn.innerHTML = ICON_THUMBS_UP;" in js
+    assert "downBtn.innerHTML = ICON_THUMBS_DOWN;" in js
+    assert "upBtn.textContent = '👍';" not in js
+    assert "downBtn.textContent = '👎';" not in js
+    assert "message-action-btn feedback-btn feedback-up" in js
+    assert "message-action-btn feedback-btn feedback-down" in js
+    assert ".msg.assistant .feedback-btn.done svg" in css
+    assert "fill:currentColor;" in css
+
+
 def test_chat_ui_asset_revision_is_consistent():
     index = _read("static/index.html")
     service_worker = _read("static/service-worker.js")
 
-    assert index.count("natural-chat-r2") == 2
-    assert "const UI_ASSET_REVISION = 'natural-chat-r2';" in service_worker
-    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r8';" in service_worker
+    assert index.count("feedback-actions-r1") == 2
+    assert "const UI_ASSET_REVISION = 'feedback-actions-r1';" in service_worker
+    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r9';" in service_worker

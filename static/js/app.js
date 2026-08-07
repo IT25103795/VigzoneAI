@@ -460,6 +460,8 @@
   const ICON_AV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>';
   const ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
   const ICON_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+  const ICON_THUMBS_UP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12"></path><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z"></path></svg>';
+  const ICON_THUMBS_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"></path><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22h0a3.13 3.13 0 0 1-3-3.88Z"></path></svg>';
   const ICON_SPEAKER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M18.36 5.64a9 9 0 0 1 0 12.73"></path></svg>';
   const ICON_SPEAKER_STOP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="1.5"></rect></svg>';
 
@@ -3611,15 +3613,19 @@
     row.appendChild(speakerBtn);
 
     const upBtn = document.createElement('button');
-    upBtn.className = 'feedback-btn feedback-up';
-    upBtn.setAttribute('aria-label', 'Upvote this response');
-    upBtn.textContent = '👍';
+    upBtn.className = 'message-action-btn feedback-btn feedback-up';
+    upBtn.setAttribute('aria-label', 'Like this response');
+    upBtn.setAttribute('aria-pressed', 'false');
+    upBtn.title = 'Like response';
+    upBtn.innerHTML = ICON_THUMBS_UP;
     row.appendChild(upBtn);
 
     const downBtn = document.createElement('button');
-    downBtn.className = 'feedback-btn feedback-down';
-    downBtn.setAttribute('aria-label', 'Downvote this response');
-    downBtn.textContent = '👎';
+    downBtn.className = 'message-action-btn feedback-btn feedback-down';
+    downBtn.setAttribute('aria-label', 'Dislike this response');
+    downBtn.setAttribute('aria-pressed', 'false');
+    downBtn.title = 'Dislike response';
+    downBtn.innerHTML = ICON_THUMBS_DOWN;
     row.appendChild(downBtn);
 
     async function sendFeedback(rating, reason=''){
@@ -3629,8 +3635,11 @@
       ['usage_id','model','routed_model','route_reason','routing_mode','fallback_used','retry_count','prompt_tokens','completion_tokens','total_tokens','cached_tokens','latency_ms','time_to_first_token_ms'].forEach(key => {
         if (rawMeta && rawMeta[key] !== undefined && rawMeta[key] !== null) responseMeta[key] = rawMeta[key];
       });
-      upBtn.classList.toggle('done', rating === 'up');
-      downBtn.classList.toggle('done', rating === 'down');
+      const liked = rating === 'up';
+      upBtn.classList.toggle('done', liked);
+      downBtn.classList.toggle('done', !liked);
+      upBtn.setAttribute('aria-pressed', String(liked));
+      downBtn.setAttribute('aria-pressed', String(!liked));
       try {
         const response = await fetch('/api/feedback', {
           method:'POST',
@@ -3649,6 +3658,8 @@
       } catch {
         upBtn.classList.remove('done');
         downBtn.classList.remove('done');
+        upBtn.setAttribute('aria-pressed', 'false');
+        downBtn.setAttribute('aria-pressed', 'false');
         suiteToast?.('Feedback could not be saved. Please try again.');
       }
     }

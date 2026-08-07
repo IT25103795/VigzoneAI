@@ -4444,9 +4444,20 @@
   transform:scale(.94);
 }
 .message-action-btn svg,
-.msg.assistant .speaker-btn svg{
+.msg.assistant .speaker-btn svg,
+.msg.assistant .feedback-btn svg{
   width:16px;
   height:16px;
+}
+.msg.assistant .feedback-btn:hover{
+  color:var(--text);
+}
+.msg.assistant .feedback-btn.done{
+  color:var(--text);
+  background:transparent;
+}
+.msg.assistant .feedback-btn.done svg{
+  fill:currentColor;
 }
 
 @media (max-width:560px){
