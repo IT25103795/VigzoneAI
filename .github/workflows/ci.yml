@@ -19,7 +19,7 @@ jobs:
           cache: pip
       - run: python -m pip install -r requirements.txt -r requirements-dev.txt
       - run: python -m compileall -q .
-      - run: pytest
+      - run: pytest tests/
         env:
           APP_MODE: testing
           GROQ_API_KEY: gsk_ci_dummy_key_for_testing_purposes
