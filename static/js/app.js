@@ -348,11 +348,9 @@
   let streaming = false;
   let currentStreamId = null;
   let isPaused = false;
-  // Set while a streaming reply is in flight so pauseStream() can force an
-  // immediate catch-up redraw on resume, instead of waiting for the next
-  // network chunk (which may be seconds away).
-  let activeStreamBubble = null;
-  let getActiveStreamReply = null; // () => current fullReply string
+  // Set while a streaming reply is in flight so pause/resume can control the
+  // paced on-screen reveal without losing text already received from Groq.
+  let activeStreamRenderer = null;
   let imageMode = false;
   // Message display limit for performance - only show last N messages by default
   let messageDisplayLimit = 50;
@@ -460,6 +458,8 @@
   const ICON_DOC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>';
   const ICON_ARCHIVE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"></polyline><rect x="1" y="3" width="22" height="5"></rect><line x1="10" y1="12" x2="14" y2="12"></line></svg>';
   const ICON_AV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>';
+  const ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+  const ICON_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
   const ICON_SPEAKER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M18.36 5.64a9 9 0 0 1 0 12.73"></path></svg>';
   const ICON_SPEAKER_STOP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="1.5"></rect></svg>';
 
@@ -784,6 +784,7 @@
       : `📦 Implemented ${files[0].name} — ready to download.`;
     bubbleEl.appendChild(caption);
     bubbleEl.appendChild(buildFileBundlePanel(files));
+    syncAssistantOutputPresentation(bubbleEl, true);
   }
 
   // Enhance code blocks with header, copy, and download buttons
@@ -3232,11 +3233,29 @@
   }
   input.addEventListener('input', autoResize);
 
-  function scrollToBottom(smooth){
+  let followLatestMessage = true;
+  let programmaticScrollUntil = 0;
+  let touchScrollY = null;
+
+  function chatDistanceFromBottom(){
+    return Math.max(0, main.scrollHeight - main.clientHeight - main.scrollTop);
+  }
+
+  function scrollToBottom(smooth, force = true){
+    if (!force && !followLatestMessage) {
+      updateScrollBtnVisibility();
+      return;
+    }
+    if (force) followLatestMessage = true;
     const bottom = Math.max(0, main.scrollHeight - main.clientHeight);
     if (smooth) {
+      programmaticScrollUntil = Date.now() + 520;
       main.scrollTo({ top: bottom, behavior: 'smooth' });
-      setTimeout(() => { main.scrollTop = Math.max(0, main.scrollHeight - main.clientHeight); updateScrollBtnVisibility(); }, 420);
+      setTimeout(() => {
+        main.scrollTop = Math.max(0, main.scrollHeight - main.clientHeight);
+        followLatestMessage = true;
+        updateScrollBtnVisibility();
+      }, 420);
       return;
     }
     // Force an instant jump regardless of the CSS scroll-behavior:smooth rule.
@@ -3247,6 +3266,10 @@
     main.style.scrollBehavior = 'auto';
     main.scrollTop = Math.max(0, main.scrollHeight - main.clientHeight);
     main.style.scrollBehavior = prevBehavior || '';
+  }
+
+  function scrollLatestIfFollowing(){
+    scrollToBottom(false, false);
   }
 
   let scrollBtnRaf = null;
@@ -3275,8 +3298,15 @@
       scrollBtnRaf = null;
       positionScrollToBottomBtn();
 
-      const distanceFromBottom = main.scrollHeight - main.clientHeight - main.scrollTop;
+      const distanceFromBottom = chatDistanceFromBottom();
       const hasScrollableChat = main.scrollHeight > main.clientHeight + 40;
+
+      // Streaming follows the newest text only while the reader remains near
+      // the bottom. Scrolling upward immediately hands control to the reader;
+      // returning to the bottom resumes follow mode automatically.
+      if (Date.now() >= programmaticScrollUntil) {
+        followLatestMessage = distanceFromBottom <= 72;
+      }
 
       // Show only when the user has scrolled up away from the latest message.
       scrollToBottomBtn?.classList.toggle('visible', hasScrollableChat && distanceFromBottom > 72);
@@ -3284,6 +3314,20 @@
   }
 
   main.addEventListener('scroll', updateScrollBtnVisibility, { passive:true });
+  main.addEventListener('wheel', event => {
+    if (event.deltaY < 0) followLatestMessage = false;
+  }, { passive:true });
+  main.addEventListener('touchstart', event => {
+    touchScrollY = event.touches?.[0]?.clientY ?? null;
+  }, { passive:true });
+  main.addEventListener('touchmove', event => {
+    const nextY = event.touches?.[0]?.clientY;
+    if (touchScrollY !== null && Number.isFinite(nextY) && nextY - touchScrollY > 6) {
+      followLatestMessage = false;
+    }
+    if (Number.isFinite(nextY)) touchScrollY = nextY;
+  }, { passive:true });
+  main.addEventListener('touchend', () => { touchScrollY = null; }, { passive:true });
   window.addEventListener('resize', updateScrollBtnVisibility, { passive:true });
   window.addEventListener('orientationchange', updateScrollBtnVisibility, { passive:true });
 
@@ -3540,6 +3584,21 @@
     const row = document.createElement('div');
     row.className = 'msg-feedback';
 
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'message-action-btn copy-response-btn';
+    copyBtn.setAttribute('aria-label', 'Copy response');
+    copyBtn.title = 'Copy response';
+    copyBtn.innerHTML = ICON_COPY;
+    copyBtn.addEventListener('click', async (event) => {
+      event.preventDefault();
+      const text = typeof getText === 'function' ? getText() : String(getText || '');
+      if (await copyMessageText(text)) {
+        copyBtn.innerHTML = ICON_CHECK;
+        window.setTimeout(() => { copyBtn.innerHTML = ICON_COPY; }, 1200);
+      }
+    });
+    row.appendChild(copyBtn);
+
     const speakerBtn = document.createElement('button');
     speakerBtn.className = 'speaker-btn';
     speakerBtn.setAttribute('aria-label', `Read aloud in ${liveConfig.short_name || liveConfig.app_name || 'Vigzone'}`);
@@ -3600,6 +3659,124 @@
     });
 
     return row;
+  }
+
+  const SPECIAL_ASSISTANT_OUTPUT_SELECTOR = [
+    'pre',
+    '.code-block-wrap',
+    '.gen-image-wrap',
+    '.file-bundle',
+    '.voice-msg',
+    '[data-file-output]',
+    'a[download$=".pdf"]',
+    'object[type="application/pdf"]',
+    'iframe[src$=".pdf"]'
+  ].join(',');
+
+  function syncAssistantOutputPresentation(bubbleEl, forceSpecial = false){
+    if (!bubbleEl?.classList?.contains('bubble')) return;
+    const isAssistant = bubbleEl.closest('.msg')?.classList.contains('assistant');
+    if (!isAssistant) return;
+    const hasSpecialOutput = forceSpecial || Boolean(bubbleEl.querySelector(SPECIAL_ASSISTANT_OUTPUT_SELECTOR));
+    bubbleEl.classList.toggle('has-special-output', hasSpecialOutput);
+  }
+
+  function nextPacedRevealEnd(text, start, targetSize){
+    let end = Math.min(text.length, start + Math.max(1, targetSize));
+    if (end < text.length) {
+      // Prefer ending a frame on a nearby word/punctuation boundary. This
+      // feels token-like while avoiding the slow one-character typewriter look.
+      const lookAhead = text.slice(end, Math.min(text.length, end + 12));
+      const boundary = lookAhead.search(/[\s.,!?;:\)\]\}]/);
+      if (boundary >= 0) end += boundary + 1;
+    }
+    // Never split a UTF-16 surrogate pair (emoji and some multilingual text).
+    const finalCode = text.charCodeAt(end - 1);
+    if (end < text.length && finalCode >= 0xD800 && finalCode <= 0xDBFF) end += 1;
+    return Math.min(text.length, end);
+  }
+
+  function createPacedAssistantRenderer(bubbleEl){
+    const reduceMotion = Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches);
+    let receivedText = '';
+    let visibleLength = 0;
+    let timer = null;
+    let finishing = false;
+    let paused = false;
+    let cancelled = false;
+    let finishResolvers = [];
+
+    function settleFinish(){
+      if (!finishing || visibleLength < receivedText.length) return;
+      const resolvers = finishResolvers;
+      finishResolvers = [];
+      resolvers.forEach(resolve => resolve());
+    }
+
+    function schedule(delay = 28){
+      if (timer || paused || cancelled) return;
+      timer = window.setTimeout(renderFrame, document.hidden ? 0 : delay);
+    }
+
+    function renderFrame(){
+      timer = null;
+      if (cancelled || paused) return;
+      const backlog = receivedText.length - visibleLength;
+      if (backlog <= 0) {
+        settleFinish();
+        return;
+      }
+
+      // While data is arriving, reveal small phrase-sized pieces. Once the
+      // network finishes, adaptively catch up so the UI never adds a long wait.
+      const targetSize = reduceMotion
+        ? backlog
+        : finishing
+          ? Math.min(72, Math.max(6, Math.ceil(backlog / 24)))
+          : Math.min(24, Math.max(3, Math.ceil(backlog / 16)));
+      visibleLength = nextPacedRevealEnd(receivedText, visibleLength, targetSize);
+      const visibleText = receivedText.slice(0, visibleLength);
+      const showCursor = !finishing || visibleLength < receivedText.length;
+      bubbleEl.innerHTML = renderContent(visibleText) + (showCursor ? '<span class="stream-cursor"></span>' : '');
+      syncAssistantOutputPresentation(bubbleEl);
+      scrollLatestIfFollowing();
+
+      if (visibleLength < receivedText.length) schedule(finishing ? 22 : 28);
+      else settleFinish();
+    }
+
+    return {
+      append(chunk){
+        if (cancelled || finishing || !chunk) return;
+        receivedText += chunk;
+        schedule(visibleLength === 0 ? 8 : 28);
+      },
+      finish(){
+        if (cancelled) return Promise.resolve();
+        finishing = true;
+        paused = false;
+        if (visibleLength >= receivedText.length) return Promise.resolve();
+        return new Promise(resolve => {
+          finishResolvers.push(resolve);
+          schedule(0);
+        });
+      },
+      setPaused(value){
+        paused = Boolean(value);
+        if (paused && timer) {
+          window.clearTimeout(timer);
+          timer = null;
+        } else if (!paused && visibleLength < receivedText.length) {
+          schedule(0);
+        }
+      },
+      cancel(){
+        cancelled = true;
+        if (timer) window.clearTimeout(timer);
+        timer = null;
+        finishResolvers.splice(0).forEach(resolve => resolve());
+      }
+    };
   }
 
   function renderMessage(role, content, opts = {}){
@@ -3677,6 +3854,10 @@
 
     if (avatar) msg.appendChild(avatar);
     msg.appendChild(bubble);
+    syncAssistantOutputPresentation(
+      bubble,
+      Boolean(opts.imageLoading || opts.imageSrc || opts.specialOutput || opts.error)
+    );
     chatInner.appendChild(msg);
     scrollToBottom();
     return bubble;
@@ -4300,8 +4481,7 @@ A strong website should include: hero section, clear navigation, services/featur
 
     if (offlineNow) {
       const offlineReply = buildOfflineLocalReply(combinedText, { typedText, docs, images, quoteAtSend });
-      const offlineBubble = renderMessage('assistant', offlineReply, { index: messages.length });
-      offlineBubble.appendChild(buildMessageActions(() => offlineReply));
+      renderMessage('assistant', offlineReply, { index: messages.length });
       messages.push({ role: 'assistant', content: offlineReply, displayText: offlineReply, offlineLocal: true });
       saveConversation();
       setOfflineUiState?.();
@@ -4319,12 +4499,11 @@ A strong website should include: hero section, clear navigation, services/featur
     updateSendButtonState();
     startUsageCycleLiveUpdates();
 
-    activeStreamBubble = assistantBubble;
+    const pacedReply = createPacedAssistantRenderer(assistantBubble);
+    activeStreamRenderer = pacedReply;
 
     let fullReply = '';
-    let firstToken = true;
     let responseMeta = {};
-    getActiveStreamReply = () => fullReply;
 
     try {
       const res = await fetch('/api/chat', {
@@ -4369,40 +4548,30 @@ A strong website should include: hero section, clear navigation, services/featur
             responseMeta = { ...responseMeta, ...parsed.meta };
           }
           if (parsed.content) {
-            if (firstToken) {
-              assistantBubble.innerHTML = '';
-              firstToken = false;
-            }
-            // Always record content as it arrives — the backend already
-            // withholds new chunks while genuinely paused, so by the time
-            // anything reaches here it's real reply text that must not be
-            // thrown away. Only the live re-render is skipped while paused,
-            // so the bubble visually "freezes" instead of updating, but the
-            // text itself is never lost.
             fullReply += parsed.content;
-            if (!isPaused) {
-              assistantBubble.innerHTML = renderContent(fullReply) + '<span class="stream-cursor"></span>';
-              enhanceCodeBlocks(assistantBubble);
-              scrollToBottom();
-            }
+            pacedReply.append(parsed.content);
           }
         }
       }
 
       if (!fullReply) throw new Error('No response received.');
+      await pacedReply.finish();
       assistantBubble.innerHTML = renderContent(fullReply); // drop the cursor, final text only
       enhanceCodeBlocks(assistantBubble);
       attachFileBundleIfHeavy(assistantBubble, fullReply, combinedText);
+      syncAssistantOutputPresentation(assistantBubble);
       assistantBubble.appendChild(buildMessageActions(() => fullReply, () => responseMeta));
       messages.push({ role: 'assistant', content: fullReply, displayText: fullReply, responseMeta });
       saveConversation();
 
     } catch (err) {
+      pacedReply.cancel();
       if (!navigator.onLine || err?.name === 'TypeError') {
         const offlineReply = buildOfflineLocalReply(combinedText, { typedText, docs, images, quoteAtSend });
         assistantBubble.classList.remove('error-bubble');
         assistantBubble.innerHTML = renderContent(offlineReply);
         enhanceCodeBlocks(assistantBubble);
+        syncAssistantOutputPresentation(assistantBubble);
         assistantBubble.appendChild(buildMessageActions(() => offlineReply));
         messages.push({ role: 'assistant', content: offlineReply, displayText: offlineReply, offlineLocal: true });
         saveConversation();
@@ -4411,14 +4580,14 @@ A strong website should include: hero section, clear navigation, services/featur
       } else {
         assistantBubble.classList.add('error-bubble');
         assistantBubble.innerHTML = `⚠ ${escapeHtml(err.message || 'Something went wrong.')}`;
+        syncAssistantOutputPresentation(assistantBubble, true);
       }
     } finally {
       clearAvatarThinkingState(avatarEl, thinkingTagEl);
       streaming = false;
       currentStreamId = null;
       isPaused = false;
-      activeStreamBubble = null;
-      getActiveStreamReply = null;
+      activeStreamRenderer = null;
       updateSendButtonState();
       stopUsageCycleLiveUpdates();
     }
@@ -4546,7 +4715,8 @@ A strong website should include: hero section, clear navigation, services/featur
       const label = sourceImage ? `[Edited photo: ${prompt}]` : `[Generated image: ${prompt}]`;
       messages.push({ role: 'assistant', content: label, displayText: prompt, imageSrc: src });
       saveConversation();
-      scrollToBottom();
+      syncAssistantOutputPresentation(assistantBubble, true);
+      scrollLatestIfFollowing();
     } catch (err) {
       assistantBubble.classList.add('error-bubble');
       assistantBubble.innerHTML = `⚠ ${escapeHtml(err.message || 'Image generation failed.')}`;
@@ -4572,16 +4742,8 @@ A strong website should include: hero section, clear navigation, services/featur
         body: JSON.stringify({ stream_id: currentStreamId })
       });
       updatePauseButtonState();
-      // On resume, redraw immediately with whatever content accumulated
-      // while paused — content was buffered the whole time, but the visual
-      // redraw was skipped, so without this the bubble would look frozen
-      // until the next network chunk arrives.
-      if (!isPaused && activeStreamBubble && getActiveStreamReply) {
-        const reply = getActiveStreamReply();
-        activeStreamBubble.innerHTML = renderContent(reply) + '<span class="stream-cursor"></span>';
-        enhanceCodeBlocks(activeStreamBubble);
-        scrollToBottom();
-      }
+      activeStreamRenderer?.setPaused(isPaused);
+      if (!isPaused) scrollLatestIfFollowing();
     } catch (err) {
       console.error(`Failed to ${isPaused ? 'pause' : 'resume'} stream:`, err);
     }
@@ -5319,6 +5481,7 @@ A strong website should include: hero section, clear navigation, services/featur
     const thinkingTagEl = requestIsComplex ? showThinkingTag(avatarEl) : null;
     let fullReply = '';
     let responseMeta = {};
+    const pacedReply = createPacedAssistantRenderer(assistantBubble);
 
     try {
       const response = await fetch('/api/chat', {
@@ -5336,7 +5499,6 @@ A strong website should include: hero section, clear navigation, services/featur
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
-      let firstToken = true;
 
       streaming = true;
       updateSendButtonState();
@@ -5358,25 +5520,27 @@ A strong website should include: hero section, clear navigation, services/featur
           if (parsed.error) throw new Error(parsed.error);
           if (parsed.meta && typeof parsed.meta === 'object') responseMeta = { ...responseMeta, ...parsed.meta };
           if (parsed.content) {
-            if (firstToken) { assistantBubble.innerHTML = ''; firstToken = false; }
             fullReply += parsed.content;
-            assistantBubble.innerHTML = renderContent(fullReply);
-            enhanceCodeBlocks(assistantBubble);
-            scrollToBottom();
+            pacedReply.append(parsed.content);
           }
         }
       }
 
       if (!fullReply) throw new Error('No response received.');
 
+      await pacedReply.finish();
+      assistantBubble.innerHTML = renderContent(fullReply);
       enhanceCodeBlocks(assistantBubble);
       attachFileBundleIfHeavy(assistantBubble, fullReply, userText);
+      syncAssistantOutputPresentation(assistantBubble);
       assistantBubble.appendChild(buildMessageActions(() => fullReply, () => responseMeta));
       messages.push({ role: 'assistant', content: fullReply, displayText: fullReply, responseMeta });
       saveConversation();
     } catch (err) {
+      pacedReply.cancel();
       assistantBubble.classList.add('error-bubble');
       assistantBubble.innerHTML = `⚠ ${escapeHtml(err.message || 'Something went wrong getting a reply.')}`;
+      syncAssistantOutputPresentation(assistantBubble, true);
     }
 
     clearAvatarThinkingState(avatarEl, thinkingTagEl);
@@ -5706,6 +5870,7 @@ A strong website should include: hero section, clear navigation, services/featur
     const thinkingTagEl = requestIsComplex ? showThinkingTag(avatarEl) : null;
     let fullReply = '';
     let responseMeta = {};
+    const pacedReply = createPacedAssistantRenderer(assistantBubble);
 
     try {
       const response = await fetch('/api/chat', {
@@ -5722,7 +5887,6 @@ A strong website should include: hero section, clear navigation, services/featur
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
-      let firstToken = true;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -5739,18 +5903,18 @@ A strong website should include: hero section, clear navigation, services/featur
           if (parsed.error) throw new Error(parsed.error);
           if (parsed.meta && typeof parsed.meta === 'object') responseMeta = { ...responseMeta, ...parsed.meta };
           if (parsed.content) {
-            if (firstToken) { assistantBubble.innerHTML = ''; firstToken = false; }
             fullReply += parsed.content;
-            assistantBubble.innerHTML = renderContent(fullReply);
-            enhanceCodeBlocks(assistantBubble);
-            scrollToBottom();
+            pacedReply.append(parsed.content);
           }
         }
       }
 
       if (!fullReply) throw new Error('No response received.');
+      await pacedReply.finish();
+      assistantBubble.innerHTML = renderContent(fullReply);
       enhanceCodeBlocks(assistantBubble);
       attachFileBundleIfHeavy(assistantBubble, fullReply, text);
+      syncAssistantOutputPresentation(assistantBubble);
       assistantBubble.appendChild(buildMessageActions(() => fullReply, () => responseMeta));
       messages.push({ role: 'assistant', content: fullReply, displayText: fullReply, responseMeta });
       saveConversation();
@@ -5761,10 +5925,12 @@ A strong website should include: hero section, clear navigation, services/featur
       liveCaptionEl.textContent = truncateText(fullReply, 220);
       speakLiveReply(fullReply);
     } catch (err) {
+      pacedReply.cancel();
       clearAvatarThinkingState(avatarEl, thinkingTagEl);
       stopUsageCycleLiveUpdates();
       assistantBubble.classList.add('error-bubble');
       assistantBubble.innerHTML = `⚠ ${escapeHtml(err.message || 'Something went wrong.')}`;
+      syncAssistantOutputPresentation(assistantBubble, true);
       if (!liveVoiceActive) return;
       setLiveVoiceState(null, "Couldn't get a reply — listening again");
       setTimeout(() => { if (liveVoiceActive) liveListenLoop(); }, 1200);

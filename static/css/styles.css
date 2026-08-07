@@ -4363,3 +4363,108 @@
 
 
 /* Secondary modal preview styles must stay component-scoped; global overrides removed. */
+
+
+/* ---------- Natural assistant response layout ----------
+   Normal AI replies sit directly on the chat canvas. Rich outputs keep a
+   contained surface so code, generated media, files, voice and errors remain
+   visually distinct and easy to operate on desktop and touch screens. */
+.msg.assistant{
+  width:100% !important;
+  align-items:flex-start;
+}
+.msg.assistant .bubble{
+  flex:1 1 auto;
+  min-width:0;
+  width:100%;
+  max-width:100% !important;
+  padding:0 2px;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  color:var(--text);
+  box-shadow:none;
+  backdrop-filter:none;
+  -webkit-backdrop-filter:none;
+  font-size:15.5px;
+  line-height:1.72;
+  font-weight:400;
+  transition:none;
+}
+.msg.assistant .bubble:hover{
+  box-shadow:none;
+}
+.msg.assistant .bubble.has-special-output,
+.msg.assistant .bubble.error-bubble,
+.msg.assistant .bubble.voice-bubble{
+  flex:0 1 auto;
+  width:min(680px, 100%);
+  padding:14px 16px;
+  border:1px solid var(--border-subtle);
+  border-radius:16px;
+  background:var(--bubble-assistant-bg);
+  box-shadow:0 8px 28px -24px var(--composer-shadow);
+  backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);
+}
+.msg.assistant .bubble.has-special-output:hover,
+.msg.assistant .bubble.error-bubble:hover,
+.msg.assistant .bubble.voice-bubble:hover{
+  box-shadow:0 10px 30px -24px var(--composer-shadow);
+}
+.msg.assistant .msg-feedback{
+  justify-content:flex-start;
+  gap:2px;
+  margin-top:10px;
+  opacity:.62;
+}
+.msg.assistant .speaker-btn{
+  margin-right:0;
+}
+.message-action-btn{
+  width:28px;
+  height:28px;
+  padding:0;
+  border:0;
+  border-radius:50%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:transparent;
+  color:var(--text-muted);
+  cursor:pointer;
+  transition:color .15s ease, background .15s ease, transform .15s ease;
+}
+.message-action-btn:hover{
+  color:var(--text);
+  background:var(--surface-2);
+  transform:scale(1.06);
+}
+.message-action-btn:active{
+  transform:scale(.94);
+}
+.message-action-btn svg,
+.msg.assistant .speaker-btn svg{
+  width:16px;
+  height:16px;
+}
+
+@media (max-width:560px){
+  .msg.assistant .bubble{
+    padding-right:1px;
+    padding-left:1px;
+    font-size:15px;
+    line-height:1.68;
+  }
+  .msg.assistant .bubble.has-special-output,
+  .msg.assistant .bubble.error-bubble,
+  .msg.assistant .bubble.voice-bubble{
+    width:100%;
+    padding:13px 14px;
+    border-radius:15px;
+  }
+  .msg.assistant .msg-feedback{
+    opacity:.72;
+    margin-top:9px;
+  }
+}
