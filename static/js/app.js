@@ -362,9 +362,9 @@
       : null;
   }
 
-  // The message currently staged for a quoted reply (set by clicking the
-  // reply icon on a message bubble), or null if nothing is being quoted.
-  // Shape: { role: 'user'|'assistant', fullText: string, index: number }
+  // The message currently staged from the Reply item in the message context
+  // menu, or null if nothing is being quoted.
+  // Shape: { role: 'user'|'assistant', fullText: string, index: number|null }
   let quotedMessage = null;
 
   // Files the user has picked but not yet sent. Each entry:
@@ -460,6 +460,7 @@
   const ICON_AV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>';
   const ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
   const ICON_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+  const ICON_REPLY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"></polyline><path d="M20 18v-2a4 4 0 0 0-4-4H4"></path></svg>';
   const ICON_THUMBS_UP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12"></path><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z"></path></svg>';
   const ICON_THUMBS_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"></path><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22h0a3.13 3.13 0 0 1-3-3.88Z"></path></svg>';
   const ICON_SPEAKER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M18.36 5.64a9 9 0 0 1 0 12.73"></path></svg>';
@@ -3925,13 +3926,15 @@
   }
 
 
-  // ---------- Message copy feature ----------
-  // Desktop: right-click user/assistant message.
-  // Mobile: tap + hold user/assistant message.
-  let messageCopyMenu = null;
-  let messageCopyTarget = null;
-  let messageCopyLongPressTimer = null;
-  let messageCopyTouchStart = null;
+  // ---------- Message context menu ----------
+  // Desktop: right-click a user/assistant message.
+  // Mobile: press and hold without moving. Horizontal swipes are deliberately
+  // not treated as replies, which leaves scrolling and touch navigation alone.
+  let messageContextMenu = null;
+  let messageContextTarget = null;
+  let messageContextLongPressTimer = null;
+  let messageContextTouchStart = null;
+  let suppressNativeMessageMenuUntil = 0;
 
   function messageContentToPlainText(content){
     if (typeof content === 'string') return content;
@@ -3948,9 +3951,14 @@
     try { return JSON.stringify(content, null, 2); } catch { return String(content); }
   }
 
-  function getMessageCopyText(msgEl){
+  function getMessageRecord(msgEl){
     const idx = Number(msgEl?.dataset?.index);
     const m = Number.isFinite(idx) ? messages[idx] : null;
+    return {idx, message:m};
+  }
+
+  function getMessageBodyText(msgEl){
+    const {message:m} = getMessageRecord(msgEl);
     if (m) {
       let text = '';
       if (m.displayText !== undefined && m.displayText !== null && String(m.displayText).trim()) {
@@ -3959,21 +3967,38 @@
         text = messageContentToPlainText(m.content);
       }
       if (!text.trim() && m.imageSrc) text = m.content ? String(m.content) : 'Generated image';
-      const attach = Array.isArray(m.attachments) && m.attachments.length
-        ? `\n\n[Attachments: ${m.attachments.map(a => a.name || a.kind || 'file').join(', ')}]`
-        : '';
-      const quote = m.quote && m.quote.text
-        ? `[Replying to ${m.quote.role || 'message'}]\n${m.quote.text}\n\n`
-        : '';
-      return (quote + text + attach).trim();
+      if (!text.trim() && Array.isArray(m.attachments) && m.attachments.length) {
+        text = `[Attachment: ${m.attachments.map(a => a.name || a.kind || 'file').join(', ')}]`;
+      }
+      return text.trim();
     }
 
     // Fallback for any rendered bubble without stored message data.
     const bubble = msgEl?.querySelector?.('.bubble');
     if (!bubble) return '';
     const clone = bubble.cloneNode(true);
-    clone.querySelectorAll('.msg-feedback,.speaker-btn,.feedback-btn,.msg-quote-btn,.stream-cursor,.typing').forEach(el => el.remove());
+    clone.querySelectorAll('.msg-feedback,.speaker-btn,.feedback-btn,.quoted-ref,.stream-cursor,.typing').forEach(el => el.remove());
     return (clone.innerText || clone.textContent || '').trim();
+  }
+
+  function getMessageCopyText(msgEl){
+    const {message:m} = getMessageRecord(msgEl);
+    const text = getMessageBodyText(msgEl);
+    const attach = m && Array.isArray(m.attachments) && m.attachments.length
+      ? `\n\n[Attachments: ${m.attachments.map(a => a.name || a.kind || 'file').join(', ')}]`
+      : '';
+    return (text + attach).trim();
+  }
+
+  function getMessageReplyData(msgEl){
+    const {idx, message:m} = getMessageRecord(msgEl);
+    const fullText = getMessageBodyText(msgEl);
+    if (!fullText) return null;
+    return {
+      role: m?.role === 'user' || msgEl?.classList?.contains('user') ? 'user' : 'assistant',
+      fullText,
+      index:Number.isFinite(idx) ? idx : null,
+    };
   }
 
   async function copyMessageText(text){
@@ -4005,110 +4030,159 @@
     }
   }
 
-  function ensureMessageCopyMenu(){
-    if (messageCopyMenu) return messageCopyMenu;
-    messageCopyMenu = document.createElement('div');
-    messageCopyMenu.className = 'message-copy-menu';
-    messageCopyMenu.setAttribute('role', 'menu');
-    messageCopyMenu.innerHTML = `
-      <button type="button" role="menuitem" id="copyMessageMenuBtn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <rect x="9" y="9" width="13" height="13" rx="2"></rect>
-          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-        </svg>
-        <span><span id="copyMessageMenuTitle">Copy message</span><span class="copy-menu-sub">Right-click / long-press</span></span>
+  function ensureMessageContextMenu(){
+    if (messageContextMenu) return messageContextMenu;
+    messageContextMenu = document.createElement('div');
+    messageContextMenu.className = 'message-context-menu';
+    messageContextMenu.setAttribute('role', 'menu');
+    messageContextMenu.setAttribute('aria-label', 'Message actions');
+    messageContextMenu.innerHTML = `
+      <button type="button" role="menuitem" data-message-action="reply">
+        ${ICON_REPLY}<span>Reply</span>
+      </button>
+      <button type="button" role="menuitem" data-message-action="copy">
+        ${ICON_COPY}<span>Copy message</span>
       </button>`;
-    document.body.appendChild(messageCopyMenu);
-    messageCopyMenu.querySelector('#copyMessageMenuBtn').addEventListener('click', async () => {
-      const text = getMessageCopyText(messageCopyTarget);
-      await copyMessageText(text);
-      hideMessageCopyMenu();
+    document.body.appendChild(messageContextMenu);
+
+    messageContextMenu.querySelector('[data-message-action="reply"]').addEventListener('click', () => {
+      const reply = getMessageReplyData(messageContextTarget);
+      hideMessageContextMenu();
+      if (reply) setQuote(reply.role, reply.fullText, reply.index);
     });
-    return messageCopyMenu;
+    messageContextMenu.querySelector('[data-message-action="copy"]').addEventListener('click', async () => {
+      const text = getMessageCopyText(messageContextTarget);
+      hideMessageContextMenu();
+      await copyMessageText(text);
+    });
+    messageContextMenu.addEventListener('keydown', (event) => {
+      const items = [...messageContextMenu.querySelectorAll('[role="menuitem"]')];
+      const current = items.indexOf(document.activeElement);
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const step = event.key === 'ArrowDown' ? 1 : -1;
+        items[(current + step + items.length) % items.length]?.focus();
+      } else if (event.key === 'Home' || event.key === 'End') {
+        event.preventDefault();
+        items[event.key === 'Home' ? 0 : items.length - 1]?.focus();
+      } else if (event.key === 'Escape' || event.key === 'Tab') {
+        hideMessageContextMenu();
+      }
+    });
+    return messageContextMenu;
   }
 
-  function hideMessageCopyMenu(){
-    if (messageCopyMenu) messageCopyMenu.classList.remove('visible');
-    if (messageCopyTarget) messageCopyTarget.classList.remove('copy-pressing');
-    messageCopyTarget = null;
+  function hideMessageContextMenu(){
+    if (messageContextMenu) messageContextMenu.classList.remove('visible');
+    if (messageContextTarget) messageContextTarget.classList.remove('context-menu-open');
+    messageContextTarget = null;
   }
 
-  function showMessageCopyMenu(msgEl, clientX, clientY){
-    const text = getMessageCopyText(msgEl);
-    if (!text) return;
-    const menu = ensureMessageCopyMenu();
-    messageCopyTarget?.classList.remove('copy-pressing');
-    messageCopyTarget = msgEl;
-    messageCopyTarget.classList.add('copy-pressing');
-
-    const role = msgEl.classList.contains('user') ? 'user' : 'AI';
-    const title = menu.querySelector('#copyMessageMenuTitle');
-    if (title) title.textContent = `Copy ${role} message`;
+  function showMessageContextMenu(msgEl, clientX, clientY){
+    if (!getMessageReplyData(msgEl) && !getMessageCopyText(msgEl)) return;
+    const menu = ensureMessageContextMenu();
+    messageContextTarget?.classList.remove('context-menu-open');
+    messageContextTarget = msgEl;
+    messageContextTarget.classList.add('context-menu-open');
 
     menu.style.left = '0px';
     menu.style.top = '0px';
     menu.classList.add('visible');
 
+    const targetRect = msgEl.querySelector('.bubble')?.getBoundingClientRect() || msgEl.getBoundingClientRect();
+    const requestedX = Number.isFinite(clientX) && clientX > 0 ? clientX : targetRect.left + 28;
+    const requestedY = Number.isFinite(clientY) && clientY > 0 ? clientY : targetRect.top + 28;
     const rect = menu.getBoundingClientRect();
     const margin = 10;
-    const x = Math.min(Math.max(clientX, margin), window.innerWidth - rect.width - margin);
-    const y = Math.min(Math.max(clientY, margin), window.innerHeight - rect.height - margin);
+    const viewport = window.visualViewport;
+    const viewportLeft = viewport?.offsetLeft || 0;
+    const viewportTop = viewport?.offsetTop || 0;
+    const viewportWidth = viewport?.width || window.innerWidth;
+    const viewportHeight = viewport?.height || window.innerHeight;
+    const maxX = Math.max(viewportLeft + margin, viewportLeft + viewportWidth - rect.width - margin);
+    const maxY = Math.max(viewportTop + margin, viewportTop + viewportHeight - rect.height - margin);
+    const x = Math.min(Math.max(requestedX, viewportLeft + margin), maxX);
+    const y = Math.min(Math.max(requestedY, viewportTop + margin), maxY);
     menu.style.left = `${x}px`;
     menu.style.top = `${y}px`;
+    requestAnimationFrame(() => menu.querySelector('[role="menuitem"]')?.focus({preventScroll:true}));
   }
 
-  function messageCopyTargetFromEvent(e){
+  function messageContextTargetFromEvent(e){
     const msg = e.target.closest?.('.msg.user,.msg.assistant');
     if (!msg || !chatInner.contains(msg)) return null;
-    if (e.target.closest?.('button,a,input,textarea,select,.code-copy-btn,.msg-feedback,.msg-quote-btn')) return null;
+    if (e.target.closest?.('button,a,input,textarea,select,.code-copy-btn,.msg-feedback')) return null;
     return msg;
   }
 
+  function cancelMessageContextLongPress(){
+    clearTimeout(messageContextLongPressTimer);
+    messageContextLongPressTimer = null;
+    messageContextTouchStart = null;
+  }
+
   chatInner.addEventListener('contextmenu', (e) => {
-    const msg = messageCopyTargetFromEvent(e);
+    const msg = messageContextTargetFromEvent(e);
     if (!msg) return;
     e.preventDefault();
-    showMessageCopyMenu(msg, e.clientX, e.clientY);
+    if (Date.now() < suppressNativeMessageMenuUntil) return;
+    showMessageContextMenu(msg, e.clientX, e.clientY);
   });
 
   chatInner.addEventListener('touchstart', (e) => {
-    const msg = messageCopyTargetFromEvent(e);
+    const msg = messageContextTargetFromEvent(e);
     if (!msg || !e.touches || e.touches.length !== 1) return;
-    clearTimeout(messageCopyLongPressTimer);
+    cancelMessageContextLongPress();
     const t = e.touches[0];
-    messageCopyTouchStart = {x:t.clientX, y:t.clientY, msg};
-    messageCopyLongPressTimer = setTimeout(() => {
-      if (!messageCopyTouchStart) return;
+    messageContextTouchStart = {x:t.clientX, y:t.clientY, msg, opened:false};
+    messageContextLongPressTimer = window.setTimeout(() => {
+      if (!messageContextTouchStart) return;
+      messageContextTouchStart.opened = true;
+      suppressNativeMessageMenuUntil = Date.now() + 900;
       navigator.vibrate?.(18);
-      showMessageCopyMenu(messageCopyTouchStart.msg, messageCopyTouchStart.x, messageCopyTouchStart.y);
-      messageCopyLongPressTimer = null;
-    }, 560);
+      showMessageContextMenu(
+        messageContextTouchStart.msg,
+        messageContextTouchStart.x,
+        messageContextTouchStart.y
+      );
+      messageContextLongPressTimer = null;
+    }, 520);
   }, {passive:true});
 
   chatInner.addEventListener('touchmove', (e) => {
-    if (!messageCopyTouchStart || !e.touches || !e.touches.length) return;
+    if (!messageContextTouchStart || !e.touches || !e.touches.length) return;
     const t = e.touches[0];
-    if (Math.abs(t.clientX - messageCopyTouchStart.x) > 12 || Math.abs(t.clientY - messageCopyTouchStart.y) > 12) {
-      clearTimeout(messageCopyLongPressTimer);
-      messageCopyLongPressTimer = null;
-      messageCopyTouchStart = null;
+    if (Math.abs(t.clientX - messageContextTouchStart.x) > 12 || Math.abs(t.clientY - messageContextTouchStart.y) > 12) {
+      cancelMessageContextLongPress();
     }
   }, {passive:true});
 
-  ['touchend','touchcancel'].forEach(evt => {
-    chatInner.addEventListener(evt, () => {
-      clearTimeout(messageCopyLongPressTimer);
-      messageCopyLongPressTimer = null;
-      messageCopyTouchStart = null;
-    }, {passive:true});
-  });
+  chatInner.addEventListener('touchend', (e) => {
+    if (messageContextTouchStart?.opened) {
+      // Prevent the synthetic click that some mobile browsers emit after a
+      // long press; otherwise it would immediately close the new menu.
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    cancelMessageContextLongPress();
+  }, {passive:false});
+  chatInner.addEventListener('touchcancel', cancelMessageContextLongPress, {passive:true});
 
   document.addEventListener('click', (e) => {
-    if (messageCopyMenu?.classList.contains('visible') && !messageCopyMenu.contains(e.target)) hideMessageCopyMenu();
+    if (messageContextMenu?.classList.contains('visible') && !messageContextMenu.contains(e.target)) {
+      hideMessageContextMenu();
+    }
   });
-  document.addEventListener('scroll', hideMessageCopyMenu, true);
-  window.addEventListener('resize', hideMessageCopyMenu);
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideMessageCopyMenu(); });
+  document.addEventListener('scroll', () => {
+    cancelMessageContextLongPress();
+    hideMessageContextMenu();
+  }, true);
+  window.addEventListener('resize', hideMessageContextMenu);
+  window.visualViewport?.addEventListener('resize', hideMessageContextMenu);
+  window.addEventListener('blur', hideMessageContextMenu);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') hideMessageContextMenu();
+  });
 
 
   async function checkHealth(){
@@ -6118,90 +6192,6 @@ A strong website should include: hero section, clear navigation, services/featur
       }
     });
   }
-
-  // Drag-to-quote functionality
-  let dragStartX = 0;
-  let dragStartY = 0;
-  let dragging = false;
-  let draggedMsg = null;
-
-  chatInner.addEventListener('mousedown', (e) => {
-    if (e.target.closest('a, button, pre, code')) return;
-    draggedMsg = e.target.closest('.msg');
-    if (!draggedMsg) return;
-    dragging = true;
-    dragStartX = e.clientX;
-    dragStartY = e.clientY;
-    draggedMsg.style.transition = 'none';
-  });
-
-  chatInner.addEventListener('touchstart', (e) => {
-    if (e.target.closest('a, button, pre, code')) return;
-    draggedMsg = e.target.closest('.msg');
-    if (!draggedMsg) return;
-    dragging = true;
-    dragStartX = e.touches[0].clientX;
-    dragStartY = e.touches[0].clientY;
-    draggedMsg.style.transition = 'none';
-  });
-
-  document.addEventListener('mousemove', (e) => {
-    if (!dragging || !draggedMsg) return;
-    const dx = e.clientX - dragStartX;
-    const dy = e.clientY - dragStartY;
-    if (Math.abs(dx) > Math.abs(dy) && dx > 10) {
-      draggedMsg.style.transform = `translateX(${Math.min(dx, 80)}px)`;
-    }
-  });
-
-  document.addEventListener('touchmove', (e) => {
-    if (!dragging || !draggedMsg) return;
-    const dx = e.touches[0].clientX - dragStartX;
-    const dy = e.touches[0].clientY - dragStartY;
-    if (Math.abs(dx) > Math.abs(dy) && dx > 10) {
-      draggedMsg.style.transform = `translateX(${Math.min(dx, 80)}px)`;
-    }
-  });
-
-  document.addEventListener('mouseup', (e) => {
-    if (!dragging || !draggedMsg) return;
-    const dx = e.clientX - dragStartX;
-    if (dx > 50) {
-      const msgIndex = parseInt(draggedMsg.dataset.index, 10);
-      const m = messages[msgIndex];
-      if (m) {
-        const text = m.displayText !== undefined ? m.displayText : (typeof m.content === 'string' ? m.content : '');
-        if (text) {
-          setQuote(m.role, text, msgIndex);
-        }
-      }
-    }
-    draggedMsg.style.transition = 'transform 0.2s ease';
-    draggedMsg.style.transform = 'translateX(0)';
-    dragging = false;
-    draggedMsg = null;
-  });
-
-  document.addEventListener('touchend', (e) => {
-    if (!dragging || !draggedMsg) return;
-    const dx = e.changedTouches[0].clientX - dragStartX;
-    if (dx > 50) {
-      const msgIndex = parseInt(draggedMsg.dataset.index, 10);
-      const m = messages[msgIndex];
-      if (m) {
-        const text = m.displayText !== undefined ? m.displayText : (typeof m.content === 'string' ? m.content : '');
-        if (text) {
-          setQuote(m.role, text, msgIndex);
-        }
-      }
-    }
-    draggedMsg.style.transition = 'transform 0.2s ease';
-    draggedMsg.style.transform = 'translateX(0)';
-    dragging = false;
-    draggedMsg = null;
-  });
-
-
 
   // ---------- Offline/PWA mode ----------
   function setOfflineUiState(){

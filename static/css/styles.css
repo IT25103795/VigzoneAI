@@ -1469,20 +1469,6 @@
     .quote-chip-remove svg{width:15px;height:15px;pointer-events:none;}
 
     .msg{position:relative;}
-    .msg-quote-btn{
-      position:absolute;top:-2px;
-      background:var(--surface);border:1px solid var(--border);color:var(--text-muted);
-      cursor:pointer;width:26px;height:26px;border-radius:50%;
-      display:flex;align-items:center;justify-content:center;
-      opacity:0;transform:translateY(2px);
-      transition:opacity .15s ease,transform .15s ease;
-      pointer-events:none;
-    }
-    .msg.assistant .msg-quote-btn{right:8px;}
-    .msg.user .msg-quote-btn{right:8px;}
-    .msg:hover .msg-quote-btn{opacity:1;transform:translateY(0);pointer-events:auto;}
-    .msg-quote-btn:hover{color:var(--text);background:var(--surface-2);border-color:var(--accent);}
-    .msg-quote-btn svg{width:13px;height:13px;}
 
     .quoted-ref{
       display:flex;flex-direction:column;gap:2px;
@@ -4256,65 +4242,76 @@
     }
 
 
-    /* ---------- Message copy context menu ----------
-       PC: right-click any user/AI message.
-       Mobile: tap and hold any user/AI message. */
-    .message-copy-menu{
+    /* ---------- Message context menu ----------
+       PC: right-click. Mobile: press and hold without moving. */
+    .message-context-menu{
       position:fixed;
       z-index:2147483647;
-      min-width:172px;
+      min-width:164px;
       max-width:calc(100vw - 22px);
       background:color-mix(in srgb, var(--surface) 96%, transparent);
       border:1px solid var(--border);
-      border-radius:14px;
+      border-radius:12px;
       box-shadow:0 24px 80px -26px var(--sidebar-shadow), 0 8px 22px -18px var(--composer-shadow);
-      padding:6px;
+      padding:5px;
       display:none;
+      overflow:hidden;
       backdrop-filter:blur(20px) saturate(1.12);
       -webkit-backdrop-filter:blur(20px) saturate(1.12);
-      animation:messageCopyMenuIn .12s ease-out;
+      animation:messageContextMenuIn .12s ease-out;
     }
-    .message-copy-menu.visible{display:block;}
-    @keyframes messageCopyMenuIn{
+    .message-context-menu.visible{display:block;}
+    @keyframes messageContextMenuIn{
       from{opacity:0;transform:translateY(4px) scale(.98);}
       to{opacity:1;transform:translateY(0) scale(1);}
     }
-    .message-copy-menu button{
+    .message-context-menu button{
       width:100%;
       border:0;
       background:transparent;
       color:var(--text);
-      border-radius:10px;
-      padding:10px 11px;
+      border-radius:8px;
+      padding:9px 10px;
       cursor:pointer;
       display:flex;
       align-items:center;
       gap:9px;
-      font:800 12.5px 'Inter',sans-serif;
+      font:700 13px 'Inter',sans-serif;
       text-align:left;
       touch-action:manipulation;
+      -webkit-tap-highlight-color:transparent;
     }
-    .message-copy-menu button:hover,
-    .message-copy-menu button:focus-visible{
+    .message-context-menu button + button{margin-top:2px;}
+    .message-context-menu button:hover,
+    .message-context-menu button:focus-visible{
       background:var(--surface-2);
       outline:none;
     }
-    .message-copy-menu svg{
+    .message-context-menu svg{
       width:16px;
       height:16px;
       flex:0 0 auto;
       color:var(--accent);
     }
-    .message-copy-menu .copy-menu-sub{
-      display:block;
-      margin-top:2px;
-      color:var(--text-muted);
-      font-size:10.5px;
-      font-weight:700;
+    .msg.user.context-menu-open .bubble{
+      box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
     }
-    .msg.copy-pressing .bubble{
-      outline:2px solid color-mix(in srgb, var(--accent) 54%, transparent);
-      outline-offset:2px;
+    .msg.assistant.context-menu-open .bubble{
+      background:color-mix(in srgb, var(--surface-2) 44%, transparent);
+      border-radius:10px;
+    }
+    .msg.assistant.context-menu-open .bubble.has-special-output,
+    .msg.assistant.context-menu-open .bubble.error-bubble,
+    .msg.assistant.context-menu-open .bubble.voice-bubble{
+      background:var(--bubble-assistant-bg);
+      box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 38%, transparent);
+    }
+    @media (hover:none) and (pointer:coarse){
+      .msg.user,.msg.assistant{touch-action:pan-y pinch-zoom;}
+      .msg.user .bubble,.msg.assistant .bubble{-webkit-touch-callout:none;}
+    }
+    @media (prefers-reduced-motion:reduce){
+      .message-context-menu{animation:none;}
     }
 
 

@@ -52,10 +52,35 @@ def test_feedback_icons_match_the_transparent_message_actions():
     assert "fill:currentColor;" in css
 
 
+def test_message_context_menu_replaces_swipe_to_reply():
+    css = _read("static/css/styles.css")
+    js = _read("static/js/app.js")
+
+    assert "const ICON_REPLY" in js
+    assert 'data-message-action="reply"' in js
+    assert 'data-message-action="copy"' in js
+    assert "<span>Reply</span>" in js
+    assert "<span>Copy message</span>" in js
+    assert "setQuote(reply.role, reply.fullText, reply.index);" in js
+    assert "chatInner.addEventListener('contextmenu'" in js
+    assert "messageContextLongPressTimer = window.setTimeout" in js
+    assert "messageContextTouchStart.opened = true;" in js
+    assert "'.msg.user,.msg.assistant'" in js
+    assert ".message-context-menu{" in css
+    assert "touch-action:pan-y pinch-zoom;" in css
+
+    assert "Drag-to-quote functionality" not in js
+    assert "dragStartX" not in js
+    assert "draggedMsg" not in js
+    assert "translateX(${Math.min(dx, 80)}px)" not in js
+    assert ".message-copy-menu" not in css
+    assert ".msg-quote-btn" not in css
+
+
 def test_chat_ui_asset_revision_is_consistent():
     index = _read("static/index.html")
     service_worker = _read("static/service-worker.js")
 
-    assert index.count("feedback-actions-r1") == 2
-    assert "const UI_ASSET_REVISION = 'feedback-actions-r1';" in service_worker
-    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r9';" in service_worker
+    assert index.count("message-menu-r1") == 2
+    assert "const UI_ASSET_REVISION = 'message-menu-r1';" in service_worker
+    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r10';" in service_worker
