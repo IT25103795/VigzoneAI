@@ -7034,10 +7034,12 @@ Requirements:
       }
       closePricingModal();
       const checkoutOptions = {
-        items: [{ priceId: priceId, quantity: 1 }]
+        items: [{ priceId: priceId, quantity: 1 }],
+        customData: {}
       };
       if (window._vigzoneUserEmail) {
         checkoutOptions.customer = { email: window._vigzoneUserEmail };
+        checkoutOptions.customData.email = window._vigzoneUserEmail;
       }
       window.Paddle.Checkout.open(checkoutOptions);
     };

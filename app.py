@@ -2485,10 +2485,10 @@ async def paddle_webhook(request: Request):
             parts = dict(item.split("=", 1) for item in signature.split(";") if "=" in item)
             ts = parts.get("ts", "")
             h1 = parts.get("h1", "")
-            signed_payload = f"{ts}:{raw_body.decode()}"
+            signed_payload = f"{ts}:".encode() + raw_body
             expected = _hmac.new(
                 PADDLE_WEBHOOK_SECRET.encode(),
-                signed_payload.encode(),
+                signed_payload,
                 hashlib.sha256,
             ).hexdigest()
             if not _hmac.compare_digest(expected, h1):
@@ -2508,13 +2508,15 @@ async def paddle_webhook(request: Request):
     event_type = event.get("event_type") or event.get("alert_name", "")
     data = event.get("data") or event  # Paddle v2 vs v1 shape
 
-    # Extract customer email from various Paddle webhook shapes
-    customer_email = (
-        data.get("customer", {}).get("email")
-        or data.get("email")
-        or data.get("checkout", {}).get("completed", {}).get("email")
-        or ""
-    ).strip().lower()
+    # Extract customer email safely
+    customer_email = ""
+    if isinstance(data, dict):
+        custom_data = data.get("custom_data")
+        if isinstance(custom_data, dict) and custom_data.get("email"):
+            customer_email = custom_data.get("email")
+        elif isinstance(data.get("customer"), dict):
+            customer_email = data["customer"].get("email", "")
+    customer_email = str(customer_email).strip().lower()
 
     # Determine plan from price ID
     items = data.get("items")
