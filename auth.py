@@ -44,6 +44,13 @@ MAX_CONVERSATIONS_PER_USER = max(
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
+# ── Founder / permanent admin emails ─────────────────────────────────────────
+# These emails always receive admin role at startup regardless of env vars.
+FOUNDER_EMAILS: frozenset[str] = frozenset({
+    "bhashithanavod500@gmail.com",
+    "bhashithanavod808@gmail.com",
+})
+
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/auth/google/callback")
@@ -194,6 +201,8 @@ def init_db() -> None:
         if "updated_at" not in existing_user_cols:
             conn.execute("ALTER TABLE users ADD COLUMN updated_at TEXT")
             conn.execute("UPDATE users SET updated_at = COALESCE(created_at, ?)", (_utc_now(),))
+        if "plan" not in existing_user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'")
 
         existing_session_cols = _columns(conn, "sessions")
         if "last_seen_at" not in existing_session_cols:
@@ -407,6 +416,7 @@ def init_db() -> None:
 
         purge_expired_sessions(conn=conn)
         _bootstrap_admin(conn)
+        _bootstrap_founders(conn)
 
 
 # ==========================================
@@ -1480,12 +1490,35 @@ def _public_user(row: sqlite3.Row) -> dict:
         "name": str(row["name"]),
         "auth_provider": str(row["auth_provider"]),
         "role": role,
+        "plan": str(_row_value(row, "plan", "free") or "free"),
         "email_verified": bool(_row_value(row, "email_verified", 0)),
         "is_admin": role == "admin",
     }
 
 
+def _bootstrap_founders(conn: sqlite3.Connection) -> None:
+    """Ensure hardcoded founder emails always have admin role.
+
+    Promotes existing accounts unconditionally, and creates minimal local
+    accounts for any founder email that doesn't exist yet so they can log in
+    with Google OAuth and receive admin privileges automatically.
+    """
+    now = _utc_now()
+    for email in FOUNDER_EMAILS:
+        row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        if row:
+            if _row_value(row, "role", "user") != "admin":
+                conn.execute(
+                    "UPDATE users SET role = 'admin', email_verified = 1, updated_at = ? WHERE id = ?",
+                    (now, row["id"]),
+                )
+                logger.info("Promoted founder account to admin: %s", email)
+        # Don't auto-create accounts — founders will sign in via Google OAuth or
+        # email+password, at which point the bootstrap runs again and promotes them.
+
+
 def _bootstrap_admin(conn: sqlite3.Connection) -> None:
+
     """Safely assign admin roles.
 
     ``ADMIN_EMAILS`` only promotes already verified addresses (normally Google
@@ -1617,6 +1650,7 @@ def get_or_create_google_user(
                 (now, row["id"]),
             )
             _bootstrap_admin(conn)
+            _bootstrap_founders(conn)
             row = conn.execute("SELECT * FROM users WHERE id = ?", (row["id"],)).fetchone()
             return _public_user(row)
 
@@ -1633,6 +1667,7 @@ def get_or_create_google_user(
                 (google_id, provider, now, row["id"]),
             )
             _bootstrap_admin(conn)
+            _bootstrap_founders(conn)
             row = conn.execute("SELECT * FROM users WHERE id = ?", (row["id"],)).fetchone()
             return _public_user(row)
 
@@ -1646,6 +1681,7 @@ def get_or_create_google_user(
             (email, name or email.split("@")[0], google_id, now, now),
         )
         _bootstrap_admin(conn)
+        _bootstrap_founders(conn)
         row = conn.execute("SELECT * FROM users WHERE id = ?", (cur.lastrowid,)).fetchone()
         return _public_user(row)
 

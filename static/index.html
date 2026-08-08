@@ -36,7 +36,7 @@
       document.documentElement.setAttribute('data-theme', tones[saved] || 'dark');
     })();
   </script>
-  <link rel="stylesheet" href="/static/css/styles.css?v=doodle-themes-r1">
+  <link rel="stylesheet" href="/static/css/styles.css?v=billing-r1">
 </head>
 <body>
 <div class="offline-status-banner" id="offlineStatusBanner" role="status" aria-live="polite">
@@ -255,7 +255,14 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-.4-1.1 1.7 1.7 0 0 0-1-.6 1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.1-.4 1.7 1.7 0 0 0 .6-1 1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 .4 1.1 1.7 1.7 0 0 0 1 .6 1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.28.36.6.68 1 .9.33.18.7.3 1.1.3H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.1.4 1.7 1.7 0 0 0-.4.4Z"></path></svg>
         </button>
       </div>
+      <div class="sidebar-footer-row" id="upgradePlanRow">
+        <span class="history-label" style="padding:0;margin:0;">Upgrade plan</span>
+        <button class="sidebar-teach-btn sidebar-upgrade-btn" id="upgradePlanBtn" aria-label="Upgrade plan" title="View pricing plans">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
+        </button>
+      </div>
       <div class="sidebar-footer-row" id="adminPanelRow" style="display:none;">
+
         <span class="history-label" style="padding:0;margin:0;">Admin</span>
         <button class="sidebar-teach-btn" id="adminPanelBtn" aria-label="Open admin dashboard" title="Open admin dashboard">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7l8-4z"></path><path d="M9 12l2 2 4-5"></path></svg>
@@ -827,6 +834,75 @@
     </div>
   </div>
 
-  <script src="/static/js/app.js?v=doodle-themes-r1"></script>
+
+  <!-- ── Paddle Billing Modal ────────────────────────────────────────────── -->
+  <div class="usage-modal-overlay" id="pricingModalOverlay" role="dialog" aria-modal="true" aria-label="Upgrade plan">
+    <div class="usage-modal pricing-modal">
+      <div class="usage-modal-head">
+        <h3>⚡ Upgrade Vigzone AI</h3>
+        <button class="usage-modal-close" id="pricingModalCloseBtn" aria-label="Close">&times;</button>
+      </div>
+      <div id="pricingModalBody">
+        <p class="pricing-tagline">Pick the plan that fits your workflow. Upgrade, downgrade, or cancel anytime.</p>
+        <div class="pricing-grid">
+
+          <!-- FREE -->
+          <div class="pricing-card">
+            <div class="pricing-badge free">Free</div>
+            <div class="pricing-price">$0<span>/mo</span></div>
+            <div class="pricing-desc">Perfect for trying out Vigzone AI</div>
+            <ul class="pricing-features">
+              <li>✅ 50 messages / day</li>
+              <li>✅ Llama 3.1 8B model</li>
+              <li>✅ Web search</li>
+              <li>✅ File Studio</li>
+              <li>❌ Advanced models</li>
+              <li>❌ Priority support</li>
+            </ul>
+            <button class="pricing-cta current" disabled>Current plan</button>
+          </div>
+
+          <!-- PRO -->
+          <div class="pricing-card featured">
+            <div class="pricing-badge pro">Pro</div>
+            <div class="pricing-popular-tag">Most popular</div>
+            <div class="pricing-price">$9.99<span>/mo</span></div>
+            <div class="pricing-desc">For power users and professionals</div>
+            <ul class="pricing-features">
+              <li>✅ Unlimited messages</li>
+              <li>✅ All models (Llama 70B, DeepSeek R1, Qwen)</li>
+              <li>✅ Web search + image search</li>
+              <li>✅ File Studio + Website Studio</li>
+              <li>✅ Priority support</li>
+              <li>✅ Early access to new features</li>
+            </ul>
+            <button class="pricing-cta primary" id="paddleProBtn" data-paddle-plan="pro">Upgrade to Pro →</button>
+          </div>
+
+          <!-- TEAM -->
+          <div class="pricing-card">
+            <div class="pricing-badge team">Team</div>
+            <div class="pricing-price">$29.99<span>/mo</span></div>
+            <div class="pricing-desc">For small teams and businesses</div>
+            <ul class="pricing-features">
+              <li>✅ Everything in Pro</li>
+              <li>✅ Up to 5 team seats</li>
+              <li>✅ Shared workspace</li>
+              <li>✅ Usage analytics</li>
+              <li>✅ Dedicated support</li>
+              <li>✅ Custom AI persona</li>
+            </ul>
+            <button class="pricing-cta" id="paddleTeamBtn" data-paddle-plan="team">Upgrade to Team →</button>
+          </div>
+
+        </div>
+        <div class="pricing-footer">
+          <span>🔒 Secured by <strong>Paddle</strong> · Cancel anytime · No hidden fees</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js?v=billing-r1"></script>
 </body>
 </html>

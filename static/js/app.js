@@ -3147,14 +3147,24 @@
         userName = (data.user && data.user.name) || (data.user && data.user.email) || '';
         if (data.user) switchAccountStorageScope(data.user);
         if (data.user && data.user.is_admin) {
-          enterAdminOnlyDashboard(data.user);
-          return;
+          // Founder/Admin: stay in chat interface — show admin sidebar button + badge
+          document.body.classList.remove('admin-only');
+          if (adminPanelRow) adminPanelRow.style.display = '';
+          const quickAdminBtn = document.getElementById('quickAdminBtn');
+          if (quickAdminBtn) quickAdminBtn.style.display = '';
+          // Show founder crown badge on the user dot
+          if (sidebarUserDot) sidebarUserDot.setAttribute('title', '👑 Founder · Admin');
+          // Update greeting
+          updateGreeting();
+          refreshApiKeyBox();
+          refreshUsageCycle();
+        } else {
+          document.body.classList.remove('admin-only');
+          if (adminPanelRow) adminPanelRow.style.display = 'none';
+          updateGreeting();
+          refreshApiKeyBox();
+          refreshUsageCycle();
         }
-        document.body.classList.remove('admin-only');
-        if (adminPanelRow) adminPanelRow.style.display = 'none';
-        updateGreeting();
-        refreshApiKeyBox();
-        refreshUsageCycle();
       } else if (window.location.pathname === '/chat' || window.location.pathname.startsWith('/chat/')) {
         window.location.href = '/';
         return;
@@ -6951,4 +6961,97 @@ Requirements:
   loadAccount();
   autoResize();
   usageCycleRefreshTimer = setInterval(refreshUsageCycle, 60000);
+
+  // ── Paddle Billing / Pricing Modal ──────────────────────────────────────────
+  const pricingModalOverlay = $('#pricingModalOverlay');
+  const pricingModalCloseBtn = $('#pricingModalCloseBtn');
+  // Elements
+  const pricingModalOverlay = document.getElementById('pricingModalOverlay');
+  const pricingCloseBtn = document.getElementById('pricingCloseBtn');
+  const sidebarUpgradeBtn = document.getElementById('sidebarUpgradeBtn');
+
+  function openPricingModal() {
+    if (pricingModalOverlay) pricingModalOverlay.classList.add('visible');
+  }
+  function closePricingModal() {
+    if (pricingModalOverlay) pricingModalOverlay.classList.remove('visible');
+  }
+
+  if (sidebarUpgradeBtn) sidebarUpgradeBtn.addEventListener('click', openPricingModal);
+  if (pricingCloseBtn) pricingCloseBtn.addEventListener('click', closePricingModal);
+  if (pricingModalOverlay) {
+    pricingModalOverlay.addEventListener('click', (e) => {
+      if (e.target === pricingModalOverlay) closePricingModal();
+    });
+  }
+
+  // Paddle checkout — wires up Pro and Team upgrade buttons
+  // Supports Paddle Billing (v2) using client-side tokens
+  async function initPaddleCheckout() {
+    // If we're on the new Paddle Billing, the vendor ID is actually a Client-Side Token (e.g., test_... or live_...)
+    const paddleToken = (liveConfig && liveConfig.paddle_vendor_id) || null;
+    const PADDLE_PRO_PRICE_ID = (liveConfig && liveConfig.paddle_pro_price_id) || null;
+    const PADDLE_TEAM_PRICE_ID = (liveConfig && liveConfig.paddle_team_price_id) || null;
+
+    if (!paddleToken) return; // Paddle not configured in env yet
+
+    // Dynamically load Paddle.js v2 only when user opens checkout
+    const loadPaddleScript = () => new Promise((resolve, reject) => {
+      if (window.Paddle) { resolve(); return; }
+      const s = document.createElement('script');
+      s.src = 'https://cdn.paddle.com/paddle/v2/paddle.js';
+      s.onload = () => { 
+        // Auto-detect sandbox environment if token starts with test_
+        const env = paddleToken.startsWith('test_') ? 'sandbox' : 'production';
+        window.Paddle.Environment.set(env);
+        window.Paddle.Initialize({ 
+          token: paddleToken,
+          eventCallback: function(data) {
+            // Handle successful checkout locally for instant feedback
+            if (data.name === "checkout.completed") {
+               suiteToast?.('🎉 Upgrade successful! Refreshing your plan…');
+               setTimeout(() => window.location.reload(), 1500);
+            }
+          }
+        }); 
+        resolve(); 
+      };
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+
+    const openCheckout = async (priceId) => {
+      if (!priceId) {
+        suiteToast?.('Paddle product not configured yet. Check back soon!');
+        return;
+      }
+      try {
+        await loadPaddleScript();
+      } catch {
+        suiteToast?.('Could not load Paddle checkout. Check your connection.');
+        return;
+      }
+      closePricingModal();
+      window.Paddle.Checkout.open({
+        items: [{ priceId: priceId, quantity: 1 }],
+        customer: { email: window._vigzoneUserEmail || '' },
+        closeCallback: () => suiteToast?.('Checkout closed.'),
+      });
+    };
+
+    document.getElementById('paddleProBtn')?.addEventListener('click', () => openCheckout(PADDLE_PRO_PRODUCT_ID));
+    document.getElementById('paddleTeamBtn')?.addEventListener('click', () => openCheckout(PADDLE_TEAM_PRODUCT_ID));
+  }
+
+  // Store user email for Paddle checkout pre-fill, then init Paddle
+  (async () => {
+    try {
+      const r = await fetch('/api/auth/me', { credentials: 'same-origin' });
+      if (r.ok) {
+        const d = await r.json().catch(() => ({}));
+        window._vigzoneUserEmail = d?.user?.email || '';
+      }
+    } catch {}
+    initPaddleCheckout();
+  })();
 

@@ -394,6 +394,13 @@ GROQ_KEYS_URL = os.getenv("GROQ_KEYS_URL", "https://console.groq.com/keys")
 GROQ_DOCS_URL = os.getenv("GROQ_DOCS_URL", "https://console.groq.com/docs/models")
 GOOGLE_DRIVE_API_KEY = os.getenv("GOOGLE_DRIVE_API_KEY", os.getenv("GOOGLE_API_KEY", "")).strip()
 GOOGLE_DRIVE_CLIENT_ID = os.getenv("GOOGLE_DRIVE_CLIENT_ID", os.getenv("GOOGLE_CLIENT_ID", "")).strip()
+
+# ── Paddle Billing ────────────────────────────────────────────────────────────
+PADDLE_VENDOR_ID = os.getenv("PADDLE_VENDOR_ID", "").strip()
+PADDLE_PRO_PRODUCT_ID = os.getenv("PADDLE_PRO_PRODUCT_ID", "").strip()
+PADDLE_TEAM_PRODUCT_ID = os.getenv("PADDLE_TEAM_PRODUCT_ID", "").strip()
+PADDLE_WEBHOOK_SECRET = os.getenv("PADDLE_WEBHOOK_SECRET", "").strip()
+
 NEW_CHAT_TOPLINE = os.getenv("VIGZONE_NEW_CHAT_TOPLINE", "Start with a real task")
 NEW_CHAT_SUBTITLE = os.getenv(
     "VIGZONE_NEW_CHAT_SUBTITLE",
@@ -539,6 +546,10 @@ async def public_config():
             "api_default": "Groq (default)",
             "api_own": "Groq (your key)",
         },
+        # Paddle billing (empty strings if not configured)
+        "paddle_vendor_id": PADDLE_VENDOR_ID or None,
+        "paddle_pro_price_id": PADDLE_PRO_PRODUCT_ID or None,
+        "paddle_team_price_id": PADDLE_TEAM_PRODUCT_ID or None,
     })
 
 
@@ -2448,6 +2459,108 @@ async def admin_reset_user_usage(user_id: int, admin: dict = Depends(require_adm
         cur = conn.execute("DELETE FROM token_usage WHERE user_id = ? AND ts >= ?", (user_id, start_ts))
         conn.commit()
     return JSONResponse({"ok": True, "deleted_rows": cur.rowcount})
+
+
+# ── Paddle Billing Webhook ─────────────────────────────────────────────────────
+@app.post("/api/billing/paddle/webhook", tags=["Billing"])
+async def paddle_webhook(request: Request):
+    """Receive Paddle webhook events and update user subscription plan.
+
+    Set PADDLE_WEBHOOK_SECRET in your Railway env to the secret from
+    Paddle Dashboard → Notifications → your webhook endpoint.
+    Supported events: subscription_created, subscription_updated,
+    subscription_cancelled, subscription_payment_succeeded.
+    """
+    import sqlite3
+    import hashlib
+    import hmac as _hmac
+
+    raw_body = await request.body()
+
+    # Signature verification (skip if no secret configured — log a warning)
+    if PADDLE_WEBHOOK_SECRET:
+        signature = request.headers.get("Paddle-Signature", "")
+        # Paddle v2 webhooks use HMAC-SHA256 with ts:payload format
+        try:
+            parts = dict(item.split("=", 1) for item in signature.split(";") if "=" in item)
+            ts = parts.get("ts", "")
+            h1 = parts.get("h1", "")
+            signed_payload = f"{ts}:{raw_body.decode()}"
+            expected = _hmac.new(
+                PADDLE_WEBHOOK_SECRET.encode(),
+                signed_payload.encode(),
+                hashlib.sha256,
+            ).hexdigest()
+            if not _hmac.compare_digest(expected, h1):
+                logging.warning("Paddle webhook signature mismatch — ignoring event.")
+                raise HTTPException(status_code=400, detail="Invalid Paddle signature.")
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logging.warning("Paddle signature parse error: %s", exc)
+            raise HTTPException(status_code=400, detail="Malformed Paddle signature.")
+
+    try:
+        event = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body.")
+
+    event_type = event.get("event_type") or event.get("alert_name", "")
+    data = event.get("data") or event  # Paddle v2 vs v1 shape
+
+    # Extract customer email from various Paddle webhook shapes
+    customer_email = (
+        data.get("customer", {}).get("email")
+        or data.get("email")
+        or data.get("checkout", {}).get("completed", {}).get("email")
+        or ""
+    ).strip().lower()
+
+    # Determine plan from price/product ID
+    price_id = str(data.get("items", [{}])[0].get("price", {}).get("product_id", "") if isinstance(data.get("items"), list) else "")
+    if not price_id:
+        price_id = str(data.get("product_id", "") or data.get("passthrough", ""))
+
+    if price_id == PADDLE_PRO_PRODUCT_ID:
+        new_plan = "pro"
+    elif price_id == PADDLE_TEAM_PRODUCT_ID:
+        new_plan = "team"
+    else:
+        new_plan = "free"
+
+    active_events = {
+        "subscription_created",
+        "subscription_updated",
+        "subscription_payment_succeeded",
+        "transaction_completed",
+    }
+    cancel_events = {
+        "subscription_cancelled",
+        "subscription_paused",
+    }
+
+    if event_type in active_events and customer_email:
+        plan = new_plan
+    elif event_type in cancel_events and customer_email:
+        plan = "free"
+    else:
+        # Unknown event — ack without processing
+        return JSONResponse({"ok": True, "action": "ignored", "event_type": event_type})
+
+    try:
+        db_path = authmod.DB_PATH
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                "UPDATE users SET plan = ?, updated_at = ? WHERE email = ?",
+                (plan, int(__import__('time').time()), customer_email),
+            )
+            conn.commit()
+        logging.info("Paddle webhook: set plan=%s for %s (event=%s)", plan, customer_email, event_type)
+    except Exception as exc:
+        logging.error("Paddle webhook DB update failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Database error processing webhook.")
+
+    return JSONResponse({"ok": True, "action": "plan_updated", "plan": plan, "email": customer_email})
 
 
 # ── Voice transcription endpoint ──────────────────────────────────────────────
