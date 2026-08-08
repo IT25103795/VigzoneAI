@@ -501,6 +501,37 @@ async def public_config():
         "new_chat_subtitle": NEW_CHAT_SUBTITLE.format(app_name=APP_NAME),
         "groq_hint": GROQ_HINT_TEXT,
         "greetings": GREETING_OPTIONS,
+        "available_models": [
+            {
+                "id": "llama-3.3-70b-versatile",
+                "name": "Llama 3.3 70B",
+                "badge": "Powerhouse",
+                "description": "High intelligence, versatile reasoning & analysis",
+                "icon": "⚡",
+            },
+            {
+                "id": "deepseek-r1-distill-llama-70b",
+                "name": "DeepSeek R1 70B",
+                "badge": "Reasoning",
+                "description": "Deep multi-step thinking, math & complex logic",
+                "icon": "🧠",
+            },
+            {
+                "id": "llama-3.1-8b-instant",
+                "name": "Llama 3.1 8B",
+                "badge": "Fast",
+                "description": "Ultra high-speed instant answers",
+                "icon": "🚀",
+            },
+            {
+                "id": "qwen/qwen3.6-27b",
+                "name": "Qwen 3.6",
+                "badge": "Coding",
+                "description": "Specialized code generation & technical tasks",
+                "icon": "💻",
+            },
+        ],
+        "default_model": "llama-3.3-70b-versatile",
         "labels": {
             "assistant": APP_NAME,
             "settings_signed_in": f"Signed in to {APP_NAME}",
@@ -508,6 +539,44 @@ async def public_config():
             "api_default": "Groq (default)",
             "api_own": "Groq (your key)",
         },
+    })
+
+
+@app.get("/api/models/available", tags=["AI"])
+async def available_models_endpoint():
+    """Return available Groq models and their capabilities."""
+    return JSONResponse({
+        "models": [
+            {
+                "id": "llama-3.3-70b-versatile",
+                "name": "Llama 3.3 70B",
+                "badge": "Powerhouse",
+                "description": "High intelligence, versatile reasoning & analysis",
+                "icon": "⚡",
+            },
+            {
+                "id": "deepseek-r1-distill-llama-70b",
+                "name": "DeepSeek R1 70B",
+                "badge": "Reasoning",
+                "description": "Deep multi-step thinking, math & complex logic",
+                "icon": "🧠",
+            },
+            {
+                "id": "llama-3.1-8b-instant",
+                "name": "Llama 3.1 8B",
+                "badge": "Fast",
+                "description": "Ultra high-speed instant answers",
+                "icon": "🚀",
+            },
+            {
+                "id": "qwen/qwen3.6-27b",
+                "name": "Qwen 3.6",
+                "badge": "Coding",
+                "description": "Specialized code generation & technical tasks",
+                "icon": "💻",
+            },
+        ],
+        "default": "llama-3.3-70b-versatile",
     })
 
 

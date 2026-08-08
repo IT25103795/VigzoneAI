@@ -4768,3 +4768,306 @@
     margin-top:9px;
   }
 }
+
+/* ==========================================================================
+   FEATURE SUITE: Model Selector, Deep Reasoning, Code Sandbox, Voice TTS
+   ========================================================================== */
+
+/* ── 1. Model Selector Dropdown ────────────────────────────────────────── */
+.model-picker-wrap{
+  position:relative;
+  display:inline-flex;
+  align-items:center;
+}
+.model-picker-btn{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  padding:6px 12px;
+  background:rgba(255,255,255,0.06);
+  border:1px solid rgba(255,255,255,0.12);
+  border-radius:10px;
+  color:var(--text);
+  font-family:inherit;
+  font-size:13px;
+  font-weight:600;
+  cursor:pointer;
+  transition:all .2s ease;
+  backdrop-filter:blur(8px);
+}
+.model-picker-btn:hover{
+  background:rgba(255,255,255,0.12);
+  border-color:rgba(255,255,255,0.22);
+}
+.model-picker-badge{
+  font-size:10px;
+  font-weight:700;
+  padding:2px 6px;
+  border-radius:6px;
+  background:linear-gradient(135deg, #3b82f6, #8b5cf6);
+  color:#fff;
+  text-transform:uppercase;
+  letter-spacing:0.4px;
+}
+.model-picker-arrow{
+  font-size:9px;
+  opacity:0.7;
+  transition:transform .2s ease;
+}
+.model-picker-wrap.open .model-picker-arrow{
+  transform:rotate(180deg);
+}
+.model-dropdown-menu{
+  position:absolute;
+  top:calc(100% + 8px);
+  left:0;
+  width:290px;
+  background:var(--surface, #12141c);
+  border:1px solid var(--border, rgba(255,255,255,0.14));
+  border-radius:14px;
+  padding:8px;
+  box-shadow:0 18px 42px rgba(0,0,0,0.45);
+  backdrop-filter:blur(24px);
+  z-index:9999;
+  display:none;
+  flex-direction:column;
+  gap:5px;
+  animation:fadeScale .18s ease forwards;
+}
+.model-picker-wrap.open .model-dropdown-menu{
+  display:flex;
+}
+.model-dropdown-item{
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+  padding:9px 12px;
+  border-radius:10px;
+  background:transparent;
+  border:1px solid transparent;
+  cursor:pointer;
+  text-align:left;
+  transition:all .18s ease;
+}
+.model-dropdown-item:hover{
+  background:rgba(255,255,255,0.06);
+  border-color:rgba(255,255,255,0.08);
+}
+.model-dropdown-item.active{
+  background:rgba(59,130,246,0.12);
+  border-color:rgba(59,130,246,0.35);
+}
+.model-item-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  font-size:13px;
+  font-weight:700;
+  color:var(--text);
+}
+.model-item-desc{
+  font-size:11px;
+  color:var(--text-muted, #94a3b8);
+  line-height:1.35;
+}
+
+/* ── 2. Deep Reasoning / Thinking Accordion (DeepSeek-R1) ────────────────── */
+.think-accordion{
+  margin:10px 0 16px;
+  border-radius:12px;
+  border:1px solid rgba(139,92,246,0.28);
+  background:rgba(139,92,246,0.05);
+  overflow:hidden;
+  transition:all .25s ease;
+}
+.think-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:10px 14px;
+  cursor:pointer;
+  user-select:none;
+  background:rgba(139,92,246,0.08);
+  transition:background .2s ease;
+}
+.think-header:hover{
+  background:rgba(139,92,246,0.14);
+}
+.think-meta{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  font-size:12.5px;
+  font-weight:700;
+  color:#c4b5fd;
+}
+.think-pulse-dot{
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  background:#a855f7;
+  box-shadow:0 0 8px #a855f7;
+  animation:thinkPulse 1.4s infinite ease-in-out;
+}
+@keyframes thinkPulse{
+  0%,100%{transform:scale(0.8);opacity:0.6;}
+  50%{transform:scale(1.25);opacity:1;}
+}
+.think-toggle-btn{
+  font-size:11.5px;
+  font-weight:600;
+  color:#a78bfa;
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+}
+.think-body{
+  padding:12px 16px;
+  font-size:13px;
+  line-height:1.6;
+  color:var(--text-muted, #cbd5e1);
+  border-top:1px dashed rgba(139,92,246,0.22);
+  white-space:pre-wrap;
+  max-height:400px;
+  overflow-y:auto;
+  font-family:"JetBrains Mono", Consolas, monospace;
+}
+.think-accordion.collapsed .think-body{
+  display:none;
+}
+
+/* ── 3. Live Code Sandbox Runner & Action Button ─────────────────────────── */
+.code-block-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:6px 12px;
+  background:rgba(0,0,0,0.35);
+  border-top-left-radius:10px;
+  border-top-right-radius:10px;
+  border-bottom:1px solid rgba(255,255,255,0.08);
+  font-size:11.5px;
+  color:var(--text-muted, #94a3b8);
+}
+.code-actions-group{
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.run-sandbox-btn{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  padding:3px 9px;
+  border-radius:6px;
+  background:linear-gradient(135deg, #10b981, #059669);
+  color:#fff;
+  font-size:11px;
+  font-weight:700;
+  border:none;
+  cursor:pointer;
+  transition:transform .15s ease, opacity .15s ease;
+}
+.run-sandbox-btn:hover{
+  transform:scale(1.04);
+  opacity:0.92;
+}
+
+/* Sandbox Modal */
+.sandbox-modal-backdrop{
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,0.75);
+  backdrop-filter:blur(8px);
+  z-index:99999;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:20px;
+  animation:fadeIn .2s ease;
+}
+.sandbox-window{
+  width:100%;
+  max-width:960px;
+  height:85vh;
+  background:var(--surface, #0f111a);
+  border:1px solid var(--border, rgba(255,255,255,0.16));
+  border-radius:18px;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  box-shadow:0 24px 64px rgba(0,0,0,0.6);
+}
+.sandbox-topbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:12px 18px;
+  background:rgba(255,255,255,0.04);
+  border-bottom:1px solid rgba(255,255,255,0.1);
+}
+.sandbox-title{
+  font-size:14px;
+  font-weight:700;
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.sandbox-body{
+  flex:1;
+  display:flex;
+  overflow:hidden;
+  position:relative;
+  background:#fff;
+}
+.sandbox-iframe{
+  width:100%;
+  height:100%;
+  border:none;
+}
+
+/* ── 4. Voice TTS Engine (Web Speech API) ─────────────────────────────────── */
+.tts-speaker-btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:26px;
+  height:26px;
+  border-radius:6px;
+  background:transparent;
+  border:none;
+  color:var(--text-muted);
+  cursor:pointer;
+  transition:all .18s ease;
+}
+.tts-speaker-btn:hover{
+  color:var(--text);
+  background:rgba(255,255,255,0.08);
+}
+.tts-speaker-btn.speaking{
+  color:#38bdf8;
+  animation:speakWave 1s infinite alternate;
+}
+@keyframes speakWave{
+  0%{transform:scale(0.95);}
+  100%{transform:scale(1.15);}
+}
+.voice-top-toggle{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  padding:6px 10px;
+  border-radius:10px;
+  background:rgba(255,255,255,0.06);
+  border:1px solid rgba(255,255,255,0.12);
+  color:var(--text);
+  font-size:12px;
+  font-weight:600;
+  cursor:pointer;
+  transition:all .2s ease;
+}
+.voice-top-toggle.active{
+  background:rgba(56,189,248,0.14);
+  border-color:rgba(56,189,248,0.4);
+  color:#38bdf8;
+}

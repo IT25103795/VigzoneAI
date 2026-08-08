@@ -221,6 +221,9 @@ VISION_FALLBACK_MODELS = [
 API_KEY = _GROQ_API_KEY
 
 _DEFAULT_ALLOWED_CHAT_MODELS = (
+    "llama-3.3-70b-versatile,"
+    "deepseek-r1-distill-llama-70b,"
+    "llama-3.1-8b-instant,"
     "openai/gpt-oss-120b,"
     "openai/gpt-oss-20b,"
     "qwen/qwen3.6-27b"

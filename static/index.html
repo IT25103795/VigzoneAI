@@ -592,6 +592,36 @@
       </div>
     </div>
     <div class="actions">
+      <div class="model-picker-wrap" id="modelPickerWrap">
+        <button class="model-picker-btn" id="modelPickerBtn" type="button" aria-label="Select AI Model" title="Select AI Model">
+          <span id="modelPickerIcon">⚡</span>
+          <span id="modelPickerName">Llama 3.3 70B</span>
+          <span class="model-picker-badge" id="modelPickerBadge">Powerhouse</span>
+          <span class="model-picker-arrow">▼</span>
+        </button>
+        <div class="model-dropdown-menu" id="modelDropdownMenu">
+          <div class="model-dropdown-item active" data-model="llama-3.3-70b-versatile">
+            <div class="model-item-header"><span>⚡ Llama 3.3 70B</span><span class="model-picker-badge">Powerhouse</span></div>
+            <div class="model-item-desc">High intelligence, versatile reasoning & analysis</div>
+          </div>
+          <div class="model-dropdown-item" data-model="deepseek-r1-distill-llama-70b">
+            <div class="model-item-header"><span>🧠 DeepSeek R1 70B</span><span class="model-picker-badge" style="background:#8b5cf6;">Reasoning</span></div>
+            <div class="model-item-desc">Deep multi-step thinking, math & complex logic</div>
+          </div>
+          <div class="model-dropdown-item" data-model="llama-3.1-8b-instant">
+            <div class="model-item-header"><span>🚀 Llama 3.1 8B</span><span class="model-picker-badge" style="background:#10b981;">Fast</span></div>
+            <div class="model-item-desc">Ultra high-speed instant answers</div>
+          </div>
+          <div class="model-dropdown-item" data-model="qwen/qwen3.6-27b">
+            <div class="model-item-header"><span>💻 Qwen 3.6</span><span class="model-picker-badge" style="background:#06b6d4;">Coding</span></div>
+            <div class="model-item-desc">Specialized code generation & technical tasks</div>
+          </div>
+        </div>
+      </div>
+      <button class="voice-top-toggle" id="voiceTopToggle" type="button" aria-label="Voice Output" title="Toggle AI Voice Output (Text-to-Speech)">
+        <span id="voiceToggleIcon">🔊</span>
+        <span id="voiceToggleLabel">Voice Off</span>
+      </button>
       <div class="usage-cycle-wrap" id="usageCycleWrap">
         <button class="icon-btn usage-cycle-btn" id="usageCycleBtn" aria-label="Usage today" title="Usage today" type="button">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -781,6 +811,21 @@
   </div>
 </div>
 
+
+  <div class="sandbox-modal-backdrop" id="sandboxModalBackdrop" style="display: none;" role="dialog" aria-modal="true" aria-label="Code Sandbox Preview">
+    <div class="sandbox-window">
+      <div class="sandbox-topbar">
+        <div class="sandbox-title"><span>▶️</span> Live Code Sandbox Preview</div>
+        <div style="display:flex;gap:8px;">
+          <button class="modal-btn" id="sandboxRefreshBtn" type="button">🔄 Reload</button>
+          <button class="modal-btn primary" id="sandboxCloseBtn" type="button">Close ✕</button>
+        </div>
+      </div>
+      <div class="sandbox-body">
+        <iframe class="sandbox-iframe" id="sandboxIframe" sandbox="allow-scripts allow-modals allow-same-origin"></iframe>
+      </div>
+    </div>
+  </div>
 
   <script src="/static/js/app.js?v=doodle-themes-r1"></script>
 </body>

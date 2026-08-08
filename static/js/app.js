@@ -930,16 +930,56 @@
     if (event.target === sandboxPreviewOverlay) closeSandboxedWebsitePreview();
   });
 
-  // Minimal, safe markdown-ish rendering: code fences, inline code, bold.
+  // Safe markdown rendering with DeepSeek-R1 thinking parser & Live Code Sandbox runner
   function renderContent(text){
-    const escaped = escapeHtml(text);
+    if (!text) return '';
+    let thinkHtml = '';
+    let mainText = text;
+
+    // DeepSeek-R1 <think> tag parser
+    const thinkOpen = mainText.indexOf('<think>');
+    if (thinkOpen !== -1) {
+      const thinkClose = mainText.indexOf('</think>');
+      let rawThink = '';
+      if (thinkClose !== -1) {
+        rawThink = mainText.slice(thinkOpen + 7, thinkClose).trim();
+        mainText = (mainText.slice(0, thinkOpen) + '\n' + mainText.slice(thinkClose + 8)).trim();
+      } else {
+        rawThink = mainText.slice(thinkOpen + 7).trim();
+        mainText = mainText.slice(0, thinkOpen).trim();
+      }
+      if (rawThink) {
+        thinkHtml = `
+          <div class="think-accordion">
+            <div class="think-header" onclick="this.parentElement.classList.toggle('collapsed')">
+              <span class="think-meta"><span class="think-pulse-dot"></span> 🧠 Thought Process</span>
+              <span class="think-toggle-btn">Toggle ▼</span>
+            </div>
+            <div class="think-body">${escapeHtml(rawThink)}</div>
+          </div>`;
+      }
+    }
+
+    const escaped = escapeHtml(mainText);
     let withFences = escaped.replace(/```(\w*)\n?([\s\S]*?)```/g, (m, lang, code) => {
-      return `<pre data-lang="${lang || ''}"><code>${code}</code></pre>`;
+      const cleanLang = (lang || '').toLowerCase().trim();
+      const isRunnable = ['html', 'htm', 'svg', 'xml', 'javascript', 'js'].includes(cleanLang);
+      const runBtn = isRunnable
+        ? `<button class="run-sandbox-btn" onclick="openLiveCodeSandbox(this)" type="button">▶️ Run Preview</button>`
+        : '';
+      return `
+        <div class="code-card-wrap">
+          <div class="code-block-header">
+            <span>${cleanLang || 'code'}</span>
+            <div class="code-actions-group">
+              ${runBtn}
+              <button class="copy-code-btn" onclick="copyCodeSnippet(this)" type="button">Copy</button>
+            </div>
+          </div>
+          <pre data-lang="${cleanLang}"><code>${code}</code></pre>
+        </div>`;
     });
-    // Handle a code fence that never closed — either because the message is
-    // still streaming, or because generation stopped/got cut off before the
-    // closing ``` ever arrived. Without this, that block would render as raw
-    // backtick text forever instead of getting the syntax-highlighted treatment.
+
     const openFence = withFences.match(/```(\w*)\n?([\s\S]*)$/);
     if (openFence) {
       withFences = withFences.slice(0, openFence.index) +
@@ -947,7 +987,7 @@
     }
     const withInline = withFences.replace(/`([^`\n]+)`/g, '<code>$1</code>');
     const withBold = withInline.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    return withBold;
+    return thinkHtml + withBold;
   }
 
   function storageSafeStore(source){
@@ -6556,7 +6596,181 @@ Requirements:
     versionModalCloseBtn?.addEventListener('click', () => versionModalOverlay?.classList.remove('visible'));
     versionModalOverlay?.addEventListener('click', e => { if (e.target === versionModalOverlay) versionModalOverlay.classList.remove('visible'); });
     $('#shareChatBtn')?.addEventListener('click', shareCurrentChat);
+
+    // Feature Suite: Model Selector, Code Sandbox, Voice TTS
+    initModelSelector();
+    initCodeSandbox();
+    initVoiceTts();
   }
+
+  /* ── 1. Model Selector Controller ────────────────────────────────────────── */
+  let activeSelectedModel = localStorage.getItem('vigzone_model') || 'llama-3.3-70b-versatile';
+  function getActiveModel(){ return activeSelectedModel; }
+
+  function initModelSelector(){
+    const wrap = $('#modelPickerWrap');
+    const btn = $('#modelPickerBtn');
+    const menu = $('#modelDropdownMenu');
+    const nameEl = $('#modelPickerName');
+    const badgeEl = $('#modelPickerBadge');
+    const iconEl = $('#modelPickerIcon');
+
+    const modelMeta = {
+      'llama-3.3-70b-versatile': { name: 'Llama 3.3 70B', badge: 'Powerhouse', icon: '⚡', color: 'linear-gradient(135deg, #3b82f6, #8b5cf6)' },
+      'deepseek-r1-distill-llama-70b': { name: 'DeepSeek R1', badge: 'Reasoning', icon: '🧠', color: '#8b5cf6' },
+      'llama-3.1-8b-instant': { name: 'Llama 3.1 8B', badge: 'Fast', icon: '🚀', color: '#10b981' },
+      'qwen/qwen3.6-27b': { name: 'Qwen 3.6', badge: 'Coding', icon: '💻', color: '#06b6d4' }
+    };
+
+    function updateUi(modelId){
+      activeSelectedModel = modelId;
+      localStorage.setItem('vigzone_model', modelId);
+      const meta = modelMeta[modelId] || { name: modelId, badge: 'AI', icon: '⚡', color: '#3b82f6' };
+      if (nameEl) nameEl.textContent = meta.name;
+      if (badgeEl) {
+        badgeEl.textContent = meta.badge;
+        badgeEl.style.background = meta.color;
+      }
+      if (iconEl) iconEl.textContent = meta.icon;
+      $$('.model-dropdown-item').forEach(item => {
+        item.classList.toggle('active', item.dataset.model === modelId);
+      });
+    }
+
+    btn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      wrap?.classList.toggle('open');
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!wrap?.contains(e.target)) wrap?.classList.remove('open');
+    });
+
+    $$('.model-dropdown-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const m = item.dataset.model;
+        if (m) {
+          updateUi(m);
+          wrap?.classList.remove('open');
+          suiteToast?.(`Switched active AI model to ${item.querySelector('.model-item-header')?.textContent || m}`);
+        }
+      });
+    });
+
+    updateUi(activeSelectedModel);
+  }
+
+  /* ── 2. Live Code Sandbox Controller ─────────────────────────────────────── */
+  function initCodeSandbox(){
+    const backdrop = $('#sandboxModalBackdrop');
+    const closeBtn = $('#sandboxCloseBtn');
+    const refreshBtn = $('#sandboxRefreshBtn');
+    const iframe = $('#sandboxIframe');
+
+    closeBtn?.addEventListener('click', () => {
+      if (backdrop) backdrop.style.display = 'none';
+      if (iframe) iframe.srcdoc = '';
+    });
+    backdrop?.addEventListener('click', (e) => {
+      if (e.target === backdrop) {
+        backdrop.style.display = 'none';
+        if (iframe) iframe.srcdoc = '';
+      }
+    });
+    refreshBtn?.addEventListener('click', () => {
+      if (iframe && iframe.dataset.lastCode) {
+        iframe.srcdoc = iframe.dataset.lastCode;
+        suiteToast?.('Sandbox preview reloaded.');
+      }
+    });
+  }
+
+  window.openLiveCodeSandbox = function(btn){
+    const card = btn.closest('.code-card-wrap');
+    if (!card) return;
+    const codeEl = card.querySelector('code');
+    if (!codeEl) return;
+    const rawCode = codeEl.textContent || '';
+    const lang = (card.querySelector('pre')?.dataset?.lang || '').toLowerCase();
+
+    let fullDoc = rawCode;
+    if (lang === 'svg') {
+      fullDoc = `<!DOCTYPE html><html><body style="margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#0f111a;color:#fff;">${rawCode}</body></html>`;
+    } else if (lang === 'js' || lang === 'javascript') {
+      fullDoc = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:sans-serif;padding:20px;background:#0f111a;color:#fff;}</style></head><body><div id="output"></div><script>console.log = function(...args){ document.getElementById('output').innerHTML += args.join(' ') + '<br>'; }; try { ${rawCode} } catch(e) { document.getElementById('output').innerHTML += '<span style="color:#ef4444;">Error: ' + e.message + '</span>'; }<\/script></body></html>`;
+    } else if (!rawCode.toLowerCase().includes('<!doctype') && !rawCode.toLowerCase().includes('<html')) {
+      fullDoc = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>body{font-family:Inter,system-ui,sans-serif;margin:0;padding:20px;background:#fff;color:#1e293b;}</style></head><body>${rawCode}</body></html>`;
+    }
+
+    const backdrop = $('#sandboxModalBackdrop');
+    const iframe = $('#sandboxIframe');
+    if (backdrop && iframe) {
+      iframe.dataset.lastCode = fullDoc;
+      iframe.srcdoc = fullDoc;
+      backdrop.style.display = 'flex';
+      suiteToast?.('Live sandbox preview running.');
+    }
+  };
+
+  window.copyCodeSnippet = async function(btn){
+    const card = btn.closest('.code-card-wrap');
+    const code = card?.querySelector('code')?.textContent || '';
+    try {
+      await navigator.clipboard.writeText(code);
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
+    } catch {
+      btn.textContent = 'Failed';
+    }
+  };
+
+  /* ── 3. Voice Output (TTS) Controller ────────────────────────────────────── */
+  let isVoiceTtsEnabled = localStorage.getItem('vigzone_tts') === 'true';
+
+  function initVoiceTts(){
+    const toggleBtn = $('#voiceTopToggle');
+    const labelEl = $('#voiceToggleLabel');
+
+    function updateVoiceState(){
+      toggleBtn?.classList.toggle('active', isVoiceTtsEnabled);
+      if (labelEl) labelEl.textContent = isVoiceTtsEnabled ? 'Voice On' : 'Voice Off';
+      localStorage.setItem('vigzone_tts', isVoiceTtsEnabled ? 'true' : 'false');
+      if (!isVoiceTtsEnabled && window.speechSynthesis) window.speechSynthesis.cancel();
+    }
+
+    toggleBtn?.addEventListener('click', () => {
+      isVoiceTtsEnabled = !isVoiceTtsEnabled;
+      updateVoiceState();
+      suiteToast?.(isVoiceTtsEnabled ? 'Voice response enabled (Text-to-Speech active)' : 'Voice response muted');
+    });
+
+    updateVoiceState();
+  }
+
+  window.speakAssistantText = function(text, btnEl = null){
+    if (!window.speechSynthesis) {
+      suiteToast?.('Speech synthesis not supported on this browser.');
+      return;
+    }
+    window.speechSynthesis.cancel();
+    if (!text) return;
+    const cleanText = text
+      .replace(/```[\s\S]*?```/g, ' Code snippet omitted. ')
+      .replace(/<think>[\s\S]*?<\/think>/gi, '')
+      .replace(/[#*_`~]/g, '')
+      .trim();
+
+    if (!cleanText) return;
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.rate = 1.05;
+    utterance.pitch = 1.0;
+
+    if (btnEl) btnEl.classList.add('speaking');
+    utterance.onend = () => { if (btnEl) btnEl.classList.remove('speaking'); };
+    utterance.onerror = () => { if (btnEl) btnEl.classList.remove('speaking'); };
+
+    window.speechSynthesis.speak(utterance);
+  };
 
   attachProductSuiteEvents();
 
@@ -6577,3 +6791,4 @@ Requirements:
   loadAccount();
   autoResize();
   usageCycleRefreshTimer = setInterval(refreshUsageCycle, 60000);
+
