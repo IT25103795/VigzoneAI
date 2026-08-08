@@ -2516,8 +2516,12 @@ async def paddle_webhook(request: Request):
         or ""
     ).strip().lower()
 
-    # Determine plan from price/product ID
-    price_id = str(data.get("items", [{}])[0].get("price", {}).get("product_id", "") if isinstance(data.get("items"), list) else "")
+    # Determine plan from price ID
+    items = data.get("items")
+    price_id = ""
+    if isinstance(items, list) and len(items) > 0:
+        price_id = str(items[0].get("price", {}).get("id", ""))
+    
     if not price_id:
         price_id = str(data.get("product_id", "") or data.get("passthrough", ""))
 
