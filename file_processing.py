@@ -32,18 +32,40 @@ import os
 import struct
 from pathlib import Path
 
-from defusedxml import ElementTree as ET
+try:
+    from defusedxml import ElementTree as ET
+except ImportError:
+    import xml.etree.ElementTree as ET
 try:
     import magic as _magic
     _HAS_MAGIC = True
 except ImportError:
     _HAS_MAGIC = False
 
-from PIL import Image
-from pypdf import PdfReader
-from docx import Document
-import openpyxl
-from pptx import Presentation
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
+
+try:
+    from pypdf import PdfReader
+except ImportError:
+    PdfReader = None
+
+try:
+    from docx import Document
+except ImportError:
+    Document = None
+
+try:
+    import openpyxl
+except ImportError:
+    openpyxl = None
+
+try:
+    from pptx import Presentation
+except ImportError:
+    Presentation = None
 
 logger = logging.getLogger("vigzone.files")
 

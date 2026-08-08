@@ -1506,7 +1506,7 @@ def _bootstrap_admin(conn: sqlite3.Connection) -> None:
 
     bootstrap_email = os.getenv("ADMIN_BOOTSTRAP_EMAIL", "").strip().lower()
     bootstrap_password = os.getenv("ADMIN_BOOTSTRAP_PASSWORD", "")
-    if not bootstrap_email and not bootstrap_password:
+    if not bootstrap_email or not bootstrap_password:
         return
     if not EMAIL_RE.match(bootstrap_email) or len(bootstrap_password) < 12:
         raise RuntimeError(
