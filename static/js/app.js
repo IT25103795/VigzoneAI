@@ -4596,7 +4596,7 @@ A strong website should include: hero section, clear navigation, services/featur
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages(), ai_mode: currentMode(), workspace_id: activeWorkspaceId || null, conversation_id: store?.activeId || null, client_timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone || null), client_now_iso: new Date().toISOString() })
+        body: JSON.stringify({ messages: apiMessages(), model: getActiveModel(), ai_mode: currentMode(), workspace_id: activeWorkspaceId || null, conversation_id: store?.activeId || null, client_timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone || null), client_now_iso: new Date().toISOString() })
       });
 
       if (!res.ok || !res.body) {
@@ -5574,7 +5574,7 @@ A strong website should include: hero section, clear navigation, services/featur
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages(), ai_mode: currentMode(), workspace_id: activeWorkspaceId || null, conversation_id: store?.activeId || null, client_timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone || null), client_now_iso: new Date().toISOString() })
+        body: JSON.stringify({ messages: apiMessages(), model: getActiveModel(), ai_mode: currentMode(), workspace_id: activeWorkspaceId || null, conversation_id: store?.activeId || null, client_timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone || null), client_now_iso: new Date().toISOString() })
       });
 
       if (!response.ok || !response.body) {
@@ -5963,7 +5963,7 @@ A strong website should include: hero section, clear navigation, services/featur
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages(), ai_mode: currentMode(), workspace_id: activeWorkspaceId || null, conversation_id: store?.activeId || null, client_timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone || null), client_now_iso: new Date().toISOString() })
+        body: JSON.stringify({ messages: apiMessages(), model: getActiveModel(), ai_mode: currentMode(), workspace_id: activeWorkspaceId || null, conversation_id: store?.activeId || null, client_timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone || null), client_now_iso: new Date().toISOString() })
       });
       if (!response.ok || !response.body) {
         const errData = await response.json().catch(() => ({}));

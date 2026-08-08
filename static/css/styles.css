@@ -742,6 +742,7 @@
       gap:12px;
       box-shadow: 0 1px 3px -1px var(--composer-shadow);
       z-index:50;
+      overflow:visible;
     }
     .header-left{display:flex;align-items:center;gap:12px;min-width:0;}
     .sidebar-toggle-btn{
@@ -780,7 +781,7 @@
     .dot{width:6px;height:6px;border-radius:50%;background:var(--text-muted);flex-shrink:0;}
     .dot.online{background:var(--accent-2);box-shadow:0 0 8px var(--accent-2);}
     .dot.offline{background:var(--danger);}
-    header .actions{display:flex;gap:8px;}
+    header .actions{display:flex;gap:8px;align-items:center;flex-shrink:0;}
     .icon-btn{
       background:var(--surface-2);
       border:1px solid var(--border-subtle);
@@ -5070,4 +5071,82 @@
   background:rgba(56,189,248,0.14);
   border-color:rgba(56,189,248,0.4);
   color:#38bdf8;
+}
+
+/* ── Mobile Responsive: Model Picker & Voice Toggle ──────────────── */
+@media (max-width:760px){
+  header .actions{
+    gap:5px;
+    flex-shrink:0;
+  }
+  /* Compact model picker button: hide model name text on mobile */
+  #modelPickerName{
+    display:none;
+  }
+  .model-picker-btn{
+    padding:5px 8px;
+    gap:5px;
+    font-size:12px;
+  }
+  .model-picker-badge{
+    font-size:9px;
+    padding:2px 5px;
+  }
+  .model-picker-arrow{
+    font-size:8px;
+  }
+  /* Dropdown: right-align and constrain width on mobile */
+  .model-dropdown-menu{
+    left:auto;
+    right:0;
+    width:260px;
+  }
+  /* Compact voice toggle: icon only */
+  #voiceToggleLabel{
+    display:none;
+  }
+  .voice-top-toggle{
+    padding:5px 8px;
+    gap:0;
+  }
+}
+
+@media (max-width:420px){
+  /* Full-width bottom sheet on very small screens */
+  .model-dropdown-menu{
+    position:fixed;
+    top:auto;
+    bottom:0;
+    left:0;
+    right:0;
+    width:100%;
+    max-width:100%;
+    border-radius:18px 18px 0 0;
+    padding:12px;
+    z-index:99999;
+    animation:slideUpSheet .22s ease forwards;
+    box-shadow:0 -12px 48px rgba(0,0,0,0.55);
+  }
+  @keyframes slideUpSheet{
+    from{transform:translateY(100%);opacity:0;}
+    to{transform:translateY(0);opacity:1;}
+  }
+  /* Add a backdrop overlay on very small screens when open */
+  .model-picker-wrap.open::before{
+    content:'';
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,0.5);
+    z-index:99998;
+    animation:fadeIn .2s ease;
+  }
+  .model-dropdown-item{
+    padding:12px 14px;
+  }
+  .model-item-header{
+    font-size:14px;
+  }
+  .model-item-desc{
+    font-size:12px;
+  }
 }
