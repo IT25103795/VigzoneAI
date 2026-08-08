@@ -2979,29 +2979,26 @@
   async function loadAccount(){
     try {
       const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
-      if (!res.ok) {
-        // Session expired or missing — back to the sign-in screen.
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        userName = (data.user && data.user.name) || (data.user && data.user.email) || '';
+        if (data.user) switchAccountStorageScope(data.user);
+        if (data.user && data.user.is_admin) {
+          enterAdminOnlyDashboard(data.user);
+          return;
+        }
+        document.body.classList.remove('admin-only');
+        if (adminPanelRow) adminPanelRow.style.display = 'none';
+        updateGreeting();
+        refreshApiKeyBox();
+        refreshUsageCycle();
+      } else if (window.location.pathname === '/chat' || window.location.pathname.startsWith('/chat/')) {
         window.location.href = '/';
         return;
       }
-      const data = await res.json();
-      userName = (data.user && data.user.name) || (data.user && data.user.email) || '';
-      if (data.user) switchAccountStorageScope(data.user);
-      if (data.user && data.user.is_admin) {
-        enterAdminOnlyDashboard(data.user);
-        return;
-      }
-      document.body.classList.remove('admin-only');
-      if (adminPanelRow) adminPanelRow.style.display = 'none';
-      updateGreeting();
-      refreshApiKeyBox();
-      refreshUsageCycle();
     } catch(e) {
-      // Network hiccup — leave the UI as-is rather than bouncing the user.
       console.error("Auth check failed, likely offline.", e);
     }
-    // Show the UI now that we've either authenticated or handled the error.
-    document.body.style.display = 'flex';
   }
 
   // ---------- Settings + curated doodle chat themes ----------
