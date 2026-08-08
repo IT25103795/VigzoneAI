@@ -318,7 +318,7 @@ FALLBACK_MAX_REQUEST_TOKENS = max(
     4_000, _env_int("GROQ_FALLBACK_MAX_REQUEST_TOKENS", 7_000)
 )
 FALLBACK_MAX_COMPLETION_TOKENS = max(
-    512, _env_int("GROQ_FALLBACK_MAX_COMPLETION_TOKENS", 3_200)
+    512, _env_int("GROQ_FALLBACK_MAX_COMPLETION_TOKENS", 8_192)
 )
 FALLBACK_MIN_COMPLETION_TOKENS = max(
     256, _env_int("GROQ_FALLBACK_MIN_COMPLETION_TOKENS", 512)
@@ -564,20 +564,22 @@ def _is_code_request(messages: list[dict]) -> bool:
 
 
 def _adaptive_max_tokens(messages: list[dict]) -> int:
-    """Return a token budget based on what the user is asking for."""
+    """Return a generous token budget up to the model's full capacity (8,192 tokens)."""
     text = _effective_context_text(messages)
     if not text:
-        return 800
-    if _WEBSITE_RE.search(text):
-        # Full website builds (HTML structure + CSS + JS) need substantial headroom
-        # so complete, professional pages don't get cut off mid-tag or mid-script.
-        # This budget supports full single-page apps with rich interactivity.
+        return 4096
+    if (
+        _WEBSITE_RE.search(text)
+        or _CODE_RE.search(text)
+        or _CONTINUATION_RE.search(text)
+        or _is_code_request(messages)
+    ):
+        # Full website builds, code projects, and continuations need the full model headroom (8,192 tokens)
+        # so single-page apps and comprehensive scripts conclude cleanly without cutting off mid-tag.
         return 8192
-    if _CODE_RE.search(text):
-        return 3000
-    if _LONG_FORM_RE.search(text):
-        return 2000
-    return 800
+    if _LONG_FORM_RE.search(text) or _ROUTER_COMPLEX_RE.search(text):
+        return 6144
+    return 4096
 
 
 def _estimate_tokens(text: str) -> int:
