@@ -930,13 +930,13 @@
     if (event.target === sandboxPreviewOverlay) closeSandboxedWebsitePreview();
   });
 
-  // Safe markdown rendering with DeepSeek-R1 thinking parser & Live Code Sandbox runner
+  // Safe, rich markdown rendering with DeepSeek-R1 thinking parser, Table generator & Live Code Sandbox
   function renderContent(text){
     if (!text) return '';
     let thinkHtml = '';
     let mainText = text;
 
-    // DeepSeek-R1 <think> tag parser
+    // 1. DeepSeek-R1 <think> tag parser
     const thinkOpen = mainText.indexOf('<think>');
     if (thinkOpen !== -1) {
       const thinkClose = mainText.indexOf('</think>');
@@ -960,14 +960,16 @@
       }
     }
 
-    const escaped = escapeHtml(mainText);
-    let withFences = escaped.replace(/```(\w*)\n?([\s\S]*?)```/g, (m, lang, code) => {
+    // 2. Protect multi-line code blocks before processing markdown
+    const codeBlocks = [];
+    const placeholderPrefix = '___VIGZONE_CODE_BLOCK_';
+    let processed = mainText.replace(/```(\w*)\n?([\s\S]*?)```/g, (match, lang, code) => {
       const cleanLang = (lang || '').toLowerCase().trim();
       const isRunnable = ['html', 'htm', 'svg', 'xml', 'javascript', 'js'].includes(cleanLang);
       const runBtn = isRunnable
         ? `<button class="run-sandbox-btn" onclick="openLiveCodeSandbox(this)" type="button">▶️ Run Preview</button>`
         : '';
-      return `
+      const html = `
         <div class="code-card-wrap">
           <div class="code-block-header">
             <span>${cleanLang || 'code'}</span>
@@ -976,18 +978,179 @@
               <button class="copy-code-btn" onclick="copyCodeSnippet(this)" type="button">Copy</button>
             </div>
           </div>
-          <pre data-lang="${cleanLang}"><code>${code}</code></pre>
+          <pre data-lang="${cleanLang}"><code>${escapeHtml(code)}</code></pre>
         </div>`;
+      const key = `${placeholderPrefix}${codeBlocks.length}___`;
+      codeBlocks.push(html);
+      return key;
     });
 
-    const openFence = withFences.match(/```(\w*)\n?([\s\S]*)$/);
+    // Handle open/streaming unclosed code fence
+    const openFence = processed.match(/```(\w*)\n?([\s\S]*)$/);
     if (openFence) {
-      withFences = withFences.slice(0, openFence.index) +
-              `<pre data-lang="${openFence[1] || ''}"><code>${openFence[2]}</code></pre>`;
+      const cleanLang = (openFence[1] || '').toLowerCase().trim();
+      const html = `<div class="code-card-wrap"><pre data-lang="${cleanLang}"><code>${escapeHtml(openFence[2])}</code></pre></div>`;
+      const key = `${placeholderPrefix}${codeBlocks.length}___`;
+      codeBlocks.push(html);
+      processed = processed.slice(0, openFence.index) + key;
     }
-    const withInline = withFences.replace(/`([^`\n]+)`/g, '<code>$1</code>');
-    const withBold = withInline.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    return thinkHtml + withBold;
+
+    // 3. Process line-based markdown: Tables, Headers, Blockquotes, Lists, HR
+    const lines = processed.split('\n');
+    const outLines = [];
+    let tableBuffer = [];
+    let inTable = false;
+    let inList = false;
+    let listType = 'ul';
+
+    function isSepLine(l) {
+      const t = (l || '').trim();
+      return /^\|?(\s*:?-{2,}:?\s*\|)+\s*:?-{2,}:?\s*\|?$/.test(t);
+    }
+
+    function splitCells(l) {
+      let t = (l || '').trim();
+      if (t.startsWith('|')) t = t.slice(1);
+      if (t.endsWith('|')) t = t.slice(0, -1);
+      return t.split('|').map(c => c.trim());
+    }
+
+    function flushTable() {
+      if (tableBuffer.length < 2 || !isSepLine(tableBuffer[1])) {
+        const fallback = tableBuffer.map(l => formatInline(escapeHtml(l))).join('<br>');
+        tableBuffer = [];
+        return fallback;
+      }
+      const headers = splitCells(tableBuffer[0]);
+      let html = '<div class="md-table-wrap"><table class="md-table"><thead><tr>';
+      headers.forEach(h => {
+        html += `<th>${formatInline(escapeHtml(h))}</th>`;
+      });
+      html += '</tr></thead><tbody>';
+
+      for (let i = 2; i < tableBuffer.length; i++) {
+        const row = tableBuffer[i].trim();
+        if (!row) continue;
+        const cells = splitCells(row);
+        html += '<tr>';
+        headers.forEach((_, colIdx) => {
+          const cellText = cells[colIdx] !== undefined ? cells[colIdx] : '';
+          html += `<td>${formatInline(escapeHtml(cellText))}</td>`;
+        });
+        html += '</tr>';
+      }
+      html += '</tbody></table></div>';
+      tableBuffer = [];
+      return html;
+    }
+
+    function flushList() {
+      if (!inList) return '';
+      inList = false;
+      return `</${listType}>`;
+    }
+
+    function formatInline(str) {
+      return str
+        .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/(^|[^\*])\*([^\*]+)\*([^\*]|$)/g, '$1<em>$2</em>$3')
+        .replace(/\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="msg-link">$1</a>');
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+      const rawLine = lines[i];
+      const trimmed = rawLine.trim();
+
+      // Table detection
+      const hasPipe = trimmed.includes('|');
+      if (!inTable) {
+        if (hasPipe && i + 1 < lines.length && isSepLine(lines[i + 1])) {
+          if (inList) outLines.push(flushList());
+          inTable = true;
+          tableBuffer.push(rawLine);
+          continue;
+        }
+      } else {
+        if (hasPipe || isSepLine(trimmed)) {
+          tableBuffer.push(rawLine);
+          continue;
+        } else {
+          outLines.push(flushTable());
+          inTable = false;
+        }
+      }
+
+      // Code Block placeholder
+      if (trimmed.startsWith(placeholderPrefix)) {
+        if (inList) outLines.push(flushList());
+        outLines.push(rawLine);
+        continue;
+      }
+
+      // Horizontal Rule
+      if (/^(?:---|\*\*\*|___)\s*$/.test(trimmed)) {
+        if (inList) outLines.push(flushList());
+        outLines.push('<hr class="msg-hr">');
+        continue;
+      }
+
+      // Headings
+      const headingMatch = trimmed.match(/^(#{1,4})\s+(.+)$/);
+      if (headingMatch) {
+        if (inList) outLines.push(flushList());
+        const level = headingMatch[1].length;
+        const title = formatInline(escapeHtml(headingMatch[2]));
+        outLines.push(`<h${level} class="msg-h${level}">${title}</h${level}>`);
+        continue;
+      }
+
+      // Blockquotes
+      if (trimmed.startsWith('&gt; ') || trimmed.startsWith('> ')) {
+        if (inList) outLines.push(flushList());
+        const quoteText = trimmed.replace(/^(&gt;|>)\s*/, '');
+        outLines.push(`<blockquote class="msg-quote">${formatInline(escapeHtml(quoteText))}</blockquote>`);
+        continue;
+      }
+
+      // Lists (Unordered and Ordered)
+      const ulMatch = trimmed.match(/^[-*+]\s+(.+)$/);
+      const olMatch = trimmed.match(/^(\d+)\.\s+(.+)$/);
+      if (ulMatch || olMatch) {
+        const isOl = !!olMatch;
+        const targetType = isOl ? 'ol' : 'ul';
+        const content = isOl ? olMatch[2] : ulMatch[1];
+        if (!inList || listType !== targetType) {
+          if (inList) outLines.push(flushList());
+          inList = true;
+          listType = targetType;
+          outLines.push(`<${listType} class="msg-list">`);
+        }
+        outLines.push(`<li>${formatInline(escapeHtml(content))}</li>`);
+        continue;
+      } else if (inList) {
+        outLines.push(flushList());
+      }
+
+      // Regular paragraph line
+      if (trimmed === '') {
+        outLines.push('');
+      } else {
+        outLines.push(`<p class="msg-p">${formatInline(escapeHtml(rawLine))}</p>`);
+      }
+    }
+
+    if (inTable) outLines.push(flushTable());
+    if (inList) outLines.push(flushList());
+
+    let rendered = outLines.join('\n');
+
+    // 4. Restore code blocks
+    codeBlocks.forEach((codeHtml, idx) => {
+      rendered = rendered.replace(`${placeholderPrefix}${idx}___`, codeHtml);
+    });
+
+    return thinkHtml + rendered;
   }
 
   function storageSafeStore(source){

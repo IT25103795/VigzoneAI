@@ -5150,3 +5150,187 @@
     font-size:12px;
   }
 }
+
+/* ==========================================================================
+   MARKDOWN TYPOGRAPHY & GLASSMORPHIC TABLE STYLES
+   ========================================================================== */
+
+/* Assistant Message Typography */
+.msg.assistant .bubble{
+  white-space: normal; /* Allow markdown tables and blocks to lay out properly */
+}
+.msg-p{
+  margin: 7px 0;
+  line-height: 1.64;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.msg-p:first-child{
+  margin-top: 0;
+}
+.msg-p:last-child{
+  margin-bottom: 0;
+}
+
+/* Headings */
+.msg-h1{
+  font-family:'Sora', 'Inter', sans-serif;
+  font-size:18px;
+  font-weight:700;
+  color:var(--text, #f8fafc);
+  margin:18px 0 8px;
+  letter-spacing:-0.01em;
+}
+.msg-h2{
+  font-family:'Sora', 'Inter', sans-serif;
+  font-size:16px;
+  font-weight:700;
+  color:var(--text, #f8fafc);
+  margin:16px 0 8px;
+  padding-bottom:5px;
+  border-bottom:1px solid rgba(255,255,255,0.08);
+  letter-spacing:-0.01em;
+}
+.msg-h3{
+  font-family:'Sora', 'Inter', sans-serif;
+  font-size:14.5px;
+  font-weight:600;
+  color:var(--text, #f8fafc);
+  margin:14px 0 6px;
+}
+.msg-h4{
+  font-size:13.5px;
+  font-weight:600;
+  color:var(--text-muted, #94a3b8);
+  margin:12px 0 4px;
+}
+
+/* Lists */
+.msg-list{
+  margin:8px 0 10px 0;
+  padding-left:22px;
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+  line-height:1.6;
+}
+.msg-list li{
+  color:var(--text, #f1f5f9);
+  padding-left:3px;
+}
+.msg-list li::marker{
+  color:var(--accent, #3b82f6);
+  font-weight:600;
+}
+
+/* Blockquotes */
+.msg-quote{
+  margin:12px 0;
+  padding:10px 14px;
+  border-left:3px solid var(--accent, #3b82f6);
+  background:rgba(59,130,246,0.07);
+  border-radius:0 10px 10px 0;
+  color:var(--text-muted, #cbd5e1);
+  font-style:italic;
+  line-height:1.55;
+}
+
+/* Horizontal Rule */
+.msg-hr{
+  border:none;
+  height:1px;
+  background:linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+  margin:18px 0;
+}
+
+/* Links */
+.msg-link{
+  color:#38bdf8;
+  text-decoration:underline;
+  text-underline-offset:3px;
+  transition:color .15s ease;
+}
+.msg-link:hover{
+  color:#7dd3fc;
+}
+
+/* ── Glassmorphic Markdown Table ────────────────────────────────────────── */
+.md-table-wrap{
+  width:100%;
+  overflow-x:auto;
+  margin:14px 0;
+  border-radius:12px;
+  border:1px solid var(--border-subtle, rgba(255,255,255,0.12));
+  background:rgba(15,17,26,0.55);
+  backdrop-filter:blur(14px);
+  box-shadow:0 6px 20px rgba(0,0,0,0.22);
+}
+.md-table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:13px;
+  line-height:1.52;
+  white-space:normal;
+  text-align:left;
+}
+.md-table thead{
+  background:rgba(255,255,255,0.06);
+  border-bottom:1px solid var(--border, rgba(255,255,255,0.14));
+}
+.md-table th{
+  padding:10px 14px;
+  font-family:'Sora', 'Inter', sans-serif;
+  font-size:11.5px;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:0.05em;
+  color:var(--text, #f8fafc);
+  white-space:nowrap;
+}
+.md-table td{
+  padding:10px 14px;
+  border-bottom:1px solid rgba(255,255,255,0.05);
+  color:var(--text-muted, #cbd5e1);
+  vertical-align:top;
+}
+.md-table tbody tr:last-child td{
+  border-bottom:none;
+}
+.md-table tbody tr:nth-child(even){
+  background:rgba(255,255,255,0.02);
+}
+.md-table tbody tr:hover td{
+  background:rgba(255,255,255,0.045);
+  color:var(--text, #f8fafc);
+}
+.md-table td code{
+  font-family:'JetBrains Mono', monospace;
+  font-size:11.5px;
+  padding:2px 6px;
+  border-radius:6px;
+  background:rgba(139,92,246,0.14);
+  color:#c4b5fd;
+  border:1px solid rgba(139,92,246,0.25);
+  white-space:nowrap;
+}
+.md-table td strong{
+  color:var(--text, #f8fafc);
+  font-weight:600;
+}
+
+/* Custom horizontal scrollbar for tables */
+.md-table-wrap::-webkit-scrollbar{
+  height:6px;
+}
+.md-table-wrap::-webkit-scrollbar-track{
+  background:rgba(0,0,0,0.1);
+  border-radius:999px;
+}
+.md-table-wrap::-webkit-scrollbar-thumb{
+  background:rgba(255,255,255,0.18);
+  border-radius:999px;
+}
+.md-table-wrap::-webkit-scrollbar-thumb:hover{
+  background:rgba(255,255,255,0.3);
+}
+
