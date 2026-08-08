@@ -204,16 +204,16 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "default-src 'self'; "
             "base-uri 'self'; object-src 'none'; frame-ancestors 'none'; "
             "frame-src 'self' https://accounts.google.com https://drive.google.com "
-            "https://docs.google.com; "
+            "https://docs.google.com https://buy.paddle.com https://checkout.paddle.com; "
             "form-action 'self' https://accounts.google.com; "
             "script-src 'self' 'unsafe-inline' https://accounts.google.com "
-            "https://apis.google.com; "
+            "https://apis.google.com https://cdn.paddle.com; "
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
             "font-src 'self' data: https://fonts.gstatic.com; "
             "img-src 'self' data: blob: https:; media-src 'self' data: blob:; "
             "connect-src 'self' https://api.groq.com https://api.openai.com "
             "https://*.googleapis.com https://text.pollinations.ai "
-            "https://image.pollinations.ai"
+            "https://image.pollinations.ai https://*.paddle.com"
         )
         return response
 
