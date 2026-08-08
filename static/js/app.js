@@ -7010,6 +7010,8 @@ Requirements:
                setTimeout(() => window.location.reload(), 1500);
             } else if (data.name === "checkout.closed") {
                suiteToast?.('Checkout closed.');
+            } else if (data.name === "checkout.error") {
+               console.error('Paddle Checkout Error:', data);
             }
           }
         }); 
