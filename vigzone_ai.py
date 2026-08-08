@@ -209,8 +209,8 @@ OLLAMA_API_URL = f"{OLLAMA_BASE_URL}/chat/completions"
 # Stable text models: GPT-OSS 20B handles clearly simple requests quickly and
 # cheaply; GPT-OSS 120B remains the quality-first default for everything else.
 # Qwen 3.6 is the current Groq model that accepts image input.
-DEFAULT_MODEL = _configured_model("GROQ_MODEL", "openai/gpt-oss-120b")
-FAST_MODEL = _configured_model("GROQ_FAST_MODEL", "openai/gpt-oss-20b")
+DEFAULT_MODEL = _configured_model("GROQ_MODEL", "llama-3.3-70b-versatile")
+FAST_MODEL = _configured_model("GROQ_FAST_MODEL", "llama-3.1-8b-instant")
 COMPLEX_MODEL = _configured_model("GROQ_COMPLEX_MODEL", DEFAULT_MODEL)
 VISION_MODEL = _configured_model("GROQ_VISION_MODEL", "qwen/qwen3.6-27b")
 VISION_FALLBACK_MODELS = [
@@ -299,7 +299,7 @@ MODEL_ROUTING_FAST_MAX_CONTEXT_TOKENS = max(
 # Model fallback: if the primary Groq model is temporarily rate-limited or down,
 # try these backup models before failing the user-facing request. Use a comma
 # separated GROQ_BACKUP_MODELS value, or a single GROQ_BACKUP_MODEL.
-_DEFAULT_GROQ_BACKUP_MODELS = "openai/gpt-oss-120b,openai/gpt-oss-20b"
+_DEFAULT_GROQ_BACKUP_MODELS = "llama-3.3-70b-versatile,llama-3.1-8b-instant,deepseek-r1-distill-llama-70b,openai/gpt-oss-120b,openai/gpt-oss-20b"
 _raw_backup_models = os.getenv(
     "GROQ_BACKUP_MODELS",
     os.getenv("GROQ_BACKUP_MODEL", _DEFAULT_GROQ_BACKUP_MODELS),
@@ -627,6 +627,12 @@ def select_chat_model(
 
     if contains_image:
         return VISION_MODEL, "vision"
+
+    # If the user explicitly chose a specific model from the model picker,
+    # honor their selection directly so they receive that model's distinct capabilities.
+    if requested and requested in ALLOWED_CHAT_MODELS and requested != DEFAULT_MODEL:
+        return requested, f"user_selected:{requested}"
+
     if not MODEL_ROUTING_ENABLED:
         return requested, "routing_disabled"
 
