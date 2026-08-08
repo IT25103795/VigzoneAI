@@ -2519,10 +2519,16 @@ async def paddle_webhook(request: Request):
     customer_email = str(customer_email).strip().lower()
 
     # Determine plan from price ID
-    items = data.get("items")
     price_id = ""
+    items = data.get("items")
+    details = data.get("details")
+    
     if isinstance(items, list) and len(items) > 0:
+        # subscription.created payload
         price_id = str(items[0].get("price", {}).get("id", ""))
+    elif isinstance(details, dict) and isinstance(details.get("line_items"), list) and len(details["line_items"]) > 0:
+        # transaction.completed payload
+        price_id = str(details["line_items"][0].get("price_id", ""))
     
     if not price_id:
         price_id = str(data.get("product_id", "") or data.get("passthrough", ""))
@@ -2536,9 +2542,12 @@ async def paddle_webhook(request: Request):
 
     active_events = {
         "subscription_created",
+        "subscription.created",
         "subscription_updated",
+        "subscription.updated",
         "subscription_payment_succeeded",
         "transaction_completed",
+        "transaction.completed",
     }
     cancel_events = {
         "subscription_cancelled",
