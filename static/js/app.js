@@ -6963,12 +6963,9 @@ Requirements:
   usageCycleRefreshTimer = setInterval(refreshUsageCycle, 60000);
 
   // ── Paddle Billing / Pricing Modal ──────────────────────────────────────────
-  const pricingModalOverlay = $('#pricingModalOverlay');
-  const pricingModalCloseBtn = $('#pricingModalCloseBtn');
-  // Elements
   const pricingModalOverlay = document.getElementById('pricingModalOverlay');
-  const pricingCloseBtn = document.getElementById('pricingCloseBtn');
-  const sidebarUpgradeBtn = document.getElementById('sidebarUpgradeBtn');
+  const pricingCloseBtn = document.getElementById('pricingModalCloseBtn');
+  const sidebarUpgradeBtn = document.getElementById('upgradePlanBtn');
 
   function openPricingModal() {
     if (pricingModalOverlay) pricingModalOverlay.classList.add('visible');
