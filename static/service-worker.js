@@ -1,6 +1,6 @@
 /* Vigzone AI offline service worker */
-const VIGZONE_SW_VERSION = 'vigzone-v5.2.0-tables-r1';
-const UI_ASSET_REVISION = 'v520-tables-r1';
+const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r11';
+const UI_ASSET_REVISION = 'doodle-themes-r1';
 const SHELL_CACHE = `vigzone-shell-${VIGZONE_SW_VERSION}`;
 const RUNTIME_CACHE = `vigzone-runtime-${VIGZONE_SW_VERSION}`;
 
