@@ -121,17 +121,19 @@ Notes:
 - Lowered hands-free mic level threshold for quieter microphones.
 - Vigzone no longer announces date/time in casual greetings; it only mentions time/date when the user asks or the answer needs it.
 
-## Custom chat wallpaper settings
+## Curated doodle chat themes
 
 - Added a Settings row below Export Chat in the sidebar.
 - Moved account identity and Sign out into Settings.
-- Added Chat theme controls:
-  - browse a local image from the user's device
-  - apply it as the chat wallpaper
-  - adjust blur
-  - adjust brightness
-  - remove wallpaper
-- Wallpaper is saved in browser localStorage only; it is not uploaded to the server.
+- Replaced user-uploaded wallpapers and the light/dark switch with six coordinated doodle themes:
+  - Charcoal
+  - Midnight
+  - Forest
+  - Plum
+  - Ember
+  - Paper
+- Each theme controls the complete interface palette and preserves readable chat contrast.
+- The selected theme is saved locally, and legacy wallpaper data is removed automatically.
 
 ## PWA desktop icon fix
 
@@ -143,12 +145,12 @@ Notes:
 ## Bottom blur bar removal
 
 - Removed the horizontal fade/blur bar behind the composer area in both light and dark modes.
-- The area behind the message box now shows the normal Vigzone background or the user's custom wallpaper.
+- The area behind the message box now shows the active Vigzone doodle theme.
 
 ## Roller-door composer shield
 
 - Chat bubbles no longer scroll visually under the message box.
-- The bottom composer area now acts like a roller door: messages disappear behind it while the normal theme or custom wallpaper remains visible.
+- The bottom composer area now acts like a roller door: messages disappear behind it while the active doodle theme remains visible.
 - No blur/fade bar is used.
 
 ## Roller-door double-layer fix
@@ -161,7 +163,7 @@ Notes:
 - Removed the composer shield/background layer completely.
 - Composer is now a real bottom section in the flex layout instead of an absolute overlay.
 - The chat scroll area ends above the composer, so messages cannot pass under the message box.
-- This removes the two-layer wallpaper strip issue.
+- This removes the old two-layer background strip issue.
 
 
 ## Clean composer dock fix
@@ -169,7 +171,7 @@ Notes:
 - Removed all earlier stacked bottom/composer patches.
 - Composer is now docked below chat as a normal flex item.
 - Messages no longer slide behind the message box.
-- Removed duplicate/dark wallpaper layer caused by stacked overlay patches.
+- Removed the duplicate background layer caused by stacked overlay patches.
 
 ## FINAL single composer layout repair
 
@@ -182,8 +184,8 @@ Notes:
 ## New chat greeting visibility card
 
 - Added a glass-style background card behind the new-chat greeting information.
-- Works in both light and dark themes.
-- Improves readability over custom wallpapers and the default Vigzone background.
+- Works across all curated doodle themes.
+- Improves readability over every supported palette.
 
 ## Remove user message label
 
@@ -241,8 +243,8 @@ Notes:
 ## Full-screen floating top controls
 
 - Removed the visible white/dark top navigation bar.
-- Header controls now float directly on the chat theme/wallpaper as blurred glass buttons.
-- Toggle history, Vigzone logo/status, usage cycle, and new chat remain visible in both light/dark themes.
+- Header controls now float directly on the doodle theme as blurred glass buttons.
+- Toggle history, Vigzone logo/status, usage cycle, and new chat remain visible in every theme.
 - Chat area now uses the full top space with safe padding so messages do not hide under the controls.
 
 ## Remove assistant response logo

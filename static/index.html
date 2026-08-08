@@ -13,15 +13,30 @@
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Sinhala:wght@400;500;600&display=swap" rel="stylesheet">
   <script>
     (function () {
-      var key = 'vigzone_theme';
-      var saved = localStorage.getItem(key);
-      var theme = (saved === 'light' || saved === 'dark')
-              ? saved
-              : (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
-      document.documentElement.setAttribute('data-theme', theme);
+      var key = 'vigzone_doodle_theme';
+      var tones = {
+        charcoal: 'dark',
+        midnight: 'dark',
+        forest: 'dark',
+        plum: 'dark',
+        ember: 'dark',
+        paper: 'light'
+      };
+      var saved = 'charcoal';
+      try {
+        var stored = localStorage.getItem(key);
+        var legacyTone = localStorage.getItem('vigzone_theme');
+        saved = tones[stored] ? stored : (legacyTone === 'light' ? 'paper' : 'charcoal');
+        ['vigzone_chat_wallpaper_data_url', 'vigzone_chat_wallpaper_blur', 'vigzone_chat_wallpaper_brightness']
+          .forEach(function (legacyKey) { localStorage.removeItem(legacyKey); });
+        localStorage.setItem(key, saved);
+        localStorage.removeItem('vigzone_theme');
+      } catch (_) {}
+      document.documentElement.setAttribute('data-chat-theme', saved);
+      document.documentElement.setAttribute('data-theme', tones[saved] || 'dark');
     })();
   </script>
-  <link rel="stylesheet" href="/static/css/styles.css?v=message-menu-r1">
+  <link rel="stylesheet" href="/static/css/styles.css?v=doodle-themes-r1">
 </head>
 <body style="display: none;">
 <div class="offline-status-banner" id="offlineStatusBanner" role="status" aria-live="polite">
@@ -170,10 +185,9 @@
       </div>
 
       <div class="sidebar-footer-row">
-        <span class="history-label" style="padding:0;margin:0;">Appearance</span>
-        <button class="sidebar-theme-btn" id="themeToggleBtnSidebar" aria-label="Switch to light theme" title="Toggle theme">
-          <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
-          <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><line x1="12" y1="2" x2="12" y2="5"></line><line x1="12" y1="19" x2="12" y2="22"></line><line x1="4.22" y1="4.22" x2="6.34" y2="6.34"></line><line x1="17.66" y1="17.66" x2="19.78" y2="19.78"></line><line x1="2" y1="12" x2="5" y2="12"></line><line x1="19" y1="12" x2="22" y2="12"></line><line x1="4.22" y1="19.78" x2="6.34" y2="17.66"></line><line x1="17.66" y1="6.34" x2="19.78" y2="4.22"></line></svg>
+        <span class="history-label" style="padding:0;margin:0;">Chat theme</span>
+        <button class="sidebar-theme-btn" id="chatThemeBtnSidebar" aria-label="Choose chat theme" title="Choose chat theme">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18h1.2a1.8 1.8 0 0 0 1.25-3.08l-.2-.2a1.65 1.65 0 0 1 1.17-2.82H17a4 4 0 0 0 4-4A7.9 7.9 0 0 0 12 3Z"></path><circle cx="7.5" cy="10" r="1"></circle><circle cx="10" cy="6.8" r="1"></circle><circle cx="15" cy="7.3" r="1"></circle></svg>
         </button>
       </div>
       <div class="sidebar-footer-row">
@@ -257,9 +271,8 @@
 
 <div class="sidebar-quick-launcher" id="sidebarQuickLauncher" aria-label="Collapsed sidebar quick tools">
   <div class="quick-launcher-panel" id="quickLauncherPanel" aria-hidden="true">
-    <button class="quick-launcher-icon" id="quickThemeBtn" type="button" title="Appearance" aria-label="Appearance">
-      <svg class="quick-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
-      <svg class="quick-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><line x1="12" y1="2" x2="12" y2="5"></line><line x1="12" y1="19" x2="12" y2="22"></line><line x1="4.22" y1="4.22" x2="6.34" y2="6.34"></line><line x1="17.66" y1="17.66" x2="19.78" y2="19.78"></line><line x1="2" y1="12" x2="5" y2="12"></line><line x1="19" y1="12" x2="22" y2="12"></line><line x1="4.22" y1="19.78" x2="6.34" y2="17.66"></line><line x1="17.66" y1="6.34" x2="19.78" y2="4.22"></line></svg>
+    <button class="quick-launcher-icon" id="quickThemeBtn" type="button" title="Chat theme" aria-label="Choose chat theme">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 0 18h1.2a1.8 1.8 0 0 0 1.25-3.08l-.2-.2a1.65 1.65 0 0 1 1.17-2.82H17a4 4 0 0 0 4-4A7.9 7.9 0 0 0 12 3Z"></path><circle cx="7.5" cy="10" r="1"></circle><circle cx="10" cy="6.8" r="1"></circle><circle cx="15" cy="7.3" r="1"></circle></svg>
     </button>
     <button class="quick-launcher-icon" id="quickWorkspaceBtn" type="button" title="Workspace" aria-label="Workspace">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h7l2 2h9v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2"></path></svg>
@@ -373,38 +386,50 @@
       </div>
     </div>
 
-    <div class="settings-section">
+    <div class="settings-section" id="chatThemeSettingsSection">
       <div class="settings-section-head">
         <div>
-          <div class="settings-section-title">Chat theme</div>
-          <div class="settings-section-sub">Choose an image from this device only.</div>
+          <div class="settings-section-title">Doodle themes</div>
+          <div class="settings-section-sub">Choose a complete, readable look for your chat.</div>
         </div>
-        <button class="sidebar-teach-btn settings-browse-btn" id="chatWallpaperBrowseBtn" aria-label="Browse wallpaper image" title="Browse image">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"></rect><circle cx="8.5" cy="10" r="1.5"></circle><path d="M21 15l-4.2-4.2a2 2 0 0 0-2.8 0L5 19"></path></svg>
+        <span class="theme-safe-badge">Contrast safe</span>
+      </div>
+
+      <div class="chat-theme-grid" id="chatThemeGrid" role="radiogroup" aria-label="Doodle chat theme">
+        <button class="chat-theme-option" type="button" data-chat-theme-option="charcoal" role="radio" aria-checked="false">
+          <span class="chat-theme-swatch" aria-hidden="true"><span class="theme-preview-bubble"></span></span>
+          <span class="chat-theme-option-copy"><strong>Charcoal</strong><small>Graphite with coral</small></span>
+          <span class="chat-theme-option-check" aria-hidden="true">✓</span>
         </button>
-        <input type="file" id="chatWallpaperInput" accept="image/*" hidden />
-      </div>
-
-      <div class="wallpaper-preview" id="wallpaperPreview">
-        <div class="wallpaper-preview-empty" id="wallpaperPreviewEmpty">No custom wallpaper yet</div>
-      </div>
-
-      <div class="wallpaper-controls">
-        <label class="wallpaper-control-row">
-          <span>Blur</span>
-          <input type="range" id="wallpaperBlurRange" min="0" max="20" step="1" value="0" />
-          <output id="wallpaperBlurValue">0px</output>
-        </label>
-        <label class="wallpaper-control-row">
-          <span>Brightness</span>
-          <input type="range" id="wallpaperBrightnessRange" min="35" max="140" step="5" value="100" />
-          <output id="wallpaperBrightnessValue">100%</output>
-        </label>
+        <button class="chat-theme-option" type="button" data-chat-theme-option="midnight" role="radio" aria-checked="false">
+          <span class="chat-theme-swatch" aria-hidden="true"><span class="theme-preview-bubble"></span></span>
+          <span class="chat-theme-option-copy"><strong>Midnight</strong><small>Deep blue with sky</small></span>
+          <span class="chat-theme-option-check" aria-hidden="true">✓</span>
+        </button>
+        <button class="chat-theme-option" type="button" data-chat-theme-option="forest" role="radio" aria-checked="false">
+          <span class="chat-theme-swatch" aria-hidden="true"><span class="theme-preview-bubble"></span></span>
+          <span class="chat-theme-option-copy"><strong>Forest</strong><small>Evergreen with mint</small></span>
+          <span class="chat-theme-option-check" aria-hidden="true">✓</span>
+        </button>
+        <button class="chat-theme-option" type="button" data-chat-theme-option="plum" role="radio" aria-checked="false">
+          <span class="chat-theme-swatch" aria-hidden="true"><span class="theme-preview-bubble"></span></span>
+          <span class="chat-theme-option-copy"><strong>Plum</strong><small>Deep violet with lilac</small></span>
+          <span class="chat-theme-option-check" aria-hidden="true">✓</span>
+        </button>
+        <button class="chat-theme-option" type="button" data-chat-theme-option="ember" role="radio" aria-checked="false">
+          <span class="chat-theme-swatch" aria-hidden="true"><span class="theme-preview-bubble"></span></span>
+          <span class="chat-theme-option-copy"><strong>Ember</strong><small>Warm cocoa with flame</small></span>
+          <span class="chat-theme-option-check" aria-hidden="true">✓</span>
+        </button>
+        <button class="chat-theme-option" type="button" data-chat-theme-option="paper" role="radio" aria-checked="false">
+          <span class="chat-theme-swatch" aria-hidden="true"><span class="theme-preview-bubble"></span></span>
+          <span class="chat-theme-option-copy"><strong>Paper</strong><small>Soft sand with terracotta</small></span>
+          <span class="chat-theme-option-check" aria-hidden="true">✓</span>
+        </button>
       </div>
 
       <div class="settings-actions-row">
         <button class="deep-action-btn" id="versionOpenBtn" type="button">Check updates</button>
-        <button class="deep-action-btn" id="resetWallpaperBtn" type="button">Remove wallpaper</button>
       </div>
     </div>
   </div>
@@ -552,7 +577,7 @@
 </div>
 
 <div class="main-col">
-  <div class="chat-wallpaper-layer" id="chatWallpaperLayer" aria-hidden="true"></div>
+  <div class="chat-theme-layer" aria-hidden="true"></div>
   <header>
     <div class="header-left">
       <button class="sidebar-toggle-btn" id="sidebarToggleBtn" aria-label="Toggle chat history" title="Toggle chat history">
@@ -757,6 +782,6 @@
 </div>
 
 
-  <script src="/static/js/app.js?v=message-menu-r1"></script>
+  <script src="/static/js/app.js?v=doodle-themes-r1"></script>
 </body>
 </html>

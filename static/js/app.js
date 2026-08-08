@@ -68,16 +68,9 @@
   const sandboxPreviewOverlay = $('#sandboxPreviewOverlay');
   const sandboxPreviewCloseBtn = $('#sandboxPreviewCloseBtn');
   const sandboxPreviewFrame = $('#sandboxPreviewFrame');
-  const chatWallpaperLayer = $('#chatWallpaperLayer');
-  const chatWallpaperBrowseBtn = $('#chatWallpaperBrowseBtn');
-  const chatWallpaperInput = $('#chatWallpaperInput');
-  const wallpaperPreview = $('#wallpaperPreview');
-  const wallpaperPreviewEmpty = $('#wallpaperPreviewEmpty');
-  const wallpaperBlurRange = $('#wallpaperBlurRange');
-  const wallpaperBrightnessRange = $('#wallpaperBrightnessRange');
-  const wallpaperBlurValue = $('#wallpaperBlurValue');
-  const wallpaperBrightnessValue = $('#wallpaperBrightnessValue');
-  const resetWallpaperBtn = $('#resetWallpaperBtn');
+  const chatThemeBtnSidebar = $('#chatThemeBtnSidebar');
+  const chatThemeSettingsSection = $('#chatThemeSettingsSection');
+  const chatThemeGrid = $('#chatThemeGrid');
   const teachVigzoneBtn = $('#teachVigzoneBtn');
   const learningModalOverlay = $('#learningModalOverlay');
   const learningModalCloseBtn = $('#learningModalCloseBtn');
@@ -250,7 +243,21 @@
   let CONV_STORE_KEY = scopedLocalKey(CONV_STORE_KEY_BASE);
   let LEGACY_KEY = scopedLocalKey(LEGACY_KEY_BASE);
   const SIDEBAR_KEY = 'vigzone_sidebar_collapsed';
-  const THEME_KEY = 'vigzone_theme';
+  const CHAT_THEME_KEY = 'vigzone_doodle_theme';
+  const CHAT_THEMES = Object.freeze({
+    charcoal: { tone:'dark', browserColor:'#0c0f16' },
+    midnight: { tone:'dark', browserColor:'#071827' },
+    forest: { tone:'dark', browserColor:'#071b19' },
+    plum: { tone:'dark', browserColor:'#1a0e21' },
+    ember: { tone:'dark', browserColor:'#21100e' },
+    paper: { tone:'light', browserColor:'#f5eedf' }
+  });
+  const LEGACY_APPEARANCE_KEYS = Object.freeze([
+    'vigzone_chat_wallpaper_data_url',
+    'vigzone_chat_wallpaper_blur',
+    'vigzone_chat_wallpaper_brightness',
+    'vigzone_theme'
+  ]);
 
   function safeStorageScope(value){
     return String(value || 'guest').trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'guest';
@@ -259,29 +266,48 @@
     return `${base}__${safeStorageScope(accountStorageScope)}`;
   }
 
-  function getTheme(){
-    const theme = document.documentElement.getAttribute('data-theme');
-    return theme === 'light' ? 'light' : 'dark';
+  function getChatTheme(){
+    const active = document.documentElement.getAttribute('data-chat-theme');
+    if (CHAT_THEMES[active]) return active;
+    try {
+      const saved = localStorage.getItem(CHAT_THEME_KEY);
+      if (CHAT_THEMES[saved]) return saved;
+    } catch {}
+    return 'charcoal';
   }
 
-  function applyTheme(theme, persist){
-    const next = theme === 'light' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', next);
-    if (persist) localStorage.setItem(THEME_KEY, next);
-    const label = next === 'light' ? 'Switch to dark theme' : 'Switch to light theme';
-    document.querySelectorAll('#themeToggleBtn, #themeToggleBtnSidebar').forEach((btn) => {
-      btn.setAttribute('aria-label', label);
-      btn.title = label;
+  function applyChatTheme(themeId, persist){
+    const next = CHAT_THEMES[themeId] ? themeId : 'charcoal';
+    const theme = CHAT_THEMES[next];
+    document.documentElement.setAttribute('data-chat-theme', next);
+    document.documentElement.setAttribute('data-theme', theme.tone);
+    if (persist) {
+      try { localStorage.setItem(CHAT_THEME_KEY, next); } catch {}
+    }
+    document.querySelectorAll('[data-chat-theme-option]').forEach((option) => {
+      const selected = option.dataset.chatThemeOption === next;
+      option.classList.toggle('selected', selected);
+      option.setAttribute('aria-checked', selected ? 'true' : 'false');
+      option.tabIndex = selected ? 0 : -1;
     });
     const meta = document.getElementById('themeColorMeta');
-    if (meta) meta.setAttribute('content', next === 'light' ? '#f3f5fb' : '#090a0f');
+    if (meta) meta.setAttribute('content', theme.browserColor);
   }
 
-  function toggleTheme(){
+  function selectChatTheme(themeId){
     document.documentElement.classList.add('theme-transition');
-    applyTheme(getTheme() === 'light' ? 'dark' : 'light', true);
+    applyChatTheme(themeId, true);
     window.setTimeout(() => document.documentElement.classList.remove('theme-transition'), 260);
   }
+
+  function clearLegacyAppearanceSettings(){
+    try { LEGACY_APPEARANCE_KEYS.forEach((key) => localStorage.removeItem(key)); } catch {}
+    document.body.classList.remove('has-chat-wallpaper');
+    ['--chat-wallpaper-image', '--chat-wallpaper-blur', '--chat-wallpaper-brightness']
+      .forEach((property) => document.documentElement.style.removeProperty(property));
+  }
+
+  clearLegacyAppearanceSettings();
 
   function genId(){
     return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -1146,7 +1172,10 @@
   }
 
   quickLauncherToggle?.addEventListener('click', toggleQuickLauncher);
-  quickThemeBtn?.addEventListener('click', () => quickClick($('#themeToggleBtnSidebar')));
+  quickThemeBtn?.addEventListener('click', () => {
+    closeQuickLauncher();
+    openChatThemePicker();
+  });
   quickWorkspaceBtn?.addEventListener('click', () => quickClick($('#workspaceSidebarBtn')));
   quickLearningBtn?.addEventListener('click', () => quickClick($('#teachVigzoneBtn')));
   quickBrainBtn?.addEventListener('click', () => quickClick($('#vigzoneBrainBtn')));
@@ -2935,10 +2964,7 @@
     document.body.style.display = 'flex';
   }
 
-  // ---------- Settings + device-only custom chat wallpaper ----------
-  const WALLPAPER_KEY = 'vigzone_chat_wallpaper_data_url';
-  const WALLPAPER_BLUR_KEY = 'vigzone_chat_wallpaper_blur';
-  const WALLPAPER_BRIGHTNESS_KEY = 'vigzone_chat_wallpaper_brightness';
+  // ---------- Settings + curated doodle chat themes ----------
 
   function openSettingsModal(){
     updateGreeting();
@@ -2950,98 +2976,36 @@
     settingsModalOverlay?.classList.remove('visible');
   }
 
-  function setWallpaperCss(imageDataUrl, blur = 0, brightness = 100){
-    const hasImage = !!imageDataUrl;
-    document.body.classList.toggle('has-chat-wallpaper', hasImage);
-    document.documentElement.style.setProperty('--chat-wallpaper-image', hasImage ? `url("${imageDataUrl}")` : 'none');
-    document.documentElement.style.setProperty('--chat-wallpaper-blur', `${Number(blur) || 0}px`);
-    document.documentElement.style.setProperty('--chat-wallpaper-brightness', `${(Number(brightness) || 100) / 100}`);
-
-    if (wallpaperPreview) {
-      wallpaperPreview.style.backgroundImage = hasImage ? `url("${imageDataUrl}")` : '';
-      wallpaperPreview.style.filter = hasImage ? `brightness(${(Number(brightness) || 100) / 100})` : '';
-    }
-    if (wallpaperPreviewEmpty) wallpaperPreviewEmpty.style.display = hasImage ? 'none' : '';
-    if (wallpaperBlurRange) wallpaperBlurRange.value = String(Number(blur) || 0);
-    if (wallpaperBrightnessRange) wallpaperBrightnessRange.value = String(Number(brightness) || 100);
-    if (wallpaperBlurValue) wallpaperBlurValue.textContent = `${Number(blur) || 0}px`;
-    if (wallpaperBrightnessValue) wallpaperBrightnessValue.textContent = `${Number(brightness) || 100}%`;
-  }
-
-  function loadChatWallpaper(){
-    let imageDataUrl = '';
-    let blur = 0;
-    let brightness = 100;
-    try {
-      imageDataUrl = localStorage.getItem(WALLPAPER_KEY) || '';
-      blur = Number(localStorage.getItem(WALLPAPER_BLUR_KEY) || 0);
-      brightness = Number(localStorage.getItem(WALLPAPER_BRIGHTNESS_KEY) || 100);
-    } catch {}
-    setWallpaperCss(imageDataUrl, blur, brightness);
-  }
-
-  function saveWallpaperSettings(){
-    const imageDataUrl = (() => {
-      try { return localStorage.getItem(WALLPAPER_KEY) || ''; } catch { return ''; }
-    })();
-    const blur = Number(wallpaperBlurRange?.value || 0);
-    const brightness = Number(wallpaperBrightnessRange?.value || 100);
-    try {
-      localStorage.setItem(WALLPAPER_BLUR_KEY, String(blur));
-      localStorage.setItem(WALLPAPER_BRIGHTNESS_KEY, String(brightness));
-    } catch {}
-    setWallpaperCss(imageDataUrl, blur, brightness);
+  function openChatThemePicker(){
+    openSettingsModal();
+    window.setTimeout(() => {
+      chatThemeSettingsSection?.scrollIntoView({ behavior:'smooth', block:'nearest' });
+      chatThemeGrid?.querySelector('[aria-checked="true"]')?.focus({ preventScroll:true });
+    }, 40);
   }
 
   settingsBtn?.addEventListener('click', openSettingsModal);
+  chatThemeBtnSidebar?.addEventListener('click', openChatThemePicker);
   settingsModalCloseBtn?.addEventListener('click', closeSettingsModal);
   settingsModalOverlay?.addEventListener('click', e => { if (e.target === settingsModalOverlay) closeSettingsModal(); });
 
-  chatWallpaperBrowseBtn?.addEventListener('click', () => chatWallpaperInput?.click());
-
-  chatWallpaperInput?.addEventListener('change', () => {
-    const file = chatWallpaperInput.files && chatWallpaperInput.files[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      alert('Please select an image file.');
-      chatWallpaperInput.value = '';
-      return;
-    }
-    if (file.size > 4 * 1024 * 1024) {
-      alert('Please choose an image smaller than 4 MB so it can be saved on this device.');
-      chatWallpaperInput.value = '';
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = String(reader.result || '');
-      try {
-        localStorage.setItem(WALLPAPER_KEY, dataUrl);
-      } catch (e) {
-        alert('This image is too large for browser storage. Try a smaller image.');
-        return;
-      }
-      saveWallpaperSettings();
-      chatWallpaperInput.value = '';
-    };
-    reader.onerror = () => alert('Could not read that image. Try another one.');
-    reader.readAsDataURL(file);
+  chatThemeGrid?.addEventListener('click', (event) => {
+    const option = event.target.closest('[data-chat-theme-option]');
+    if (!option || !chatThemeGrid.contains(option)) return;
+    selectChatTheme(option.dataset.chatThemeOption);
   });
 
-  wallpaperBlurRange?.addEventListener('input', saveWallpaperSettings);
-  wallpaperBrightnessRange?.addEventListener('input', saveWallpaperSettings);
-
-  resetWallpaperBtn?.addEventListener('click', () => {
-    try {
-      localStorage.removeItem(WALLPAPER_KEY);
-      localStorage.removeItem(WALLPAPER_BLUR_KEY);
-      localStorage.removeItem(WALLPAPER_BRIGHTNESS_KEY);
-    } catch {}
-    setWallpaperCss('', 0, 100);
+  chatThemeGrid?.addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+    const options = Array.from(chatThemeGrid.querySelectorAll('[data-chat-theme-option]'));
+    const currentIndex = options.indexOf(event.target.closest('[data-chat-theme-option]'));
+    if (currentIndex < 0 || !options.length) return;
+    event.preventDefault();
+    const direction = ['ArrowRight', 'ArrowDown'].includes(event.key) ? 1 : -1;
+    const next = options[(currentIndex + direction + options.length) % options.length];
+    next.focus();
+    selectChatTheme(next.dataset.chatThemeOption);
   });
-
-  loadChatWallpaper();
 
   async function signOut(){
     try {
@@ -6165,8 +6129,6 @@ A strong website should include: hero section, clear navigation, services/featur
 
   newChatBtn?.addEventListener('click', startNewChat);
   newChatBtnSidebar?.addEventListener('click', startNewChat);
-  document.getElementById('themeToggleBtn')?.addEventListener('click', toggleTheme);
-  document.getElementById('themeToggleBtnSidebar')?.addEventListener('click', toggleTheme);
 
   // Keyboard accessibility for history items and suggestions
   function setupKeyboardAccessibility() {
@@ -6600,7 +6562,7 @@ Requirements:
 
   // Setup keyboard accessibility after initial render
   setupKeyboardAccessibility();
-  applyTheme(getTheme(), false);
+  applyChatTheme(getChatTheme(), false);
   registerOfflineServiceWorker();
   setOfflineUiState();
   loadLiveConfig();

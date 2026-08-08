@@ -1,6 +1,6 @@
 /* Vigzone AI offline service worker */
-const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r10';
-const UI_ASSET_REVISION = 'message-menu-r1';
+const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r11';
+const UI_ASSET_REVISION = 'doodle-themes-r1';
 const SHELL_CACHE = `vigzone-shell-${VIGZONE_SW_VERSION}`;
 const RUNTIME_CACHE = `vigzone-runtime-${VIGZONE_SW_VERSION}`;
 
@@ -17,6 +17,7 @@ const APP_SHELL = [
   '/manifest.json',
   '/static/icons/favicon.svg',
   '/static/icons/vigzone-icon.svg',
+  '/static/icons/vigzone-doodles.svg?v=doodle-r1',
   '/static/icons/vigzone-icon-192.png',
   '/static/icons/vigzone-icon-512.png',
   '/api/public/config',
