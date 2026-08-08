@@ -7008,6 +7008,8 @@ Requirements:
             if (data.name === "checkout.completed") {
                suiteToast?.('🎉 Upgrade successful! Refreshing your plan…');
                setTimeout(() => window.location.reload(), 1500);
+            } else if (data.name === "checkout.closed") {
+               suiteToast?.('Checkout closed.');
             }
           }
         }); 
@@ -7029,11 +7031,13 @@ Requirements:
         return;
       }
       closePricingModal();
-      window.Paddle.Checkout.open({
-        items: [{ priceId: priceId, quantity: 1 }],
-        customer: { email: window._vigzoneUserEmail || '' },
-        closeCallback: () => suiteToast?.('Checkout closed.'),
-      });
+      const checkoutOptions = {
+        items: [{ priceId: priceId, quantity: 1 }]
+      };
+      if (window._vigzoneUserEmail) {
+        checkoutOptions.customer = { email: window._vigzoneUserEmail };
+      }
+      window.Paddle.Checkout.open(checkoutOptions);
     };
 
     document.getElementById('paddleProBtn')?.addEventListener('click', () => openCheckout(PADDLE_PRO_PRICE_ID));
