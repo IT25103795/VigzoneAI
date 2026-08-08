@@ -6629,7 +6629,7 @@ Requirements:
         badgeEl.style.background = meta.color;
       }
       if (iconEl) iconEl.textContent = meta.icon;
-      $$('.model-dropdown-item').forEach(item => {
+      document.querySelectorAll('.model-dropdown-item').forEach(item => {
         item.classList.toggle('active', item.dataset.model === modelId);
       });
     }
@@ -6643,13 +6643,13 @@ Requirements:
       if (!wrap?.contains(e.target)) wrap?.classList.remove('open');
     });
 
-    $$('.model-dropdown-item').forEach(item => {
+    document.querySelectorAll('.model-dropdown-item').forEach(item => {
       item.addEventListener('click', () => {
         const m = item.dataset.model;
         if (m) {
           updateUi(m);
           wrap?.classList.remove('open');
-          suiteToast?.(`Switched active AI model to ${item.querySelector('.model-item-header')?.textContent || m}`);
+          suiteToast?.(`Switched to ${item.querySelector('.model-item-header span:first-child')?.textContent || m}`);
         }
       });
     });
