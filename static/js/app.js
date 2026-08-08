@@ -7036,8 +7036,8 @@ Requirements:
       });
     };
 
-    document.getElementById('paddleProBtn')?.addEventListener('click', () => openCheckout(PADDLE_PRO_PRODUCT_ID));
-    document.getElementById('paddleTeamBtn')?.addEventListener('click', () => openCheckout(PADDLE_TEAM_PRODUCT_ID));
+    document.getElementById('paddleProBtn')?.addEventListener('click', () => openCheckout(PADDLE_PRO_PRICE_ID));
+    document.getElementById('paddleTeamBtn')?.addEventListener('click', () => openCheckout(PADDLE_TEAM_PRICE_ID));
   }
 
   // Store user email for Paddle checkout pre-fill, then init Paddle
