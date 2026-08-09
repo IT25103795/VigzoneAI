@@ -2027,11 +2027,11 @@ body.project-chat-active #input{padding-left:2px;}
 .project-open-chat-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
 
 @media(max-width:760px){
-  .project-chat-bar{top:calc(78px + env(safe-area-inset-top, 0px));width:calc(100% - 20px);padding:8px 9px;align-items:flex-start;}
+  .project-chat-bar{top:calc(70px + env(safe-area-inset-top, 0px));width:calc(100% - 20px);padding:8px 9px;align-items:flex-start;}
   .project-chat-actions button{padding:7px;font-size:0;}
   #projectChatNewBtn::after{content:'New';font-size:10px;}
   #projectChatSettingsBtn::after{content:'Files';font-size:10px;}
-  body.project-chat-active #chatInner,body.project-chat-active .chat-inner{padding-top:calc(148px + env(safe-area-inset-top, 0px))!important;}
+  body.project-chat-active #chatInner,body.project-chat-active .chat-inner{padding-top:calc(140px + env(safe-area-inset-top, 0px))!important;}
 }
 .team-hub-modal{max-width:760px;}
 .team-summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:14px;}
@@ -3850,9 +3850,9 @@ body.project-chat-active #input{padding-left:2px;}
     }
 
 
-    /* ---------- Floating desktop controls + protected mobile navigation ----------
-       Desktop keeps the floating controls. Mobile adds one continuous glass
-       band so messages cannot remain readable behind the navigation/cutout. */
+    /* ---------- Floating desktop controls + fading mobile navigation ----------
+       Mobile keeps a slim control row. A masked blur veil sits behind it and
+       disappears into the chat instead of forming a thick solid header band. */
     .main-col{
       grid-template-rows:minmax(0, 1fr) auto !important;
     }
@@ -4025,17 +4025,38 @@ body.project-chat-active #input{padding-left:2px;}
         top:0 !important;
         left:0 !important;
         right:0 !important;
-        min-height:calc(68px + env(safe-area-inset-top, 0px)) !important;
-        padding:calc(12px + env(safe-area-inset-top, 0px)) 10px 12px !important;
-        border-bottom:1px solid color-mix(in srgb, var(--border) 78%, var(--accent) 12%) !important;
+        min-height:calc(56px + env(safe-area-inset-top, 0px)) !important;
+        padding:calc(8px + env(safe-area-inset-top, 0px)) 10px 4px !important;
+        border:0 !important;
+        background:transparent !important;
+        box-shadow:none !important;
+        backdrop-filter:none !important;
+        -webkit-backdrop-filter:none !important;
+        isolation:isolate !important;
+      }
+      .main-col > header::before{
+        content:'' !important;
+        display:block !important;
+        position:absolute !important;
+        inset:0 0 auto !important;
+        height:calc(84px + env(safe-area-inset-top, 0px)) !important;
+        z-index:0 !important;
+        pointer-events:none !important;
         background:linear-gradient(180deg,
-          color-mix(in srgb, var(--chat-theme-base) 97%, transparent) 0%,
-          color-mix(in srgb, var(--chat-theme-base) 92%, transparent) 68%,
-          color-mix(in srgb, var(--chat-theme-base) 82%, transparent) 100%
+          color-mix(in srgb, var(--chat-theme-base) 90%, transparent) 0%,
+          color-mix(in srgb, var(--chat-theme-base) 72%, transparent) 52%,
+          color-mix(in srgb, var(--chat-theme-base) 34%, transparent) 76%,
+          transparent 100%
         ) !important;
-        box-shadow:0 18px 40px -28px var(--composer-shadow) !important;
-        backdrop-filter:blur(28px) saturate(1.18) !important;
-        -webkit-backdrop-filter:blur(28px) saturate(1.18) !important;
+        backdrop-filter:blur(24px) saturate(1.14) !important;
+        -webkit-backdrop-filter:blur(24px) saturate(1.14) !important;
+        -webkit-mask-image:linear-gradient(to bottom, #000 0%, #000 58%, rgba(0,0,0,.72) 74%, transparent 100%) !important;
+        mask-image:linear-gradient(to bottom, #000 0%, #000 58%, rgba(0,0,0,.72) 74%, transparent 100%) !important;
+      }
+      .main-col > header .header-left,
+      .main-col > header .actions{
+        position:relative !important;
+        z-index:1 !important;
       }
       .main-col > header .brand{
         max-width:calc(100vw - 210px) !important;
@@ -4061,7 +4082,7 @@ body.project-chat-active #input{padding-left:2px;}
       }
       #chatInner,
       .chat-inner{
-        padding-top:calc(92px + env(safe-area-inset-top, 0px)) !important;
+        padding-top:calc(72px + env(safe-area-inset-top, 0px)) !important;
       }
     }
     @media (max-width:520px){
