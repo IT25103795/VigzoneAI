@@ -2027,11 +2027,11 @@ body.project-chat-active #input{padding-left:2px;}
 .project-open-chat-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
 
 @media(max-width:760px){
-  .project-chat-bar{top:70px;width:calc(100% - 20px);padding:8px 9px;align-items:flex-start;}
+  .project-chat-bar{top:calc(78px + env(safe-area-inset-top, 0px));width:calc(100% - 20px);padding:8px 9px;align-items:flex-start;}
   .project-chat-actions button{padding:7px;font-size:0;}
   #projectChatNewBtn::after{content:'New';font-size:10px;}
   #projectChatSettingsBtn::after{content:'Files';font-size:10px;}
-  body.project-chat-active #chatInner,body.project-chat-active .chat-inner{padding-top:140px!important;}
+  body.project-chat-active #chatInner,body.project-chat-active .chat-inner{padding-top:calc(148px + env(safe-area-inset-top, 0px))!important;}
 }
 .team-hub-modal{max-width:760px;}
 .team-summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:14px;}
@@ -3850,8 +3850,9 @@ body.project-chat-active #input{padding-left:2px;}
     }
 
 
-    /* ---------- Full-screen floating top controls ----------
-       Places controls directly over the active doodle theme as glass buttons. */
+    /* ---------- Floating desktop controls + protected mobile navigation ----------
+       Desktop keeps the floating controls. Mobile adds one continuous glass
+       band so messages cannot remain readable behind the navigation/cutout. */
     .main-col{
       grid-template-rows:minmax(0, 1fr) auto !important;
     }
@@ -4021,9 +4022,20 @@ body.project-chat-active #input{padding-left:2px;}
 
     @media (max-width:760px){
       .main-col > header{
-        top:10px !important;
-        left:10px !important;
-        right:10px !important;
+        top:0 !important;
+        left:0 !important;
+        right:0 !important;
+        min-height:calc(68px + env(safe-area-inset-top, 0px)) !important;
+        padding:calc(12px + env(safe-area-inset-top, 0px)) 10px 12px !important;
+        border-bottom:1px solid color-mix(in srgb, var(--border) 78%, var(--accent) 12%) !important;
+        background:linear-gradient(180deg,
+          color-mix(in srgb, var(--chat-theme-base) 97%, transparent) 0%,
+          color-mix(in srgb, var(--chat-theme-base) 92%, transparent) 68%,
+          color-mix(in srgb, var(--chat-theme-base) 82%, transparent) 100%
+        ) !important;
+        box-shadow:0 18px 40px -28px var(--composer-shadow) !important;
+        backdrop-filter:blur(28px) saturate(1.18) !important;
+        -webkit-backdrop-filter:blur(28px) saturate(1.18) !important;
       }
       .main-col > header .brand{
         max-width:calc(100vw - 210px) !important;
@@ -4049,7 +4061,7 @@ body.project-chat-active #input{padding-left:2px;}
       }
       #chatInner,
       .chat-inner{
-        padding-top:84px !important;
+        padding-top:calc(92px + env(safe-area-inset-top, 0px)) !important;
       }
     }
     @media (max-width:520px){

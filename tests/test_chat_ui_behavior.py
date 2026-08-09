@@ -82,9 +82,9 @@ def test_chat_ui_asset_revision_is_consistent():
     index = _read("static/index.html")
     service_worker = _read("static/service-worker.js")
 
-    assert index.count("mobile-viewport-r1") == 4
-    assert "const UI_ASSET_REVISION = 'mobile-viewport-r1';" in service_worker
-    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r22';" in service_worker
+    assert index.count("mobile-topbar-r1") == 4
+    assert "const UI_ASSET_REVISION = 'mobile-topbar-r1';" in service_worker
+    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r23';" in service_worker
     assert "/static/icons/vigzone-doodles.svg?v=doodle-r1" in service_worker
 
 
@@ -101,6 +101,20 @@ def test_first_mobile_launch_tracks_the_visible_viewport_before_css_paints():
     assert "[50, 150, 350, 750]" in viewport_script
     assert "height:var(--app-height, 100dvh);" in css
     assert "max-height:var(--app-height, 100dvh);" in css
+
+
+def test_mobile_navigation_is_a_safe_area_glass_band_above_chat():
+    css = _read("static/css/styles.css")
+
+    navigation = css.split("protected mobile navigation", 1)[1].split(
+        "Remove Vigzone logo from assistant response bubbles", 1
+    )[0]
+    assert "min-height:calc(68px + env(safe-area-inset-top, 0px))" in navigation
+    assert "padding:calc(12px + env(safe-area-inset-top, 0px)) 10px 12px" in navigation
+    assert "color-mix(in srgb, var(--chat-theme-base) 97%, transparent)" in navigation
+    assert "backdrop-filter:blur(28px) saturate(1.18)" in navigation
+    assert "padding-top:calc(92px + env(safe-area-inset-top, 0px))" in navigation
+    assert "top:calc(78px + env(safe-area-inset-top, 0px))" in css
 
 
 def test_live_ready_models_team_tools_and_paddle_mode_are_truthful():
