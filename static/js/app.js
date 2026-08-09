@@ -2208,7 +2208,7 @@
   function updateWorkspacePill(){
     if (!workspacePill) return;
     const name = activeWorkspaceId ? workspaceName(activeWorkspaceId) : '';
-    workspacePill.textContent = name ? `📁 ${name}` : 'No workspace';
+    workspacePill.textContent = name ? `📁 ${name}` : 'No project';
     workspacePill.classList.toggle('active', !!name);
   }
   async function loadWorkspaces(){
@@ -2301,7 +2301,10 @@
     await loadWorkspaces();
     renderWorkspaceModal();
   }
-  async function openWorkspaceModal(){ workspaceModalOverlay?.classList.add('visible'); await loadWorkspaces(); renderWorkspaceModal(); }
+  async function openWorkspaceModal(){
+    if (window.VigzoneProjects?.open) return window.VigzoneProjects.open();
+    workspaceModalOverlay?.classList.add('visible'); await loadWorkspaces(); renderWorkspaceModal();
+  }
   function closeWorkspaceModal(){ workspaceModalOverlay?.classList.remove('visible'); }
   workspaceSidebarBtn?.addEventListener('click', openWorkspaceModal);
   workspacePill?.addEventListener('click', openWorkspaceModal);

@@ -39,6 +39,7 @@ TOKEN_LIMIT_ENV_VARS = {
 
 _FEATURES = {
     "free": {
+        "projects": True,
         "advanced_models": False,
         "web_search": True,
         "image_search": False,
@@ -55,6 +56,7 @@ _FEATURES = {
         "custom_ai_persona": False,
     },
     "pro": {
+        "projects": True,
         "advanced_models": True,
         "web_search": True,
         "image_search": True,
@@ -71,6 +73,7 @@ _FEATURES = {
         "custom_ai_persona": False,
     },
     "team": {
+        "projects": True,
         "advanced_models": True,
         "web_search": True,
         "image_search": True,

@@ -1,6 +1,6 @@
 /* Vigzone AI offline service worker */
-const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r19';
-const UI_ASSET_REVISION = 'quota-live-r1';
+const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r20';
+const UI_ASSET_REVISION = 'projects-r1';
 const SHELL_CACHE = `vigzone-shell-${VIGZONE_SW_VERSION}`;
 const RUNTIME_CACHE = `vigzone-runtime-${VIGZONE_SW_VERSION}`;
 
@@ -11,6 +11,7 @@ const APP_SHELL = [
   '/static/index.html',
   `/static/css/styles.css?v=${UI_ASSET_REVISION}`,
   `/static/js/app.js?v=${UI_ASSET_REVISION}`,
+  `/static/js/projects.js?v=${UI_ASSET_REVISION}`,
   '/static/landing.html',
   '/static/offline.html',
   '/static/vendor/jszip.min.js',
@@ -26,7 +27,8 @@ const APP_SHELL = [
 
 const CRITICAL_UI_ASSETS = new Set([
   '/static/css/styles.css',
-  '/static/js/app.js'
+  '/static/js/app.js',
+  '/static/js/projects.js'
 ]);
 
 self.addEventListener('install', (event) => {

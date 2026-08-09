@@ -12,8 +12,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Sinhala:wght@400;500;600&display=swap" rel="stylesheet">
   <script>
-    const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r16';
-    const UI_ASSET_REVISION = 'quota-live-r1';
+    const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r20';
+    const UI_ASSET_REVISION = 'projects-r1';
     (function () {
       var key = 'vigzone_doodle_theme';
       var tones = {
@@ -38,7 +38,7 @@
       document.documentElement.setAttribute('data-theme', tones[saved] || 'dark');
     })();
   </script>
-  <link rel="stylesheet" href="/static/css/styles.css?v=quota-live-r1">
+  <link rel="stylesheet" href="/static/css/styles.css?v=projects-r1">
 </head>
 <body>
 <div class="offline-status-banner" id="offlineStatusBanner" role="status" aria-live="polite">
@@ -193,8 +193,8 @@
         </button>
       </div>
       <div class="sidebar-footer-row">
-        <span class="history-label" style="padding:0;margin:0;">Workspace</span>
-        <button class="sidebar-teach-btn" id="workspaceSidebarBtn" aria-label="Open workspaces" title="Open workspaces">
+        <span class="history-label" style="padding:0;margin:0;">Projects</span>
+        <button class="sidebar-teach-btn" id="workspaceSidebarBtn" aria-label="Open Projects" title="Open Projects">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h7l2 2h9v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2"></path></svg>
         </button>
       </div>
@@ -302,7 +302,7 @@
     <button class="quick-launcher-icon" id="quickThemeBtn" type="button" title="Chat theme" aria-label="Choose chat theme">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 0 18h1.2a1.8 1.8 0 0 0 1.25-3.08l-.2-.2a1.65 1.65 0 0 1 1.17-2.82H17a4 4 0 0 0 4-4A7.9 7.9 0 0 0 12 3Z"></path><circle cx="7.5" cy="10" r="1"></circle><circle cx="10" cy="6.8" r="1"></circle><circle cx="15" cy="7.3" r="1"></circle></svg>
     </button>
-    <button class="quick-launcher-icon" id="quickWorkspaceBtn" type="button" title="Workspace" aria-label="Workspace">
+    <button class="quick-launcher-icon" id="quickWorkspaceBtn" type="button" title="Projects" aria-label="Projects">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h7l2 2h9v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2"></path></svg>
     </button>
     <button class="quick-launcher-icon" id="quickLearningBtn" type="button" title="Learning" aria-label="Learning">
@@ -369,12 +369,15 @@
 
 
 <div class="usage-modal-overlay" id="workspaceModalOverlay">
-  <div class="usage-modal workspace-modal">
+  <div class="usage-modal workspace-modal projects-modal">
     <div class="usage-modal-head">
-      <h3>Workspaces</h3>
+      <div>
+        <h3>Projects</h3>
+        <div class="brain-subtitle">Connect a folder, inspect files, ask Vigzone to analyze them, and review every edit before saving.</div>
+      </div>
       <button class="usage-modal-close" id="workspaceModalCloseBtn" aria-label="Close">&times;</button>
     </div>
-    <div id="workspaceModalBody"><div class="usage-modal-loading">Loading workspaces…</div></div>
+    <div id="workspaceModalBody"><div class="usage-modal-loading">Loading projects…</div></div>
   </div>
 </div>
 
@@ -904,6 +907,7 @@
               <li>✅ GPT-OSS 20B production model</li>
               <li>✅ Web search</li>
               <li>✅ File Studio for documents</li>
+              <li>✅ Local Projects with quota-metered AI</li>
               <li>❌ Advanced models</li>
               <li>❌ Priority support</li>
             </ul>
@@ -921,6 +925,7 @@
               <li>✅ All models (GPT-OSS 120B/20B, Qwen Vision)</li>
               <li>✅ Web search + image search</li>
               <li>✅ File Studio + Website Studio</li>
+              <li>✅ Local Projects with all models</li>
               <li>✅ Priority support</li>
               <li>✅ Preview access (Qwen 3.6 vision)</li>
             </ul>
@@ -936,7 +941,7 @@
               <li>✅ Everything in Pro</li>
               <li>✅ 1M shared AI tokens / day</li>
               <li>✅ Up to 5 team seats</li>
-              <li>✅ Shared workspace</li>
+              <li>✅ Shared project context</li>
               <li>✅ Usage analytics</li>
               <li>✅ Dedicated support</li>
               <li>✅ Custom AI persona</li>
@@ -953,6 +958,7 @@
     </div>
   </div>
 
-  <script src="/static/js/app.js?v=quota-live-r1"></script>
+  <script src="/static/js/app.js?v=projects-r1"></script>
+  <script src="/static/js/projects.js?v=projects-r1"></script>
 </body>
 </html>
