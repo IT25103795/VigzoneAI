@@ -82,10 +82,25 @@ def test_chat_ui_asset_revision_is_consistent():
     index = _read("static/index.html")
     service_worker = _read("static/service-worker.js")
 
-    assert index.count("project-chat-r1") == 4
-    assert "const UI_ASSET_REVISION = 'project-chat-r1';" in service_worker
-    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r21';" in service_worker
+    assert index.count("mobile-viewport-r1") == 4
+    assert "const UI_ASSET_REVISION = 'mobile-viewport-r1';" in service_worker
+    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r22';" in service_worker
     assert "/static/icons/vigzone-doodles.svg?v=doodle-r1" in service_worker
+
+
+def test_first_mobile_launch_tracks_the_visible_viewport_before_css_paints():
+    index = _read("static/index.html")
+    css = _read("static/css/styles.css")
+
+    viewport_script = index.split("initVigzoneViewportHeight", 1)[1].split("</script>", 1)[0]
+    assert "window.visualViewport" in viewport_script
+    assert "Math.min.apply(Math, candidates)" in viewport_script
+    assert "root.style.setProperty('--app-height'" in viewport_script
+    assert "window.addEventListener('pageshow'" in viewport_script
+    assert "document.addEventListener('visibilitychange'" in viewport_script
+    assert "[50, 150, 350, 750]" in viewport_script
+    assert "height:var(--app-height, 100dvh);" in css
+    assert "max-height:var(--app-height, 100dvh);" in css
 
 
 def test_live_ready_models_team_tools_and_paddle_mode_are_truthful():

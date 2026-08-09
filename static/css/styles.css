@@ -71,6 +71,7 @@
       --doodle-ink:#dbe0ed;
       --doodle-opacity:.072;
       --radius: 14px;
+      --app-height: 100dvh;
     }
 
     [data-theme="light"]{
@@ -391,6 +392,10 @@
     }
     *{box-sizing:border-box;}
     html,body{height:100%;}
+    html{
+      height:var(--app-height, 100dvh);
+      overflow:hidden;
+    }
     body{
       margin:0;
       background-color:var(--bg);
@@ -403,6 +408,8 @@
       flex-direction:row;
       height:100vh;
       height:100dvh;
+      height:var(--app-height, 100dvh);
+      max-height:var(--app-height, 100dvh);
       overflow:hidden;
     }
 
