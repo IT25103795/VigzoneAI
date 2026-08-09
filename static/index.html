@@ -12,6 +12,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Sinhala:wght@400;500;600&display=swap" rel="stylesheet">
   <script>
+    const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r16';
+    const UI_ASSET_REVISION = 'billing-r5';
     (function () {
       var key = 'vigzone_doodle_theme';
       var tones = {
@@ -607,21 +609,21 @@
           <span class="model-picker-arrow">▼</span>
         </button>
         <div class="model-dropdown-menu" id="modelDropdownMenu">
-          <div class="model-dropdown-item active" data-model="llama-3.3-70b-versatile">
+          <div class="model-dropdown-item" data-model="llama-3.3-70b-versatile" data-plan="pro">
             <div class="model-item-header"><span>⚡ Llama 3.3 70B</span><span class="model-picker-badge">Powerhouse</span></div>
-            <div class="model-item-desc">High intelligence, versatile reasoning & analysis</div>
+            <div class="model-item-desc">High intelligence, versatile reasoning &amp; analysis</div>
           </div>
-          <div class="model-dropdown-item" data-model="deepseek-r1-distill-llama-70b">
+          <div class="model-dropdown-item" data-model="deepseek-r1-distill-llama-70b" data-plan="pro">
             <div class="model-item-header"><span>🧠 DeepSeek R1 70B</span><span class="model-picker-badge" style="background:#8b5cf6;">Reasoning</span></div>
-            <div class="model-item-desc">Deep multi-step thinking, math & complex logic</div>
+            <div class="model-item-desc">Deep multi-step thinking, math &amp; complex logic</div>
           </div>
-          <div class="model-dropdown-item" data-model="llama-3.1-8b-instant">
+          <div class="model-dropdown-item active" data-model="llama-3.1-8b-instant">
             <div class="model-item-header"><span>🚀 Llama 3.1 8B</span><span class="model-picker-badge" style="background:#10b981;">Fast</span></div>
             <div class="model-item-desc">Ultra high-speed instant answers</div>
           </div>
-          <div class="model-dropdown-item" data-model="qwen/qwen3.6-27b">
+          <div class="model-dropdown-item" data-model="qwen/qwen3.6-27b" data-plan="pro">
             <div class="model-item-header"><span>💻 Qwen 3.6</span><span class="model-picker-badge" style="background:#06b6d4;">Coding</span></div>
-            <div class="model-item-desc">Specialized code generation & technical tasks</div>
+            <div class="model-item-desc">Specialized code generation &amp; technical tasks</div>
           </div>
         </div>
       </div>
@@ -903,6 +905,6 @@
     </div>
   </div>
 
-  <script src="/static/js/app.js?v=billing-r4"></script>
+  <script src="/static/js/app.js?v=billing-r5"></script>
 </body>
 </html>

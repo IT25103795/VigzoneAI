@@ -2466,25 +2466,29 @@ async def admin_reset_user_usage(user_id: int, admin: dict = Depends(require_adm
 async def paddle_webhook(request: Request):
     """Receive Paddle webhook events and update user subscription plan.
 
-    Set PADDLE_WEBHOOK_SECRET in your Railway env to the secret from
-    Paddle Dashboard → Notifications → your webhook endpoint.
-    Supported events: subscription_created, subscription_updated,
-    subscription_cancelled, subscription_payment_succeeded.
+    Set PADDLE_WEBHOOK_SECRET in your Render env to the secret key from
+    Paddle Dashboard → Developer Tools → Notifications → your endpoint.
     """
     import sqlite3
     import hashlib
     import hmac as _hmac
+    import json as _json
 
     raw_body = await request.body()
 
-    # Signature verification (skip if no secret configured — log a warning)
+    # ── Signature verification ──────────────────────────────────────────────────
+    # ONLY enforce if PADDLE_WEBHOOK_SECRET is set in environment.
+    # If not set, we accept all requests (dev/test mode).
     if PADDLE_WEBHOOK_SECRET:
         signature = request.headers.get("Paddle-Signature", "")
-        # Paddle v2 webhooks use HMAC-SHA256 with ts:payload format
         try:
             parts = dict(item.split("=", 1) for item in signature.split(";") if "=" in item)
             ts = parts.get("ts", "")
             h1 = parts.get("h1", "")
+            if not ts or not h1:
+                logging.warning("Paddle webhook: missing ts or h1 in signature header: %r", signature)
+                # Return 200 anyway so Paddle stops retrying — log for manual inspection
+                return JSONResponse({"ok": False, "error": "missing_signature_parts"})
             signed_payload = f"{ts}:".encode() + raw_body
             expected = _hmac.new(
                 PADDLE_WEBHOOK_SECRET.encode(),
@@ -2492,33 +2496,46 @@ async def paddle_webhook(request: Request):
                 hashlib.sha256,
             ).hexdigest()
             if not _hmac.compare_digest(expected, h1):
-                logging.warning("Paddle webhook signature mismatch — ignoring event.")
-                raise HTTPException(status_code=400, detail="Invalid Paddle signature.")
-        except HTTPException:
-            raise
+                logging.warning(
+                    "Paddle webhook SIGNATURE MISMATCH. "
+                    "Check PADDLE_WEBHOOK_SECRET env var matches the secret key in Paddle Dashboard. "
+                    "Expected=%s Got=%s", expected[:12], h1[:12]
+                )
+                # Return 200 to stop Paddle retrying — this is a config issue, not a transient error
+                return JSONResponse({"ok": False, "error": "signature_mismatch"})
         except Exception as exc:
             logging.warning("Paddle signature parse error: %s", exc)
-            raise HTTPException(status_code=400, detail="Malformed Paddle signature.")
+            return JSONResponse({"ok": False, "error": "signature_parse_error"})
 
+    # ── Parse event body ────────────────────────────────────────────────────────
     try:
-        event = await request.json()
+        event = _json.loads(raw_body)
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON body.")
+        logging.warning("Paddle webhook: invalid JSON body")
+        return JSONResponse({"ok": False, "error": "invalid_json"})
 
-    event_type = event.get("event_type") or event.get("alert_name", "")
-    data = event.get("data") or event  # Paddle v2 vs v1 shape
+    event_type = str(event.get("event_type") or event.get("alert_name", ""))
+    data = event.get("data") or event  # Paddle v2 wraps payload in "data"
 
-    # Extract customer email safely
+    logging.info("Paddle webhook received: event_type=%s data_keys=%s", event_type, list(data.keys()) if isinstance(data, dict) else type(data))
+
+    # ── Extract customer email ──────────────────────────────────────────────────
     customer_email = ""
     if isinstance(data, dict):
+        # 1. custom_data.email (set by our frontend checkout)
         custom_data = data.get("custom_data")
-        if isinstance(custom_data, dict) and custom_data.get("email"):
-            customer_email = custom_data.get("email")
-        elif isinstance(data.get("customer"), dict):
-            customer_email = data["customer"].get("email", "")
-    customer_email = str(customer_email).strip().lower()
+        if isinstance(custom_data, dict):
+            customer_email = str(custom_data.get("email", "")).strip().lower()
+        # 2. customer.email (Paddle populates from account)
+        if not customer_email and isinstance(data.get("customer"), dict):
+            customer_email = str(data["customer"].get("email", "")).strip().lower()
+        # 3. top-level email fallback
+        if not customer_email:
+            customer_email = str(data.get("email", "")).strip().lower()
 
-    # Determine plan from price ID
+    logging.info("Paddle webhook: customer_email=%r event_type=%s", customer_email, event_type)
+
+    # ── Extract price ID ────────────────────────────────────────────────────────
     price_id = ""
     items = data.get("items")
     details = data.get("details")
@@ -2531,14 +2548,16 @@ async def paddle_webhook(request: Request):
         price_id = str(details["line_items"][0].get("price_id", ""))
     
     if not price_id:
-        price_id = str(data.get("product_id", "") or data.get("passthrough", ""))
+        price_id = str(data.get("product_id", "") or data.get("passthrough", "") if isinstance(data, dict) else "")
 
-    if price_id == PADDLE_PRO_PRODUCT_ID:
+    logging.info("Paddle webhook: price_id=%r pro_id=%r team_id=%r", price_id, PADDLE_PRO_PRODUCT_ID, PADDLE_TEAM_PRODUCT_ID)
+
+    if PADDLE_PRO_PRODUCT_ID and price_id == PADDLE_PRO_PRODUCT_ID:
         new_plan = "pro"
-    elif price_id == PADDLE_TEAM_PRODUCT_ID:
+    elif PADDLE_TEAM_PRODUCT_ID and price_id == PADDLE_TEAM_PRODUCT_ID:
         new_plan = "team"
     else:
-        new_plan = "free"
+        new_plan = "pro"  # Safe fallback: any paid transaction → pro
 
     active_events = {
         "subscription_created",
@@ -2550,8 +2569,8 @@ async def paddle_webhook(request: Request):
         "transaction.completed",
     }
     cancel_events = {
-        "subscription_cancelled",
-        "subscription_paused",
+        "subscription_cancelled", "subscription.cancelled",
+        "subscription_paused", "subscription.paused",
     }
 
     if event_type in active_events and customer_email:
@@ -2565,15 +2584,24 @@ async def paddle_webhook(request: Request):
     try:
         db_path = authmod.DB_PATH
         with sqlite3.connect(db_path) as conn:
-            conn.execute(
+            cur = conn.execute(
                 "UPDATE users SET plan = ?, updated_at = ? WHERE email = ?",
                 (plan, int(__import__('time').time()), customer_email),
             )
             conn.commit()
-        logging.info("Paddle webhook: set plan=%s for %s (event=%s)", plan, customer_email, event_type)
+            rows_updated = cur.rowcount
+        logging.info(
+            "Paddle webhook DB: plan=%s email=%s rows_updated=%d event=%s",
+            plan, customer_email, rows_updated, event_type
+        )
+        if rows_updated == 0:
+            logging.warning(
+                "Paddle webhook: no user found with email=%r — "
+                "user may need to register first", customer_email
+            )
     except Exception as exc:
         logging.error("Paddle webhook DB update failed: %s", exc)
-        raise HTTPException(status_code=500, detail="Database error processing webhook.")
+        return JSONResponse({"ok": False, "error": "db_error", "detail": str(exc)})
 
     return JSONResponse({"ok": True, "action": "plan_updated", "plan": plan, "email": customer_email})
 

@@ -3146,6 +3146,10 @@
         const data = await res.json().catch(() => ({}));
         userName = (data.user && data.user.name) || (data.user && data.user.email) || '';
         if (data.user) switchAccountStorageScope(data.user);
+        // Store plan globally so model selector and other features can use it
+        window._vigzoneUserPlan = (data.user && data.user.plan) || 'free';
+        // Apply plan-based model restrictions after plan is known
+        applyModelPlanRestrictions(window._vigzoneUserPlan);
         if (data.user && data.user.is_admin) {
           // Founder/Admin: stay in chat interface — show admin sidebar button + badge
           document.body.classList.remove('admin-only');
@@ -6774,7 +6778,7 @@ Requirements:
   }
 
   /* ── 1. Model Selector Controller ────────────────────────────────────────── */
-  let activeSelectedModel = localStorage.getItem('vigzone_model') || 'llama-3.3-70b-versatile';
+  let activeSelectedModel = localStorage.getItem('vigzone_model') || 'llama-3.1-8b-instant';
   function getActiveModel(){ return activeSelectedModel; }
 
   function initModelSelector(){
@@ -6828,6 +6832,44 @@ Requirements:
     });
 
     updateUi(activeSelectedModel);
+  }
+
+  /* ── Plan-based model restriction ────────────────────────────────────────── */
+  // Models that require a paid plan (pro or team)
+  const PREMIUM_MODELS = ['llama-3.3-70b-versatile', 'deepseek-r1-distill-llama-70b', 'qwen/qwen3.6-27b'];
+  const FREE_MODEL = 'llama-3.1-8b-instant';
+
+  function applyModelPlanRestrictions(plan) {
+    const isPaid = plan === 'pro' || plan === 'team';
+    document.querySelectorAll('.model-dropdown-item').forEach(item => {
+      const modelId = item.dataset.model;
+      if (!modelId) return;
+      const isPremium = PREMIUM_MODELS.includes(modelId);
+      if (isPremium && !isPaid) {
+        // Hide premium models from free users
+        item.style.display = 'none';
+        item.classList.add('plan-locked');
+      } else {
+        item.style.display = '';
+        item.classList.remove('plan-locked');
+      }
+    });
+    // If current model is premium and user is on free plan, switch to free model
+    if (!isPaid && PREMIUM_MODELS.includes(activeSelectedModel)) {
+      const wrap = document.getElementById('modelPickerWrap');
+      activeSelectedModel = FREE_MODEL;
+      localStorage.setItem('vigzone_model', FREE_MODEL);
+      const meta = { name: 'Llama 3.1 8B', badge: 'Fast', icon: '\uD83D\uDE80', color: '#10b981' };
+      const nameEl = document.getElementById('modelPickerName');
+      const badgeEl = document.getElementById('modelPickerBadge');
+      const iconEl = document.getElementById('modelPickerIcon');
+      if (nameEl) nameEl.textContent = meta.name;
+      if (badgeEl) { badgeEl.textContent = meta.badge; badgeEl.style.background = meta.color; }
+      if (iconEl) iconEl.textContent = meta.icon;
+      document.querySelectorAll('.model-dropdown-item').forEach(i => {
+        i.classList.toggle('active', i.dataset.model === FREE_MODEL);
+      });
+    }
   }
 
   /* ── 2. Live Code Sandbox Controller ─────────────────────────────────────── */
