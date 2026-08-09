@@ -23,6 +23,26 @@ def test_postgres_sql_translates_parameters_and_generated_ids():
     assert database.postgres_sql("BEGIN IMMEDIATE") == "BEGIN ISOLATION LEVEL SERIALIZABLE"
 
 
+def test_quota_usage_provider_filter_is_psycopg_safe():
+    """A literal percent beside bound params is parsed as a placeholder by Psycopg."""
+    from psycopg.adapt import Transformer
+    from psycopg._queries import PostgresQuery
+
+    source = open("vigzone_ai.py", encoding="utf-8").read()
+    assert "provider LIKE 'groq%'" not in source
+    assert "provider IN ('groq', 'groq_audio', 'groq_interrupted')" in source
+
+    sql = database.postgres_sql(
+        """SELECT COALESCE(SUM(total_tokens), 0)
+             FROM token_usage
+            WHERE provider IN ('groq', 'groq_audio', 'groq_interrupted')
+              AND ts >= ?"""
+    )
+    query = PostgresQuery(Transformer())
+    query.convert(sql, ("2026-08-09T00:00:00+00:00",))
+    assert query.query is not None
+
+
 def test_database_row_supports_mapping_and_positional_access():
     row = database.DatabaseRow(("id", "name"), (7, "Vigzone"))
     assert row[0] == 7

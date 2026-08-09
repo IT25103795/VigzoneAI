@@ -1830,7 +1830,7 @@ def _refresh_quota_counter(
                COALESCE(SUM(user_tokens), 0)
         FROM token_usage
         WHERE quota_scope = ? AND quota_subject_id = ?
-          AND provider LIKE 'groq%' AND ts >= ?
+          AND provider IN ('groq', 'groq_audio', 'groq_interrupted') AND ts >= ?
         """,
         (quota["scope"], quota["subject_id"], day_start),
     ).fetchone()
