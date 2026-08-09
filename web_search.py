@@ -655,8 +655,12 @@ async def image_search(query: str, max_results: int = 6) -> list[dict]:
         data = resp.json()
         out = []
         for item in data.get("results", [])[:max_results]:
-            url = item.get("url")
-            if not url:
+            url = str(item.get("url") or "").strip()
+            try:
+                parsed = urlparse(url)
+            except ValueError:
+                continue
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
                 continue
             out.append({
                 "url": url,

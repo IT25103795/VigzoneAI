@@ -61,7 +61,7 @@ def test_plan_matrix_and_founder_admin_access(auth_db):
     team = {"plan": "team", "role": "user", "is_admin": False}
     assert billing.entitlement_snapshot(free)["limits"]["messages_per_day"] == 50
     assert not billing.model_allowed(free, "llama-3.3-70b-versatile")
-    assert billing.model_allowed(free, "llama-3.1-8b-instant")
+    assert billing.model_allowed(free, "openai/gpt-oss-20b")
     assert billing.feature_allowed(pro, "website_studio")
     assert billing.model_allowed(pro, "qwen/qwen3.6-27b")
     assert billing.feature_allowed(team, "custom_ai_persona")

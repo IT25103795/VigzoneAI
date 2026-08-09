@@ -82,10 +82,31 @@ def test_chat_ui_asset_revision_is_consistent():
     index = _read("static/index.html")
     service_worker = _read("static/service-worker.js")
 
-    assert index.count("billing-r6") == 3
-    assert "const UI_ASSET_REVISION = 'billing-r6';" in service_worker
-    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r17';" in service_worker
+    assert index.count("team-live-r1") == 3
+    assert "const UI_ASSET_REVISION = 'team-live-r1';" in service_worker
+    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r18';" in service_worker
     assert "/static/icons/vigzone-doodles.svg?v=doodle-r1" in service_worker
+
+
+def test_live_ready_models_team_tools_and_paddle_mode_are_truthful():
+    index = _read("static/index.html")
+    js = _read("static/js/app.js")
+
+    assert "GPT-OSS 20B" in index
+    assert "GPT-OSS 120B" in index
+    assert "Qwen 3.6 27B" in index
+    assert "DeepSeek R1 70B" not in index
+    assert "Llama 3.3 70B" not in index
+    assert 'id="teamHubBtn"' in index
+    assert 'id="imageSearchBtn"' in index
+    assert 'id="supportCenterBtn"' in index
+    assert "function loadTeamHub" in js
+    assert "function loadSupportCenter" in js
+    assert "function runImageSearch" in js
+    assert "Image understanding requires Vigzone PRO or TEAM" in js
+    assert "Document File Studio remains available on FREE" in js
+    assert "if (paddleToken.startsWith('test_')) window.Paddle.Environment.set('sandbox');" in js
+    assert "Environment.set('production')" not in js
 
 
 def test_curated_doodle_themes_replace_custom_wallpapers_and_binary_toggle():

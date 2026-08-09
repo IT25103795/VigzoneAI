@@ -60,7 +60,7 @@ from vigzone_ai import (
     validate_groq_api_key,
 )
 from image_generation import generate_image, edit_image, ImageGenError
-from web_search import _get_user_timezone_name
+from web_search import _get_user_timezone_name, image_search
 from stream_manager import (
     create_stream_id,
     register_stream,
@@ -171,7 +171,7 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: List[ChatMessage] = Field(..., min_length=1, max_length=100)
-    model: str = Field(default=DEFAULT_MODEL, max_length=120)
+    model: str = Field(default=FAST_MODEL, max_length=120)
     ai_mode: Optional[str] = Field(default="general", max_length=40)
     workspace_id: Optional[int] = Field(default=None)
     conversation_id: Optional[str] = Field(default=None, max_length=120)
@@ -250,6 +250,7 @@ class WorkspaceCreateRequest(BaseModel):
     name: str = Field(..., min_length=2, max_length=80)
     description: str = Field(default="", max_length=600)
     mode: str = Field(default="general", max_length=40)
+    shared: bool = False
 
 
 class WorkspaceUpdateRequest(BaseModel):
@@ -327,6 +328,30 @@ class ConversationSyncRequest(BaseModel):
     title: str = Field(default="New chat", max_length=160)
     messages: List[dict] = Field(default_factory=list, max_length=500)
     base_revision: Optional[int] = Field(default=None, ge=0)
+
+
+class TeamProfileRequest(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=2, max_length=80)
+    persona_name: Optional[str] = Field(default=None, max_length=60)
+    persona_instructions: Optional[str] = Field(default=None, max_length=2400)
+
+
+class TeamInviteRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=200)
+
+
+class TeamInviteAcceptRequest(BaseModel):
+    token: str = Field(..., min_length=20, max_length=256)
+
+
+class SupportTicketRequest(BaseModel):
+    subject: str = Field(..., min_length=3, max_length=160)
+    message: str = Field(..., min_length=10, max_length=6000)
+
+
+class SupportTicketUpdateRequest(BaseModel):
+    status: Literal["open", "in_progress", "resolved", "closed"]
+    admin_response: str = Field(default="", max_length=6000)
 
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
@@ -420,6 +445,37 @@ PADDLE_ENVIRONMENT = os.getenv("PADDLE_ENVIRONMENT", "").strip().lower() or (
     "sandbox" if PADDLE_CLIENT_TOKEN.startswith("test_") else "production"
 )
 
+# Customer-facing names must match the IDs actually sent to Groq.  Legacy
+# Llama/DeepSeek IDs are migrated in vigzone_ai.py for saved clients, but are
+# never advertised as if those retired models were still serving responses.
+MODEL_CATALOG = [
+    {
+        "id": "openai/gpt-oss-20b",
+        "name": "GPT-OSS 20B",
+        "badge": "Fast",
+        "description": "Fast production model for everyday chat and documents",
+        "icon": "🚀",
+        "plan": "free",
+    },
+    {
+        "id": "openai/gpt-oss-120b",
+        "name": "GPT-OSS 120B",
+        "badge": "Powerhouse",
+        "description": "Quality-first production model for complex reasoning and analysis",
+        "icon": "⚡",
+        "plan": "pro",
+    },
+    {
+        "id": "qwen/qwen3.6-27b",
+        "name": "Qwen 3.6 27B",
+        "badge": "Preview · Vision",
+        "description": "Preview multimodal model for images, coding, and reasoning",
+        "icon": "👁️",
+        "plan": "pro",
+        "required_feature": "early_access",
+    },
+]
+
 
 def _paddle_catalog() -> dict:
     return {
@@ -430,9 +486,12 @@ def _paddle_catalog() -> dict:
 
 def _require_feature(user: dict, feature: str, label: str) -> None:
     if not billing.feature_allowed(user, feature):
+        required_plan = "Vigzone TEAM" if feature in {
+            "team_workspace", "usage_analytics", "custom_ai_persona", "dedicated_support"
+        } else "Vigzone PRO and TEAM"
         raise HTTPException(
             status_code=403,
-            detail=f"{label} is available on Vigzone PRO and TEAM. Upgrade to unlock it.",
+            detail=f"{label} is available on {required_plan}. Upgrade to unlock it.",
         )
 
 
@@ -440,7 +499,17 @@ def _assert_chat_entitlements(user: dict, chat_request: ChatRequest, *, has_own_
     if not billing.model_allowed(user, chat_request.model):
         raise HTTPException(
             status_code=403,
-            detail="That model is available on Vigzone PRO and TEAM. Free includes Llama 3.1 8B.",
+            detail="That model is available on Vigzone PRO and TEAM. Free includes GPT-OSS 20B.",
+        )
+    contains_image = any(
+        isinstance(message.content, list)
+        and any(isinstance(item, dict) and item.get("type") == "image_url" for item in message.content)
+        for message in chat_request.messages
+    )
+    if contains_image and not billing.feature_allowed(user, "advanced_models"):
+        raise HTTPException(
+            status_code=403,
+            detail="Image understanding uses the Qwen vision model and is available on Vigzone PRO and TEAM.",
         )
     if not billing.chat_mode_allowed(user, chat_request.ai_mode):
         raise HTTPException(
@@ -539,6 +608,11 @@ async def app_version():
             "Live-source context",
             "Image generation and editing",
             "Website Studio export",
+            "TEAM seats and email-bound invitations",
+            "Shared TEAM workspaces and notes",
+            "TEAM usage analytics and custom persona",
+            "Standard, priority, and dedicated support queues",
+            "Licensed Openverse image search",
             "Expiring shared chats",
             "Account export and deletion",
         ],
@@ -570,37 +644,8 @@ async def public_config():
         "new_chat_subtitle": NEW_CHAT_SUBTITLE.format(app_name=APP_NAME),
         "groq_hint": GROQ_HINT_TEXT,
         "greetings": GREETING_OPTIONS,
-        "available_models": [
-            {
-                "id": "llama-3.3-70b-versatile",
-                "name": "Llama 3.3 70B",
-                "badge": "Powerhouse",
-                "description": "High intelligence, versatile reasoning & analysis",
-                "icon": "⚡",
-            },
-            {
-                "id": "deepseek-r1-distill-llama-70b",
-                "name": "DeepSeek R1 70B",
-                "badge": "Reasoning",
-                "description": "Deep multi-step thinking, math & complex logic",
-                "icon": "🧠",
-            },
-            {
-                "id": "llama-3.1-8b-instant",
-                "name": "Llama 3.1 8B",
-                "badge": "Fast",
-                "description": "Ultra high-speed instant answers",
-                "icon": "🚀",
-            },
-            {
-                "id": "qwen/qwen3.6-27b",
-                "name": "Qwen 3.6",
-                "badge": "Coding",
-                "description": "Specialized code generation & technical tasks",
-                "icon": "💻",
-            },
-        ],
-        "default_model": "llama-3.3-70b-versatile",
+        "available_models": MODEL_CATALOG,
+        "default_model": FAST_MODEL,
         "labels": {
             "assistant": APP_NAME,
             "settings_signed_in": f"Signed in to {APP_NAME}",
@@ -620,37 +665,8 @@ async def public_config():
 async def available_models_endpoint():
     """Return available Groq models and their capabilities."""
     return JSONResponse({
-        "models": [
-            {
-                "id": "llama-3.3-70b-versatile",
-                "name": "Llama 3.3 70B",
-                "badge": "Powerhouse",
-                "description": "High intelligence, versatile reasoning & analysis",
-                "icon": "⚡",
-            },
-            {
-                "id": "deepseek-r1-distill-llama-70b",
-                "name": "DeepSeek R1 70B",
-                "badge": "Reasoning",
-                "description": "Deep multi-step thinking, math & complex logic",
-                "icon": "🧠",
-            },
-            {
-                "id": "llama-3.1-8b-instant",
-                "name": "Llama 3.1 8B",
-                "badge": "Fast",
-                "description": "Ultra high-speed instant answers",
-                "icon": "🚀",
-            },
-            {
-                "id": "qwen/qwen3.6-27b",
-                "name": "Qwen 3.6",
-                "badge": "Coding",
-                "description": "Specialized code generation & technical tasks",
-                "icon": "💻",
-            },
-        ],
-        "default": "llama-3.3-70b-versatile",
+        "models": MODEL_CATALOG,
+        "default": FAST_MODEL,
     })
 
 
@@ -749,6 +765,81 @@ async def public_share_page(request: Request, share_id: str):
 @app.get("/api/admin/analytics", tags=["Admin"])
 async def admin_analytics(user: dict = Depends(require_admin)):
     return JSONResponse({**authmod.product_analytics(), "version": APP_VERSION})
+
+
+@app.get("/api/early-access", tags=["Product"])
+async def early_access_catalog(user: dict = Depends(require_current_user)):
+    _require_feature(user, "early_access", "Preview model access")
+    return JSONResponse({
+        "enabled": True,
+        "channel": "preview",
+        "features": [
+            {
+                "id": "qwen-vision-preview",
+                "name": "Qwen 3.6 vision and reasoning",
+                "status": "available",
+                "models": ["qwen/qwen3.6-27b"],
+            }
+        ],
+    })
+
+
+@app.get("/api/search/images", tags=["Search"])
+async def search_images(request: Request, q: str = "", limit: int = 8, user: dict = Depends(require_current_user)):
+    _require_feature(user, "image_search", "Image search")
+    _enforce_rate_limit(request, "image_search", 30, user=user, window_seconds=3600)
+    query = (q or "").strip()[:300]
+    if len(query) < 2:
+        raise HTTPException(status_code=400, detail="Enter an image search query.")
+    limit = max(1, min(int(limit), 12))
+    try:
+        results = await asyncio.wait_for(image_search(query, limit), timeout=10.0)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Image search timed out. Please try again.")
+    return JSONResponse({"query": query, "provider": "Openverse", "results": results})
+
+
+@app.get("/api/support/tickets", tags=["Support"])
+async def my_support_tickets(user: dict = Depends(require_current_user)):
+    level = (
+        "dedicated"
+        if billing.feature_allowed(user, "dedicated_support")
+        else ("priority" if billing.feature_allowed(user, "priority_support") else "standard")
+    )
+    return JSONResponse({"support_level": level, "tickets": authmod.list_support_tickets(user["id"])})
+
+
+@app.post("/api/support/tickets", tags=["Support"])
+async def create_support_ticket(
+    request: Request,
+    req: SupportTicketRequest,
+    user: dict = Depends(require_current_user),
+):
+    _enforce_rate_limit(request, "support_ticket", 5, user=user, window_seconds=86400)
+    try:
+        ticket = authmod.create_support_ticket(user, req.subject, req.message)
+    except authmod.AuthError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return JSONResponse({"ok": True, "ticket": ticket})
+
+
+@app.get("/api/admin/support/tickets", tags=["Admin"])
+async def admin_support_tickets(status: str = "", user: dict = Depends(require_admin)):
+    return JSONResponse({"tickets": authmod.list_admin_support_tickets(status)})
+
+
+@app.patch("/api/admin/support/tickets/{ticket_id}", tags=["Admin"])
+async def admin_update_support_ticket(
+    ticket_id: str,
+    req: SupportTicketUpdateRequest,
+    user: dict = Depends(require_admin),
+):
+    safe_id = re.sub(r"[^A-Za-z0-9_]", "", ticket_id)[:40]
+    try:
+        ticket = authmod.update_support_ticket(safe_id, req.status, req.admin_response)
+    except authmod.AuthError as exc:
+        raise HTTPException(status_code=404 if "not found" in str(exc).lower() else 400, detail=str(exc))
+    return JSONResponse({"ok": True, "ticket": ticket})
 
 
 def _simple_file_intel(name: str, kind: str, text: str) -> dict:
@@ -1755,6 +1846,118 @@ async def delete_my_conversation(
 
 
 
+# ── TEAM account management ──────────────────────────────────────────────────
+@app.get("/api/team", tags=["Team"])
+async def get_my_team(user: dict = Depends(require_current_user)):
+    _require_feature(user, "team_workspace", "TEAM management")
+    try:
+        return JSONResponse(authmod.get_team_details(user["id"], user.get("name") or ""))
+    except authmod.AuthError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+
+@app.patch("/api/team", tags=["Team"])
+async def update_my_team(req: TeamProfileRequest, user: dict = Depends(require_current_user)):
+    _require_feature(user, "custom_ai_persona", "Custom AI persona")
+    try:
+        team = authmod.update_team_profile(
+            user["id"], req.name, req.persona_name, req.persona_instructions
+        )
+    except authmod.AuthError as exc:
+        raise HTTPException(status_code=403 if "owner" in str(exc).lower() else 400, detail=str(exc))
+    return JSONResponse({"ok": True, "team": team})
+
+
+@app.post("/api/team/invitations", tags=["Team"])
+async def invite_team_member(
+    request: Request,
+    req: TeamInviteRequest,
+    user: dict = Depends(require_current_user),
+):
+    _require_feature(user, "team_workspace", "TEAM seats")
+    _enforce_rate_limit(request, "team_invite", 20, user=user, window_seconds=86400)
+    try:
+        invitation = authmod.create_team_invitation(user["id"], req.email)
+    except authmod.AuthError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    # Keep the bearer token in the URL fragment so browsers never send it in
+    # HTTP request logs or Referrer headers. The chat client stores it only
+    # long enough to complete the authenticated acceptance request.
+    invite_url = f"{_public_base_url(request)}/chat#team_invite={invitation['token']}"
+    email_sent = False
+    if mailer.is_configured():
+        try:
+            details = authmod.get_team_details(user["id"], user.get("name") or "")
+            team_name = details["team"]["name"]
+            await asyncio.to_thread(
+                mailer.send_email,
+                invitation["email"],
+                f"You're invited to {team_name} on {APP_NAME}",
+                (
+                    f"{user.get('name') or user.get('email')} invited you to join {team_name}.\n\n"
+                    f"Sign in with {invitation['email']} and accept your seat here:\n{invite_url}\n\n"
+                    f"This invitation expires {invitation['expires_at']}."
+                ),
+            )
+            email_sent = True
+        except (mailer.MailError, authmod.AuthError):
+            logger.warning("TEAM invitation email delivery failed", exc_info=True)
+    public_invitation = {key: value for key, value in invitation.items() if key != "token"}
+    return JSONResponse({
+        "ok": True,
+        "invitation": public_invitation,
+        "invite_url": invite_url,
+        "email_sent": email_sent,
+    })
+
+
+@app.post("/api/team/invitations/accept", tags=["Team"])
+async def accept_team_invitation(req: TeamInviteAcceptRequest, user: dict = Depends(require_current_user)):
+    try:
+        membership = authmod.accept_team_invitation(user["id"], req.token)
+    except authmod.AuthError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return JSONResponse({"ok": True, "membership": membership, "reload_required": True})
+
+
+@app.delete("/api/team/invitations/{invitation_id}", tags=["Team"])
+async def revoke_team_invitation(invitation_id: int, user: dict = Depends(require_current_user)):
+    _require_feature(user, "team_workspace", "TEAM seats")
+    try:
+        authmod.revoke_team_invitation(user["id"], invitation_id)
+    except authmod.AuthError as exc:
+        raise HTTPException(status_code=403 if "owner" in str(exc).lower() else 404, detail=str(exc))
+    return JSONResponse({"ok": True})
+
+
+@app.delete("/api/team/members/{member_user_id}", tags=["Team"])
+async def remove_team_member(member_user_id: int, user: dict = Depends(require_current_user)):
+    _require_feature(user, "team_workspace", "TEAM seats")
+    try:
+        authmod.remove_team_member(user["id"], member_user_id)
+    except authmod.AuthError as exc:
+        raise HTTPException(status_code=403 if "owner" in str(exc).lower() else 404, detail=str(exc))
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/team/leave", tags=["Team"])
+async def leave_team(user: dict = Depends(require_current_user)):
+    try:
+        authmod.leave_team(user["id"])
+    except authmod.AuthError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return JSONResponse({"ok": True, "reload_required": True})
+
+
+@app.get("/api/team/analytics", tags=["Team"])
+async def team_analytics(days: int = 30, user: dict = Depends(require_current_user)):
+    _require_feature(user, "usage_analytics", "TEAM usage analytics")
+    try:
+        return JSONResponse(authmod.get_team_analytics(user["id"], days))
+    except authmod.AuthError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+
+
 # ── Workspaces / Deep Features v3 ─────────────────────────────────────────────
 @app.get("/api/workspaces", tags=["Workspaces"])
 async def api_list_workspaces(user: dict = Depends(require_current_user)):
@@ -1763,8 +1966,12 @@ async def api_list_workspaces(user: dict = Depends(require_current_user)):
 
 @app.post("/api/workspaces", tags=["Workspaces"])
 async def api_create_workspace(req: WorkspaceCreateRequest, user: dict = Depends(require_current_user)):
+    if req.shared:
+        _require_feature(user, "team_workspace", "Shared workspace")
+    if not billing.chat_mode_allowed(user, req.mode):
+        raise HTTPException(status_code=403, detail="That workspace mode is available on Vigzone PRO and TEAM.")
     try:
-        ws = authmod.create_workspace(user["id"], req.name, req.description, req.mode)
+        ws = authmod.create_workspace(user["id"], req.name, req.description, req.mode, req.shared)
         return JSONResponse({"workspace": ws})
     except authmod.AuthError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1772,6 +1979,8 @@ async def api_create_workspace(req: WorkspaceCreateRequest, user: dict = Depends
 
 @app.patch("/api/workspaces/{workspace_id}", tags=["Workspaces"])
 async def api_update_workspace(workspace_id: int, req: WorkspaceUpdateRequest, user: dict = Depends(require_current_user)):
+    if req.mode is not None and not billing.chat_mode_allowed(user, req.mode):
+        raise HTTPException(status_code=403, detail="That workspace mode is available on Vigzone PRO and TEAM.")
     try:
         ws = authmod.update_workspace(user["id"], workspace_id, req.name, req.description, req.mode)
         return JSONResponse({"workspace": ws})
@@ -3036,7 +3245,9 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
             user["id"], chat_request.workspace_id, last_user_query
         ),
         "memory": authmod.get_learning_context(user["id"], last_user_query),
+        "persona": authmod.get_team_persona_context(user["id"]),
     }
+    feature_policy = billing.entitlement_snapshot(user)["features"]
     stream_id = create_stream_id()
     register_stream(stream_id, user["id"])
 
@@ -3056,6 +3267,7 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
                     user_name=user.get("name") or "",
                     provider_override=provider_override,
                     context_parts=context_parts,
+                    feature_policy=feature_policy,
                     routing_mode=chat_request.ai_mode or "general",
                     conversation_id=chat_request.conversation_id or "",
                     metadata_callback=response_meta.update,
@@ -3143,7 +3355,9 @@ async def chat_sync(request: Request, chat_request: ChatRequest, user: dict = De
             user["id"], chat_request.workspace_id, last_user_query
         ),
         "memory": authmod.get_learning_context(user["id"], last_user_query),
+        "persona": authmod.get_team_persona_context(user["id"]),
     }
+    feature_policy = billing.entitlement_snapshot(user)["features"]
     response_meta: dict = {}
     try:
         reply = await chat_once(
@@ -3153,6 +3367,7 @@ async def chat_sync(request: Request, chat_request: ChatRequest, user: dict = De
             user_name=user.get("name") or "",
             provider_override=provider_override,
             context_parts=context_parts,
+            feature_policy=feature_policy,
             routing_mode=chat_request.ai_mode or "general",
             conversation_id=chat_request.conversation_id or "",
             metadata_callback=response_meta.update,

@@ -186,6 +186,7 @@ _GROQ_API_KEY = _clean_api_key(os.getenv("GROQ_API_KEY", ""))
 _DEPRECATED_MODEL_REPLACEMENTS = {
     "llama-3.1-8b-instant": "openai/gpt-oss-20b",
     "llama-3.3-70b-versatile": "openai/gpt-oss-120b",
+    "deepseek-r1-distill-llama-70b": "openai/gpt-oss-120b",
     "meta-llama/llama-4-scout-17b-16e-instruct": "qwen/qwen3.6-27b",
 }
 
@@ -209,8 +210,8 @@ OLLAMA_API_URL = f"{OLLAMA_BASE_URL}/chat/completions"
 # Stable text models: GPT-OSS 20B handles clearly simple requests quickly and
 # cheaply; GPT-OSS 120B remains the quality-first default for everything else.
 # Qwen 3.6 is the current Groq model that accepts image input.
-DEFAULT_MODEL = _configured_model("GROQ_MODEL", "llama-3.3-70b-versatile")
-FAST_MODEL = _configured_model("GROQ_FAST_MODEL", "llama-3.1-8b-instant")
+DEFAULT_MODEL = _configured_model("GROQ_MODEL", "openai/gpt-oss-120b")
+FAST_MODEL = _configured_model("GROQ_FAST_MODEL", "openai/gpt-oss-20b")
 COMPLEX_MODEL = _configured_model("GROQ_COMPLEX_MODEL", DEFAULT_MODEL)
 VISION_MODEL = _configured_model("GROQ_VISION_MODEL", "qwen/qwen3.6-27b")
 VISION_FALLBACK_MODELS = [
@@ -221,9 +222,6 @@ VISION_FALLBACK_MODELS = [
 API_KEY = _GROQ_API_KEY
 
 _DEFAULT_ALLOWED_CHAT_MODELS = (
-    "llama-3.3-70b-versatile,"
-    "deepseek-r1-distill-llama-70b,"
-    "llama-3.1-8b-instant,"
     "openai/gpt-oss-120b,"
     "openai/gpt-oss-20b,"
     "qwen/qwen3.6-27b"
@@ -299,7 +297,7 @@ MODEL_ROUTING_FAST_MAX_CONTEXT_TOKENS = max(
 # Model fallback: if the primary Groq model is temporarily rate-limited or down,
 # try these backup models before failing the user-facing request. Use a comma
 # separated GROQ_BACKUP_MODELS value, or a single GROQ_BACKUP_MODEL.
-_DEFAULT_GROQ_BACKUP_MODELS = "llama-3.3-70b-versatile,llama-3.1-8b-instant,deepseek-r1-distill-llama-70b,openai/gpt-oss-120b,openai/gpt-oss-20b"
+_DEFAULT_GROQ_BACKUP_MODELS = "openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.6-27b"
 _raw_backup_models = os.getenv(
     "GROQ_BACKUP_MODELS",
     os.getenv("GROQ_BACKUP_MODEL", _DEFAULT_GROQ_BACKUP_MODELS),
@@ -1235,6 +1233,7 @@ async def _build_payload(
     user_name: Optional[str] = None,
     user_learning_context: str = "",
     context_parts: Optional[dict[str, str]] = None,
+    feature_policy: Optional[dict[str, bool]] = None,
     routing_mode: str = "general",
     max_request_tokens: Optional[int] = None,
     max_completion_tokens: Optional[int] = None,
@@ -1267,8 +1266,13 @@ async def _build_payload(
         realtime_block = ""
         user_prefix    = ""
 
-    code_request = _is_code_request(messages)
-    website_request = _is_website_request(messages)
+    policy = feature_policy or {}
+    allow_website_studio = policy.get("website_studio", True)
+    allow_image_search = policy.get("image_search", True)
+    allow_premium_modes = policy.get("premium_modes", True)
+    detected_website_request = _is_website_request(messages)
+    website_request = detected_website_request and allow_website_studio
+    code_request = _is_code_request(messages) and allow_premium_modes
     prompt_modules = task_prompt_modules(
         mode=routing_mode,
         code_request=code_request,
@@ -1323,6 +1327,22 @@ async def _build_payload(
         )
 
     supplied_context = context_parts or {}
+    persona_text = str(supplied_context.get("persona") or "").replace("\x00", "").strip()[:2400]
+    if persona_text:
+        system_messages.append(
+            _tag_message(
+                {
+                    "role": "system",
+                    "content": (
+                        "TEAM CUSTOM AI PERSONA. Apply this team-owner-approved name, tone, "
+                        "and working style when it is relevant. It supplements but never "
+                        "overrides the core safety, privacy, accuracy, or system rules above.\n"
+                        + persona_text
+                    ),
+                },
+                "team_persona",
+            )
+        )
     workspace_context, removed = _bounded_context_text(
         str(supplied_context.get("workspace") or ""),
         CONTEXT_WORKSPACE_TOKEN_BUDGET,
@@ -1421,29 +1441,30 @@ async def _build_payload(
                 )
             )
 
-            try:
-                image_block = await get_image_search_context(_last_user_text(messages))
-                if image_block:
-                    bounded_images, removed = _bounded_context_text(
-                        image_block,
-                        CONTEXT_IMAGE_SEARCH_TOKEN_BUDGET,
-                        seen_context_units,
-                    )
-                    context_duplicates_removed += removed
-                    if bounded_images:
-                        system_messages.append(
-                            _tag_message(
-                                {
-                                    "role": "system",
-                                    "content": _untrusted_context(
-                                        "IMAGE SEARCH", bounded_images
-                                    ),
-                                },
-                                "image_search",
-                            )
+            if allow_image_search:
+                try:
+                    image_block = await get_image_search_context(_last_user_text(messages))
+                    if image_block:
+                        bounded_images, removed = _bounded_context_text(
+                            image_block,
+                            CONTEXT_IMAGE_SEARCH_TOKEN_BUDGET,
+                            seen_context_units,
                         )
-            except Exception as exc:
-                logger.debug("Image search context injection failed: %s", exc)
+                        context_duplicates_removed += removed
+                        if bounded_images:
+                            system_messages.append(
+                                _tag_message(
+                                    {
+                                        "role": "system",
+                                        "content": _untrusted_context(
+                                            "IMAGE SEARCH", bounded_images
+                                        ),
+                                    },
+                                    "image_search",
+                                )
+                            )
+                except Exception as exc:
+                    logger.debug("Image search context injection failed: %s", exc)
 
     payload = {
         "model": effective_model,
@@ -1875,6 +1896,7 @@ async def stream_chat(
     provider_override: Optional[dict] = None,
     user_learning_context: str = "",
     context_parts: Optional[dict[str, str]] = None,
+    feature_policy: Optional[dict[str, bool]] = None,
     routing_mode: str = "general",
     conversation_id: str = "",
     metadata_callback: Optional[Callable[[dict], None]] = None,
@@ -1925,6 +1947,7 @@ async def stream_chat(
             user_name=user_name,
             user_learning_context=user_learning_context,
             context_parts=context_parts,
+            feature_policy=feature_policy,
             routing_mode=routing_mode,
             max_request_tokens=(FALLBACK_MAX_REQUEST_TOKENS if is_fallback else None),
             max_completion_tokens=(FALLBACK_MAX_COMPLETION_TOKENS if is_fallback else None),
@@ -2185,6 +2208,7 @@ async def chat_once(
     provider_override: Optional[dict] = None,
     user_learning_context: str = "",
     context_parts: Optional[dict[str, str]] = None,
+    feature_policy: Optional[dict[str, bool]] = None,
     routing_mode: str = "general",
     conversation_id: str = "",
     metadata_callback: Optional[Callable[[dict], None]] = None,
@@ -2234,6 +2258,7 @@ async def chat_once(
             user_name=user_name,
             user_learning_context=user_learning_context,
             context_parts=context_parts,
+            feature_policy=feature_policy,
             routing_mode=routing_mode,
             max_request_tokens=(FALLBACK_MAX_REQUEST_TOKENS if is_fallback else None),
             max_completion_tokens=(FALLBACK_MAX_COMPLETION_TOKENS if is_fallback else None),

@@ -118,7 +118,11 @@ def validate_production_settings() -> None:
     paddle_pro_price = os.getenv("PADDLE_PRO_PRICE_ID", "").strip() or (legacy_pro if legacy_pro.startswith("pri_") else "")
     paddle_team_price = os.getenv("PADDLE_TEAM_PRICE_ID", "").strip() or (legacy_team if legacy_team.startswith("pri_") else "")
     paddle_secret = os.getenv("PADDLE_WEBHOOK_SECRET", "").strip()
-    if any((paddle_token, paddle_pro_price, paddle_team_price, paddle_secret)):
+    paddle_api_key = os.getenv("PADDLE_API_KEY", "").strip()
+    paddle_environment = os.getenv("PADDLE_ENVIRONMENT", "").strip().lower() or (
+        "sandbox" if paddle_token.startswith("test_") else "production"
+    )
+    if any((paddle_token, paddle_pro_price, paddle_team_price, paddle_secret, paddle_api_key)):
         if not paddle_token.startswith(("live_", "test_")):
             errors.append("PADDLE_CLIENT_TOKEN must be a Paddle Billing client-side token")
         if not paddle_pro_price.startswith("pri_"):
@@ -127,6 +131,20 @@ def validate_production_settings() -> None:
             errors.append("PADDLE_TEAM_PRICE_ID must be the exact recurring TEAM price ID (pri_...)")
         if not paddle_secret:
             errors.append("PADDLE_WEBHOOK_SECRET is required when Paddle billing is enabled")
+        if not paddle_api_key:
+            errors.append("PADDLE_API_KEY is required for secure purchase restoration")
+        if paddle_environment not in {"sandbox", "production"}:
+            errors.append("PADDLE_ENVIRONMENT must be sandbox or production")
+        elif paddle_environment == "sandbox":
+            if paddle_token and not paddle_token.startswith("test_"):
+                errors.append("PADDLE_ENVIRONMENT=sandbox requires a test_ client-side token")
+            if paddle_api_key and "_sdbx_" not in paddle_api_key:
+                errors.append("PADDLE_ENVIRONMENT=sandbox requires a Paddle sandbox API key")
+        else:
+            if paddle_token and not paddle_token.startswith("live_"):
+                errors.append("PADDLE_ENVIRONMENT=production requires a live_ client-side token")
+            if paddle_api_key and not paddle_api_key.startswith("pdl_live_apikey_"):
+                errors.append("PADDLE_ENVIRONMENT=production requires a Paddle live API key")
 
     public_base = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
     parsed_base = urlparse(public_base)

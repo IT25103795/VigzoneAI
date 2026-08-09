@@ -31,6 +31,20 @@
   const workspaceModalOverlay = $('#workspaceModalOverlay');
   const workspaceModalCloseBtn = $('#workspaceModalCloseBtn');
   const workspaceModalBody = $('#workspaceModalBody');
+  const teamHubBtn = $('#teamHubBtn');
+  const teamHubModalOverlay = $('#teamHubModalOverlay');
+  const teamHubCloseBtn = $('#teamHubCloseBtn');
+  const teamHubModalBody = $('#teamHubModalBody');
+  const imageSearchBtn = $('#imageSearchBtn');
+  const imageSearchModalOverlay = $('#imageSearchModalOverlay');
+  const imageSearchCloseBtn = $('#imageSearchCloseBtn');
+  const imageSearchSubmitBtn = $('#imageSearchSubmitBtn');
+  const imageSearchQuery = $('#imageSearchQuery');
+  const imageSearchModalBody = $('#imageSearchModalBody');
+  const supportCenterBtn = $('#supportCenterBtn');
+  const supportModalOverlay = $('#supportModalOverlay');
+  const supportCloseBtn = $('#supportCloseBtn');
+  const supportModalBody = $('#supportModalBody');
   const exportChatBtn = $('#exportChatBtn');
   const exportMenu = $('#exportMenu');
   const exportTxtBtn = $('#exportTxtBtn');
@@ -2211,21 +2225,33 @@
   }
   function renderWorkspaceModal(){
     if (!workspaceModalBody) return;
+    const canShare = window._vigzoneEntitlements?.features?.team_workspace === true;
+    const activeWorkspace = workspaces.find(w => Number(w.id) === Number(activeWorkspaceId));
     const cards = workspaces.length ? workspaces.map(w => `
       <div class="workspace-card${Number(w.id)===Number(activeWorkspaceId)?' active':''}" data-ws-id="${w.id}">
-        <div class="workspace-card-title">${escapeHtml(w.name)}</div>
+        <div class="workspace-card-title">${escapeHtml(w.name)}${w.shared ? ' <span class="team-chip">Shared TEAM</span>' : ''}</div>
         <div class="workspace-card-sub">${escapeHtml(w.mode || 'general')}${w.description ? ' • '+escapeHtml(w.description) : ''}</div>
       </div>
     `).join('') : '<div class="usage-modal-loading">No workspaces yet. Create one below.</div>';
+    const notesPanel = activeWorkspace ? `
+      <div class="workspace-notes-panel">
+        <div class="settings-section-title">${activeWorkspace.shared ? 'Shared team notes' : 'Workspace notes'}</div>
+        <div id="workspaceNotesList"><div class="usage-modal-loading">Loading notes…</div></div>
+        <input id="workspaceNoteTitle" maxlength="120" placeholder="Note title">
+        <textarea id="workspaceNoteContent" maxlength="5000" placeholder="Add context every teammate can use in chat…"></textarea>
+        <button class="deep-action-btn" id="addWorkspaceNoteBtn" type="button">Add note</button>
+      </div>` : '';
     workspaceModalBody.innerHTML = `
       <div class="workspace-list">${cards}</div>
       <button class="deep-action-btn" id="clearWorkspaceBtn" type="button">Use no workspace</button>
+      ${notesPanel}
       <div class="workspace-form">
         <input id="workspaceNameInput" placeholder="Workspace name, e.g. Hotel Website Project" />
         <textarea id="workspaceDescInput" placeholder="Short project description / goal"></textarea>
         <select id="workspaceModeInput">
           <option value="general">General</option><option value="website">Website Studio</option><option value="code">Code Fixer</option><option value="study">Study Helper</option><option value="file">File Analyzer</option><option value="business">Business Writer</option>
         </select>
+        ${canShare ? '<label class="team-checkbox"><input id="workspaceSharedInput" type="checkbox"> Share with all TEAM members</label>' : ''}
         <button class="deep-action-btn" id="createWorkspaceBtn" type="button">+ Create workspace</button>
       </div>`;
     workspaceModalBody.querySelectorAll('[data-ws-id]').forEach(el => el.addEventListener('click', () => {
@@ -2237,13 +2263,42 @@
       const name = $('#workspaceNameInput').value.trim();
       const description = $('#workspaceDescInput').value.trim();
       const mode = $('#workspaceModeInput').value;
+      const shared = !!$('#workspaceSharedInput')?.checked;
       if (!name) return alert('Enter a workspace name first.');
-      const res = await fetch('/api/workspaces', {method:'POST', headers:{'Content-Type':'application/json', ...authHeaders()}, body:JSON.stringify({name, description, mode})});
+      const res = await fetch('/api/workspaces', {method:'POST', headers:{'Content-Type':'application/json', ...authHeaders()}, body:JSON.stringify({name, description, mode, shared})});
       const data = await res.json().catch(()=>({}));
       if (!res.ok) return alert(data.detail || 'Could not create workspace');
       activeWorkspaceId = data.workspace.id; localStorage.setItem('vigzone_active_workspace_id', String(activeWorkspaceId));
       await loadWorkspaces(); renderWorkspaceModal();
     });
+    $('#addWorkspaceNoteBtn')?.addEventListener('click', addWorkspaceNote);
+    if (activeWorkspace) loadWorkspaceNotes(activeWorkspace.id);
+  }
+
+  async function loadWorkspaceNotes(workspaceId){
+    const target = $('#workspaceNotesList');
+    if (!target) return;
+    try {
+      const res = await fetch(`/api/workspaces/${Number(workspaceId)}/notes`, {credentials:'same-origin'});
+      const data = await res.json().catch(()=>({}));
+      if (!res.ok) throw new Error(data.detail || 'Could not load workspace notes.');
+      const notes = Array.isArray(data.notes) ? data.notes : [];
+      target.innerHTML = notes.length ? notes.map(note => `<div class="workspace-note-row"><strong>${escapeHtml(note.title || 'Note')}</strong><span>${escapeHtml(note.content || '')}</span></div>`).join('') : '<div class="usage-modal-note">No notes yet.</div>';
+    } catch (error) {
+      target.innerHTML = `<div class="usage-modal-empty">${escapeHtml(error.message || 'Could not load notes.')}</div>`;
+    }
+  }
+
+  async function addWorkspaceNote(){
+    if (!activeWorkspaceId) return;
+    const title = $('#workspaceNoteTitle')?.value.trim() || 'Note';
+    const content = $('#workspaceNoteContent')?.value.trim() || '';
+    if (content.length < 2) return alert('Add some note content first.');
+    const res = await fetch(`/api/workspaces/${Number(activeWorkspaceId)}/notes`, {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body:JSON.stringify({title, content, kind:'note'})});
+    const data = await res.json().catch(()=>({}));
+    if (!res.ok) return alert(data.detail || 'Could not add the workspace note.');
+    await loadWorkspaces();
+    renderWorkspaceModal();
   }
   async function openWorkspaceModal(){ workspaceModalOverlay?.classList.add('visible'); await loadWorkspaces(); renderWorkspaceModal(); }
   function closeWorkspaceModal(){ workspaceModalOverlay?.classList.remove('visible'); }
@@ -2251,6 +2306,178 @@
   workspacePill?.addEventListener('click', openWorkspaceModal);
   workspaceModalCloseBtn?.addEventListener('click', closeWorkspaceModal);
   workspaceModalOverlay?.addEventListener('click', e => { if(e.target===workspaceModalOverlay) closeWorkspaceModal(); });
+
+  // ---------- TEAM Hub: real seats, shared data, analytics, persona ----------
+  async function loadTeamHub(){
+    if (!teamHubModalBody) return;
+    teamHubModalBody.innerHTML = '<div class="usage-modal-loading">Loading your team…</div>';
+    try {
+      const [teamRes, analyticsRes] = await Promise.all([
+        fetch('/api/team', {credentials:'same-origin'}),
+        fetch('/api/team/analytics?days=30', {credentials:'same-origin'})
+      ]);
+      const teamData = await teamRes.json().catch(()=>({}));
+      const analytics = await analyticsRes.json().catch(()=>({members:[], totals:{}}));
+      if (!teamRes.ok) throw new Error(teamData.detail || 'Could not load your team.');
+      if (!analyticsRes.ok) throw new Error(analytics.detail || 'Could not load TEAM analytics.');
+      renderTeamHub(teamData, analytics);
+    } catch (error) {
+      teamHubModalBody.innerHTML = `<div class="usage-modal-empty">${escapeHtml(error.message || 'Could not load TEAM Hub.')}</div>`;
+    }
+  }
+
+  function renderTeamHub(data, analytics){
+    const team = data.team || {};
+    const isOwner = team.role === 'owner';
+    const memberStats = new Map((analytics.members || []).map(row => [Number(row.id), row]));
+    const members = (data.members || []).map(member => {
+      const stats = memberStats.get(Number(member.id)) || {};
+      return `<div class="team-member-row">
+        <div><strong>${escapeHtml(member.name || member.email)}</strong><span>${escapeHtml(member.email)} · ${escapeHtml(member.role)}</span></div>
+        <div class="team-member-usage">${Number(stats.request_count || 0).toLocaleString()} requests · ${Number(stats.total_tokens || 0).toLocaleString()} tokens</div>
+        ${isOwner && member.role !== 'owner' ? `<button class="edit-name-btn danger" data-team-remove="${Number(member.id)}" type="button">Remove</button>` : ''}
+      </div>`;
+    }).join('');
+    const invites = isOwner && (data.invitations || []).length ? (data.invitations || []).map(invite => `<div class="team-member-row"><div><strong>${escapeHtml(invite.email)}</strong><span>Pending until ${escapeHtml(new Date(invite.expires_at).toLocaleString())}</span></div><button class="edit-name-btn danger" data-invite-revoke="${Number(invite.id)}" type="button">Revoke</button></div>`).join('') : '';
+    const totals = analytics.totals || {};
+    teamHubModalBody.innerHTML = `
+      <div class="team-summary-grid">
+        <div><strong>${Number(team.seats_used || 0)} / ${Number(team.seat_limit || 5)}</strong><span>Active seats</span></div>
+        <div><strong>${Number(totals.request_count || 0).toLocaleString()}</strong><span>30-day requests</span></div>
+        <div><strong>${Number(totals.total_tokens || 0).toLocaleString()}</strong><span>30-day tokens</span></div>
+      </div>
+      <div class="team-section">
+        <div class="settings-section-title">Team identity and custom AI persona</div>
+        <input id="teamNameInput" maxlength="80" value="${escapeHtml(team.name || '')}" ${isOwner?'':'disabled'} placeholder="Team name">
+        <input id="teamPersonaNameInput" maxlength="60" value="${escapeHtml(team.persona_name || 'Vigzone AI')}" ${isOwner?'':'disabled'} placeholder="AI persona name">
+        <textarea id="teamPersonaInstructionsInput" maxlength="2400" ${isOwner?'':'disabled'} placeholder="Example: Respond as our concise product strategist. Use our terminology and finish with owners and next actions.">${escapeHtml(team.persona_instructions || '')}</textarea>
+        ${isOwner ? '<button class="deep-action-btn" id="saveTeamProfileBtn" type="button">Save team and persona</button>' : '<div class="usage-modal-note">Only the TEAM owner can change the shared persona.</div>'}
+      </div>
+      <div class="team-section"><div class="settings-section-title">Members</div>${members || '<div class="usage-modal-empty">No members.</div>'}${invites}</div>
+      ${isOwner ? `<div class="team-section"><div class="settings-section-title">Invite a teammate</div><div class="team-invite-form"><input id="teamInviteEmailInput" type="email" maxlength="200" placeholder="teammate@example.com"><button class="deep-action-btn" id="sendTeamInviteBtn" type="button">Invite</button></div><div class="usage-modal-note" id="teamInviteResult">Invitations reserve a seat and expire automatically.</div></div>` : '<button class="edit-name-btn danger" id="leaveTeamBtn" type="button">Leave this team</button>'}
+    `;
+    $('#saveTeamProfileBtn')?.addEventListener('click', saveTeamProfile);
+    $('#sendTeamInviteBtn')?.addEventListener('click', sendTeamInvite);
+    $('#leaveTeamBtn')?.addEventListener('click', leaveCurrentTeam);
+    teamHubModalBody.querySelectorAll('[data-team-remove]').forEach(button => button.addEventListener('click', () => removeTeamMember(Number(button.dataset.teamRemove))));
+    teamHubModalBody.querySelectorAll('[data-invite-revoke]').forEach(button => button.addEventListener('click', () => revokeTeamInvite(Number(button.dataset.inviteRevoke))));
+  }
+
+  async function saveTeamProfile(){
+    const payload = {name:$('#teamNameInput')?.value.trim(), persona_name:$('#teamPersonaNameInput')?.value.trim(), persona_instructions:$('#teamPersonaInstructionsInput')?.value.trim()};
+    const res = await fetch('/api/team', {method:'PATCH', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body:JSON.stringify(payload)});
+    const data = await res.json().catch(()=>({}));
+    if (!res.ok) return alert(data.detail || 'Could not save the team profile.');
+    suiteToast?.('TEAM persona saved and active for every member.');
+    await loadTeamHub();
+  }
+
+  async function sendTeamInvite(){
+    const email = $('#teamInviteEmailInput')?.value.trim() || '';
+    if (!email) return alert('Enter the teammate email first.');
+    const result = $('#teamInviteResult');
+    if (result) result.textContent = 'Creating secure invitation…';
+    const res = await fetch('/api/team/invitations', {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body:JSON.stringify({email})});
+    const data = await res.json().catch(()=>({}));
+    if (!res.ok) { if (result) result.textContent = data.detail || 'Could not invite that email.'; return; }
+    if (result) result.innerHTML = data.email_sent ? 'Invitation email sent.' : `Email delivery is not configured. <button class="edit-name-btn" id="copyTeamInviteBtn" type="button">Copy secure invite link</button>`;
+    $('#copyTeamInviteBtn')?.addEventListener('click', async () => { await navigator.clipboard.writeText(data.invite_url || ''); suiteToast?.('Invite link copied.'); });
+    if (data.email_sent) await loadTeamHub();
+  }
+
+  async function removeTeamMember(memberId){
+    if (!confirm('Remove this teammate and revoke TEAM access?')) return;
+    const res = await fetch(`/api/team/members/${Number(memberId)}`, {method:'DELETE', credentials:'same-origin'});
+    const data = await res.json().catch(()=>({}));
+    if (!res.ok) return alert(data.detail || 'Could not remove that member.');
+    await loadTeamHub();
+  }
+
+  async function revokeTeamInvite(invitationId){
+    const res = await fetch(`/api/team/invitations/${Number(invitationId)}`, {method:'DELETE', credentials:'same-origin'});
+    const data = await res.json().catch(()=>({}));
+    if (!res.ok) return alert(data.detail || 'Could not revoke that invitation.');
+    await loadTeamHub();
+  }
+
+  async function leaveCurrentTeam(){
+    if (!confirm('Leave this TEAM and lose its shared access?')) return;
+    const res = await fetch('/api/team/leave', {method:'POST', credentials:'same-origin'});
+    const data = await res.json().catch(()=>({}));
+    if (!res.ok) return alert(data.detail || 'Could not leave the team.');
+    window.location.reload();
+  }
+
+  async function acceptPendingTeamInvite(){
+    const params = new URLSearchParams(window.location.search);
+    const fragmentParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const queryToken = fragmentParams.get('team_invite') || params.get('team_invite') || '';
+    if (queryToken) {
+      try { sessionStorage.setItem('vigzone_pending_team_invite', queryToken); } catch {}
+    }
+    const token = queryToken || sessionStorage.getItem('vigzone_pending_team_invite') || '';
+    if (!token) return;
+    history.replaceState({}, '', window.location.pathname);
+    const res = await fetch('/api/team/invitations/accept', {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body:JSON.stringify({token})});
+    const data = await res.json().catch(()=>({}));
+    if (!res.ok) return alert(data.detail || 'Could not accept the TEAM invitation.');
+    try { sessionStorage.removeItem('vigzone_pending_team_invite'); } catch {}
+    alert(`You joined ${data.membership?.team_name || 'the TEAM'}. Vigzone will reload your access now.`);
+    window.location.reload();
+  }
+
+  function openTeamHub(){ teamHubModalOverlay?.classList.add('visible'); loadTeamHub(); }
+  function closeTeamHub(){ teamHubModalOverlay?.classList.remove('visible'); }
+  teamHubBtn?.addEventListener('click', openTeamHub);
+  teamHubCloseBtn?.addEventListener('click', closeTeamHub);
+  teamHubModalOverlay?.addEventListener('click', e => { if (e.target === teamHubModalOverlay) closeTeamHub(); });
+
+  // ---------- Licensed image search ----------
+  async function runImageSearch(){
+    const query = imageSearchQuery?.value.trim() || '';
+    if (query.length < 2) return;
+    imageSearchModalBody.innerHTML = '<div class="usage-modal-loading">Searching Openverse…</div>';
+    const res = await fetch(`/api/search/images?q=${encodeURIComponent(query)}&limit=10`, {credentials:'same-origin'});
+    const data = await res.json().catch(()=>({}));
+    if (!res.ok) { imageSearchModalBody.innerHTML = `<div class="usage-modal-empty">${escapeHtml(data.detail || 'Image search failed.')}</div>`; return; }
+    const results = Array.isArray(data.results) ? data.results : [];
+    imageSearchModalBody.innerHTML = results.length ? `<div class="image-search-grid">${results.map(item => `<figure><img src="${escapeHtml(item.url || '')}" alt="${escapeHtml(item.title || query)}" loading="lazy" referrerpolicy="no-referrer"><figcaption><strong>${escapeHtml(item.title || query)}</strong><span>${escapeHtml(item.creator || 'Unknown creator')} · ${escapeHtml(item.license || 'License listed by Openverse')}</span><a href="${escapeHtml(item.url || '#')}" target="_blank" rel="noopener noreferrer">Open image</a></figcaption></figure>`).join('')}</div>` : '<div class="usage-modal-empty">No openly licensed images found. Try a broader query.</div>';
+  }
+  imageSearchBtn?.addEventListener('click', () => { imageSearchModalOverlay?.classList.add('visible'); imageSearchQuery?.focus(); });
+  imageSearchCloseBtn?.addEventListener('click', () => imageSearchModalOverlay?.classList.remove('visible'));
+  imageSearchModalOverlay?.addEventListener('click', e => { if (e.target === imageSearchModalOverlay) imageSearchModalOverlay.classList.remove('visible'); });
+  imageSearchSubmitBtn?.addEventListener('click', runImageSearch);
+  imageSearchQuery?.addEventListener('keydown', e => { if (e.key === 'Enter') runImageSearch(); });
+
+  // ---------- Support queue: Standard / Priority / Dedicated ----------
+  async function loadSupportCenter(){
+    if (!supportModalBody) return;
+    supportModalBody.innerHTML = '<div class="usage-modal-loading">Loading support…</div>';
+    try {
+      const res = await fetch('/api/support/tickets', {credentials:'same-origin'});
+      const data = await res.json().catch(()=>({}));
+      if (!res.ok) throw new Error(data.detail || 'Could not load support.');
+      const tickets = Array.isArray(data.tickets) ? data.tickets : [];
+      supportModalBody.innerHTML = `<div class="support-level ${escapeHtml(data.support_level || 'standard')}">${escapeHtml((data.support_level || 'standard').toUpperCase())} SUPPORT</div>
+        <div class="support-form"><input id="supportSubjectInput" maxlength="160" placeholder="What do you need help with?"><textarea id="supportMessageInput" maxlength="6000" placeholder="Describe the issue, expected result, and anything you already tried."></textarea><button class="deep-action-btn" id="createSupportTicketBtn" type="button">Create support ticket</button></div>
+        <div class="team-section"><div class="settings-section-title">Your tickets</div>${tickets.length ? tickets.map(ticket => `<div class="support-ticket"><div><strong>${escapeHtml(ticket.subject)}</strong><span class="support-status">${escapeHtml(ticket.status)} · ${escapeHtml(ticket.support_level)}</span></div><p>${escapeHtml(ticket.message)}</p>${ticket.admin_response ? `<div class="support-response"><strong>Vigzone response</strong><p>${escapeHtml(ticket.admin_response)}</p></div>` : ''}</div>`).join('') : '<div class="usage-modal-note">No support tickets yet.</div>'}</div>`;
+      $('#createSupportTicketBtn')?.addEventListener('click', createSupportTicket);
+    } catch (error) {
+      supportModalBody.innerHTML = `<div class="usage-modal-empty">${escapeHtml(error.message || 'Could not load support.')}</div>`;
+    }
+  }
+  async function createSupportTicket(){
+    const subject = $('#supportSubjectInput')?.value.trim() || '';
+    const message = $('#supportMessageInput')?.value.trim() || '';
+    const res = await fetch('/api/support/tickets', {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body:JSON.stringify({subject,message})});
+    const data = await res.json().catch(()=>({}));
+    if (!res.ok) return alert(data.detail || 'Could not create the support ticket.');
+    suiteToast?.(`${String(data.ticket?.support_level || 'standard').toUpperCase()} support ticket created.`);
+    await loadSupportCenter();
+  }
+  supportCenterBtn?.addEventListener('click', () => { supportModalOverlay?.classList.add('visible'); loadSupportCenter(); });
+  supportCloseBtn?.addEventListener('click', () => supportModalOverlay?.classList.remove('visible'));
+  supportModalOverlay?.addEventListener('click', e => { if (e.target === supportModalOverlay) supportModalOverlay.classList.remove('visible'); });
 
   function downloadBlobText(filename, content, type='text/plain'){
     const blob = new Blob([content], {type});
@@ -2940,9 +3167,14 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Could not load admin data.');
       let productAnalytics = null;
+      let supportTickets = [];
       try {
         const ar = await fetch('/api/admin/analytics', { credentials:'include' });
         if (ar.ok) productAnalytics = await ar.json();
+      } catch {}
+      try {
+        const sr = await fetch('/api/admin/support/tickets', {credentials:'include'});
+        if (sr.ok) supportTickets = (await sr.json()).tickets || [];
       } catch {}
       const topRows = (data.top_users || []).map(u => `
         <tr>
@@ -2967,6 +3199,9 @@
           <thead><tr><th>User</th><th>Tokens</th><th>Req</th><th>Action</th></tr></thead>
           <tbody>${topRows || '<tr><td colspan="4">No usage yet today.</td></tr>'}</tbody>
         </table>
+        <div class="team-section"><div class="settings-section-title">Support queue (${supportTickets.length})</div>
+          ${supportTickets.length ? supportTickets.slice(0,30).map(ticket => `<div class="support-ticket" data-admin-ticket="${escapeHtml(ticket.id)}"><div><strong>${escapeHtml(ticket.subject)}</strong><span class="support-status">${escapeHtml(ticket.support_level)} · ${escapeHtml(ticket.status)}</span></div><p>${escapeHtml(ticket.user_name || ticket.user_email)} · ${escapeHtml(ticket.user_email || '')}</p><p>${escapeHtml(ticket.message)}</p><select data-ticket-status><option value="open" ${ticket.status==='open'?'selected':''}>Open</option><option value="in_progress" ${ticket.status==='in_progress'?'selected':''}>In progress</option><option value="resolved" ${ticket.status==='resolved'?'selected':''}>Resolved</option><option value="closed" ${ticket.status==='closed'?'selected':''}>Closed</option></select><textarea data-ticket-response maxlength="6000" placeholder="Response visible to the customer">${escapeHtml(ticket.admin_response || '')}</textarea><button class="deep-action-btn" data-support-save="${escapeHtml(ticket.id)}" type="button">Save response</button></div>`).join('') : '<div class="usage-modal-note">No support tickets.</div>'}
+        </div>
       `;
       adminModalBody.querySelectorAll('[data-reset-user]').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -2982,6 +3217,17 @@
           }
         });
       });
+      adminModalBody.querySelectorAll('[data-support-save]').forEach(btn => btn.addEventListener('click', async () => {
+        const ticket = btn.closest('[data-admin-ticket]');
+        const ticketId = btn.dataset.supportSave;
+        const status = ticket?.querySelector('[data-ticket-status]')?.value || 'open';
+        const admin_response = ticket?.querySelector('[data-ticket-response]')?.value.trim() || '';
+        btn.disabled = true;
+        const response = await fetch(`/api/admin/support/tickets/${encodeURIComponent(ticketId)}`, {method:'PATCH', headers:{'Content-Type':'application/json'}, credentials:'include', body:JSON.stringify({status,admin_response})});
+        const payload = await response.json().catch(()=>({}));
+        if (!response.ok) { alert(payload.detail || 'Could not update the ticket.'); btn.disabled = false; return; }
+        await loadAdminDashboard();
+      }));
     } catch (e) {
       adminModalBody.innerHTML = `<div class="usage-modal-empty">${escapeHtml(e.message || 'Could not load admin data.')}</div>`;
     }
@@ -3240,7 +3486,8 @@
     if (!locked) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    suiteToast?.('This feature is available on Vigzone PRO and TEAM.');
+    const teamOnly = ['team_workspace','usage_analytics','custom_ai_persona','dedicated_support'].includes(locked.dataset.requiresFeature);
+    suiteToast?.(teamOnly ? 'This feature requires Vigzone TEAM.' : 'This feature is available on Vigzone PRO and TEAM.');
     openPricingModal();
   }, true);
 
@@ -3272,7 +3519,12 @@
           refreshApiKeyBox();
           refreshUsageCycle();
         }
+        await acceptPendingTeamInvite();
       } else if (window.location.pathname === '/chat' || window.location.pathname.startsWith('/chat/')) {
+        const inviteToken = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('team_invite') || new URLSearchParams(window.location.search).get('team_invite');
+        if (inviteToken) {
+          try { sessionStorage.setItem('vigzone_pending_team_invite', inviteToken); } catch {}
+        }
         window.location.href = '/';
         return;
       }
@@ -5286,6 +5538,15 @@ A strong website should include: hero section, clear navigation, services/featur
   }
 
   function applyDriveImportResult(entry, data){
+    if (data.kind === 'image' && window._vigzoneEntitlements?.features?.advanced_models !== true) {
+      entry.status = 'error';
+      entry.kind = 'image';
+      entry.error = 'Image understanding requires Vigzone PRO or TEAM.';
+      renderAttachmentsBar();
+      suiteToast?.(entry.error);
+      openPricingModal();
+      return;
+    }
     entry.status = 'ready';
     entry.drive = true;
     entry.driveFileId = data.drive_file_id || entry.driveFileId;
@@ -5450,8 +5711,18 @@ A strong website should include: hero section, clear navigation, services/featur
   }
 
   function handleFiles(fileList){
-    const files = Array.from(fileList || []);
+    let files = Array.from(fileList || []);
     if (!files.length) return;
+
+    if (window._vigzoneEntitlements?.features?.advanced_models !== true) {
+      const hasImages = files.some(file => file.type.startsWith('image/'));
+      if (hasImages) {
+        files = files.filter(file => !file.type.startsWith('image/'));
+        suiteToast?.('Image understanding requires Vigzone PRO or TEAM. Document File Studio remains available on FREE.');
+        openPricingModal();
+      }
+      if (!files.length) return;
+    }
 
     const room = MAX_ATTACHMENTS - pendingFiles.length;
     if (room <= 0) {
@@ -6881,7 +7152,13 @@ Requirements:
   }
 
   /* ── 1. Model Selector Controller ────────────────────────────────────────── */
-  let activeSelectedModel = localStorage.getItem('vigzone_model') || 'llama-3.1-8b-instant';
+  const LEGACY_MODEL_MIGRATIONS = Object.freeze({
+    'llama-3.1-8b-instant': 'openai/gpt-oss-20b',
+    'llama-3.3-70b-versatile': 'openai/gpt-oss-120b',
+    'deepseek-r1-distill-llama-70b': 'openai/gpt-oss-120b'
+  });
+  let activeSelectedModel = localStorage.getItem('vigzone_model') || 'openai/gpt-oss-20b';
+  activeSelectedModel = LEGACY_MODEL_MIGRATIONS[activeSelectedModel] || activeSelectedModel;
   function getActiveModel(){ return activeSelectedModel; }
 
   function initModelSelector(){
@@ -6893,10 +7170,9 @@ Requirements:
     const iconEl = $('#modelPickerIcon');
 
     const modelMeta = {
-      'llama-3.3-70b-versatile': { name: 'Llama 3.3 70B', badge: 'Powerhouse', icon: '⚡', color: 'linear-gradient(135deg, #3b82f6, #8b5cf6)' },
-      'deepseek-r1-distill-llama-70b': { name: 'DeepSeek R1', badge: 'Reasoning', icon: '🧠', color: '#8b5cf6' },
-      'llama-3.1-8b-instant': { name: 'Llama 3.1 8B', badge: 'Fast', icon: '🚀', color: '#10b981' },
-      'qwen/qwen3.6-27b': { name: 'Qwen 3.6', badge: 'Coding', icon: '💻', color: '#06b6d4' }
+      'openai/gpt-oss-20b': { name: 'GPT-OSS 20B', badge: 'Fast', icon: '🚀', color: '#10b981' },
+      'openai/gpt-oss-120b': { name: 'GPT-OSS 120B', badge: 'Powerhouse', icon: '⚡', color: 'linear-gradient(135deg, #3b82f6, #8b5cf6)' },
+      'qwen/qwen3.6-27b': { name: 'Qwen 3.6 27B', badge: 'Preview · Vision', icon: '👁️', color: '#06b6d4' }
     };
 
     function updateUi(modelId){
@@ -6939,8 +7215,8 @@ Requirements:
 
   /* ── Plan-based model restriction ────────────────────────────────────────── */
   // Models that require a paid plan (pro or team)
-  const PREMIUM_MODELS = ['llama-3.3-70b-versatile', 'deepseek-r1-distill-llama-70b', 'qwen/qwen3.6-27b'];
-  const FREE_MODEL = 'llama-3.1-8b-instant';
+  const PREMIUM_MODELS = ['openai/gpt-oss-120b', 'qwen/qwen3.6-27b'];
+  const FREE_MODEL = 'openai/gpt-oss-20b';
 
   function applyModelPlanRestrictions(plan) {
     const isPaid = plan === 'pro' || plan === 'team';
@@ -6962,7 +7238,7 @@ Requirements:
       const wrap = document.getElementById('modelPickerWrap');
       activeSelectedModel = FREE_MODEL;
       localStorage.setItem('vigzone_model', FREE_MODEL);
-      const meta = { name: 'Llama 3.1 8B', badge: 'Fast', icon: '\uD83D\uDE80', color: '#10b981' };
+      const meta = { name: 'GPT-OSS 20B', badge: 'Fast', icon: '\uD83D\uDE80', color: '#10b981' };
       const nameEl = document.getElementById('modelPickerName');
       const badgeEl = document.getElementById('modelPickerBadge');
       const iconEl = document.getElementById('modelPickerIcon');
@@ -7190,9 +7466,9 @@ Requirements:
       const s = document.createElement('script');
       s.src = 'https://cdn.paddle.com/paddle/v2/paddle.js';
       s.onload = () => { 
-        // Auto-detect sandbox environment if token starts with test_
-        const env = paddleToken.startsWith('test_') ? 'sandbox' : 'production';
-        window.Paddle.Environment.set(env);
+        // Paddle.js defaults to Live. Only opt into sandbox for test_ tokens;
+        // never carry sandbox mode into a live_ checkout.
+        if (paddleToken.startsWith('test_')) window.Paddle.Environment.set('sandbox');
         window.Paddle.Initialize({ 
           token: paddleToken,
           eventCallback: function(data) {

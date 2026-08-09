@@ -59,6 +59,34 @@ Configure these variables before deploying:
 | `PADDLE_API_KEY` | Server API key for purchase restoration |
 | `PADDLE_ENVIRONMENT` | `production` (`sandbox` only for test catalog IDs) |
 
+### Paddle Sandbox → Live cutover
+
+Paddle sandbox and live are separate workspaces. Do not reuse sandbox API
+keys, client-side tokens, products, prices, customers, or webhook secrets in
+Live. Before changing `PADDLE_ENVIRONMENT`, create the Live catalog and set all
+six variables in the same Render deployment update:
+
+1. `PADDLE_CLIENT_TOKEN=live_...`
+2. `PADDLE_API_KEY=pdl_live_apikey_...` (server secret; never expose it in HTML)
+3. `PADDLE_PRO_PRICE_ID=pri_...` from the Live recurring PRO price
+4. `PADDLE_TEAM_PRICE_ID=pri_...` from the Live recurring TEAM price
+5. `PADDLE_WEBHOOK_SECRET=ntfset_...` from the Live notification destination
+6. `PADDLE_ENVIRONMENT=production`
+
+Configure the Live webhook destination as
+`https://<your-domain>/api/billing/paddle/webhook` and subscribe at minimum to
+`subscription.created`, `subscription.updated`, `subscription.activated`,
+`subscription.resumed`, `subscription.paused`, `subscription.canceled`, and
+`transaction.completed`. Approve the production domain in Paddle Checkout
+settings and configure its default payment link before opening Live checkout.
+
+After deployment, make one real controlled PRO purchase and one real controlled
+TEAM purchase. Confirm that Paddle reports the webhook as delivered, the header
+badge changes immediately after refresh, TEAM Hub creates five available seats,
+and cancellation/downgrade removes paid access on the next authenticated request.
+Then refund/cancel the controlled transactions as appropriate. Rotate the
+server API key before its configured expiry date.
+
 Generate the encryption secret locally and store it only in Back4App's secret
 variables:
 

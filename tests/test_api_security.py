@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from fastapi import FastAPI, Request
 from starlette.testclient import TestClient
 
@@ -159,7 +160,7 @@ def test_durable_feature_endpoints_and_real_upload_processing(client):
 
     workspace = client.post(
         "/api/workspaces",
-        json={"name": "Release", "description": "Production launch", "mode": "code"},
+        json={"name": "Release", "description": "Production launch", "mode": "general"},
     )
     assert workspace.status_code == 200
     workspace_id = workspace.json()["workspace"]["id"]
@@ -231,3 +232,26 @@ def test_safe_production_configuration_is_accepted(monkeypatch):
     monkeypatch.setattr(virus_scanner, "scanner_healthcheck", lambda: True)
 
     security.validate_production_settings()
+
+
+def test_production_preflight_rejects_mixed_paddle_environments(monkeypatch):
+    import security
+
+    monkeypatch.setenv("APP_MODE", "production")
+    monkeypatch.setenv("ENCRYPTION_SECRET", "a-unique-production-secret-with-more-than-32-characters")
+    monkeypatch.setenv("COOKIE_SECURE", "true")
+    monkeypatch.setenv("VIRUS_SCAN_STRICT", "false")
+    monkeypatch.setenv("CORS_ORIGINS", "https://vigzone.example")
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://vigzone.example")
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_configured_for_test")
+    monkeypatch.setenv("WORKERS", "1")
+    monkeypatch.setenv("VIGZONE_DATA_DIR", "/srv/vigzone/data")
+    monkeypatch.setenv("PADDLE_ENVIRONMENT", "production")
+    monkeypatch.setenv("PADDLE_CLIENT_TOKEN", "live_123456789012345678901234567")
+    monkeypatch.setenv("PADDLE_PRO_PRICE_ID", "pri_pro")
+    monkeypatch.setenv("PADDLE_TEAM_PRICE_ID", "pri_team")
+    monkeypatch.setenv("PADDLE_WEBHOOK_SECRET", "ntfset_live")
+    monkeypatch.setenv("PADDLE_API_KEY", "pdl_sdbx_apikey_legacy_test_value")
+
+    with pytest.raises(RuntimeError, match="Paddle live API key"):
+        security.validate_production_settings()

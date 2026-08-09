@@ -16,7 +16,6 @@ PLAN_RANK = {"free": 0, "pro": 1, "team": 2}
 ACTIVE_SUBSCRIPTION_STATUSES = {"active", "trialing", "past_due"}
 PREMIUM_CHAT_MODES = {"website", "code", "business", "voice"}
 FREE_MODEL_IDS = {
-    "llama-3.1-8b-instant",
     "openai/gpt-oss-20b",
 }
 
@@ -31,6 +30,8 @@ _FEATURES = {
         "voice": False,
         "premium_modes": False,
         "priority_support": False,
+        "dedicated_support": False,
+        "early_access": False,
         "team_workspace": False,
         "usage_analytics": False,
         "custom_ai_persona": False,
@@ -45,6 +46,8 @@ _FEATURES = {
         "voice": True,
         "premium_modes": True,
         "priority_support": True,
+        "dedicated_support": False,
+        "early_access": True,
         "team_workspace": False,
         "usage_analytics": False,
         "custom_ai_persona": False,
@@ -59,6 +62,8 @@ _FEATURES = {
         "voice": True,
         "premium_modes": True,
         "priority_support": True,
+        "dedicated_support": True,
+        "early_access": True,
         "team_workspace": True,
         "usage_analytics": True,
         "custom_ai_persona": True,
@@ -72,7 +77,14 @@ def normalize_plan(value: Any) -> str:
 
 
 def effective_plan(user: dict) -> str:
-    return "team" if bool(user.get("is_admin")) or user.get("role") == "admin" else normalize_plan(user.get("plan"))
+    if bool(user.get("is_admin")) or user.get("role") == "admin":
+        return "team"
+    # A seat in an active TEAM subscription grants the same product access as
+    # the owner.  Authentication attaches this server-verified marker only
+    # when the owning account still has TEAM (or admin) access.
+    if bool(user.get("team_active")):
+        return "team"
+    return normalize_plan(user.get("plan"))
 
 
 def entitlement_snapshot(user: dict) -> dict:
@@ -90,6 +102,13 @@ def entitlement_snapshot(user: dict) -> dict:
         "limits": {
             "messages_per_day": 50 if plan == "free" else None,
             "team_seats": 5 if plan == "team" else 1,
+        },
+        "team": {
+            "id": user.get("team_id"),
+            "name": user.get("team_name") or "",
+            "role": user.get("team_role") or "",
+            "owner_id": user.get("team_owner_id"),
+            "active": bool(user.get("team_active")),
         },
     }
 

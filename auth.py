@@ -37,6 +37,9 @@ PASSWORD_ITERATIONS = 600_000
 MAX_LEARNING_MEMORIES_PER_USER = max(1, int(os.getenv("MAX_LEARNING_MEMORIES_PER_USER", "200")))
 MAX_WORKSPACES_PER_USER = max(1, int(os.getenv("MAX_WORKSPACES_PER_USER", "50")))
 MAX_WORKSPACE_NOTES_PER_WORKSPACE = max(1, int(os.getenv("MAX_WORKSPACE_NOTES_PER_WORKSPACE", "500")))
+TEAM_SEAT_LIMIT = 5
+TEAM_INVITE_TTL_DAYS = max(1, min(int(os.getenv("TEAM_INVITE_TTL_DAYS", "7")), 30))
+MAX_SUPPORT_TICKETS_PER_USER = max(10, int(os.getenv("MAX_SUPPORT_TICKETS_PER_USER", "200")))
 MAX_FEEDBACK_PER_USER = max(1, int(os.getenv("MAX_FEEDBACK_PER_USER", "5000")))
 MAX_ACTIVE_SHARES_PER_USER = max(1, int(os.getenv("MAX_ACTIVE_SHARES_PER_USER", "100")))
 MAX_CONVERSATIONS_PER_USER = max(
@@ -265,6 +268,83 @@ def init_db() -> None:
             """
         )
 
+        # TEAM subscriptions are collaborative accounts, not cosmetic flags.
+        # A team has one subscription owner and at most five active members
+        # (including that owner). Invitations are email-bound and token-hashed.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS teams (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                persona_name TEXT NOT NULL DEFAULT 'Vigzone AI',
+                persona_instructions TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS team_members (
+                team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+                role TEXT NOT NULL CHECK (role IN ('owner', 'member')),
+                joined_at TEXT NOT NULL,
+                PRIMARY KEY (team_id, user_id)
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_team_members_team ON team_members(team_id, joined_at)"
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS team_invitations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+                email TEXT NOT NULL,
+                token_hash TEXT NOT NULL UNIQUE,
+                invited_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'revoked', 'expired')),
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                accepted_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                accepted_at TEXT
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_team_invites_team_status ON team_invitations(team_id, status, expires_at)"
+        )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_team_invites_pending_email "
+            "ON team_invitations(team_id, email) WHERE status = 'pending'"
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS support_tickets (
+                id TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL,
+                support_level TEXT NOT NULL CHECK (support_level IN ('standard', 'priority', 'dedicated')),
+                subject TEXT NOT NULL,
+                message TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'in_progress', 'resolved', 'closed')),
+                admin_response TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                responded_at TEXT
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_support_queue ON support_tickets(status, support_level, created_at)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_support_user ON support_tickets(user_id, created_at DESC)"
+        )
+
         existing_session_cols = _columns(conn, "sessions")
         if "last_seen_at" not in existing_session_cols:
             conn.execute("ALTER TABLE sessions ADD COLUMN last_seen_at TEXT")
@@ -335,6 +415,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS workspaces (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                team_id INTEGER REFERENCES teams(id) ON DELETE CASCADE,
                 name TEXT NOT NULL,
                 description TEXT DEFAULT '',
                 mode TEXT DEFAULT 'general',
@@ -343,8 +424,14 @@ def init_db() -> None:
             )
             """
         )
+        existing_workspace_cols = _columns(conn, "workspaces")
+        if "team_id" not in existing_workspace_cols:
+            conn.execute("ALTER TABLE workspaces ADD COLUMN team_id INTEGER REFERENCES teams(id) ON DELETE CASCADE")
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_workspaces_user ON workspaces(user_id, updated_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_workspaces_team ON workspaces(team_id, updated_at DESC)"
         )
         conn.execute(
             """
@@ -769,12 +856,435 @@ def get_learning_context(user_id: int, query: str = "", limit: int = 10) -> str:
 
 
 # ==========================================
-# DEEP FEATURES V3: WORKSPACES
+# TEAM ACCOUNTS, SEATS, PERSONA, ANALYTICS, SUPPORT
+# ==========================================
+def _active_team_membership_conn(conn: sqlite3.Connection, user_id: int) -> Optional[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT t.id AS team_id, t.owner_user_id AS team_owner_id, t.name AS team_name,
+               t.persona_name, t.persona_instructions, tm.role AS team_role,
+               owner.plan AS owner_plan, owner.role AS owner_account_role
+        FROM team_members tm
+        JOIN teams t ON t.id = tm.team_id
+        JOIN users owner ON owner.id = t.owner_user_id
+        WHERE tm.user_id = ? AND (owner.plan = 'team' OR owner.role = 'admin')
+        LIMIT 1
+        """,
+        (int(user_id),),
+    ).fetchone()
+
+
+def get_active_team_membership(user_id: int) -> Optional[dict]:
+    with _connect() as conn:
+        row = _active_team_membership_conn(conn, user_id)
+    if not row:
+        return None
+    return {
+        "team_id": int(row["team_id"]),
+        "team_owner_id": int(row["team_owner_id"]),
+        "team_name": str(row["team_name"]),
+        "team_role": str(row["team_role"]),
+        "team_active": True,
+    }
+
+
+def ensure_team_for_owner(user_id: int, owner_name: str = "") -> dict:
+    """Create the durable team belonging to a TEAM/admin account when needed."""
+    now = _utc_now()
+    with _connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        user = conn.execute("SELECT id, name, plan, role FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not user or not (user["plan"] == "team" or user["role"] == "admin"):
+            raise AuthError("An active TEAM plan is required to own a team.")
+        team = conn.execute("SELECT * FROM teams WHERE owner_user_id = ?", (user_id,)).fetchone()
+        existing_membership = conn.execute(
+            "SELECT team_id, role FROM team_members WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        if not team and existing_membership:
+            raise AuthError("Leave your current team before creating another team.")
+        if not team:
+            display = (owner_name or user["name"] or "My").strip()[:70]
+            team_name = f"{display}'s Team"[:80]
+            cur = conn.execute(
+                """INSERT INTO teams
+                   (owner_user_id, name, persona_name, persona_instructions, created_at, updated_at)
+                   VALUES (?, ?, 'Vigzone AI', '', ?, ?)""",
+                (user_id, team_name, now, now),
+            )
+            team_id = int(cur.lastrowid)
+            conn.execute(
+                "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, 'owner', ?)",
+                (team_id, user_id, now),
+            )
+        else:
+            team_id = int(team["id"])
+            conn.execute(
+                """INSERT INTO team_members (team_id, user_id, role, joined_at)
+                   VALUES (?, ?, 'owner', ?)
+                   ON CONFLICT(team_id, user_id) DO UPDATE SET role = 'owner'""",
+                (team_id, user_id, now),
+            )
+        row = conn.execute("SELECT * FROM teams WHERE id = ?", (team_id,)).fetchone()
+    return dict(row)
+
+
+def _require_active_team_conn(conn: sqlite3.Connection, user_id: int) -> sqlite3.Row:
+    row = _active_team_membership_conn(conn, user_id)
+    if not row:
+        raise AuthError("An active TEAM membership is required.")
+    return row
+
+
+def get_team_details(user_id: int, owner_name: str = "") -> dict:
+    with _connect() as conn:
+        membership = _active_team_membership_conn(conn, user_id)
+        user = conn.execute("SELECT plan, role FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not membership and user and (user["plan"] == "team" or user["role"] == "admin"):
+        ensure_team_for_owner(user_id, owner_name)
+    with _connect() as conn:
+        membership = _require_active_team_conn(conn, user_id)
+        now = _utc_now()
+        conn.execute(
+            "UPDATE team_invitations SET status = 'expired' WHERE team_id = ? AND status = 'pending' AND expires_at <= ?",
+            (membership["team_id"], now),
+        )
+        members = conn.execute(
+            """
+            SELECT u.id, u.name, u.email, tm.role, tm.joined_at
+            FROM team_members tm JOIN users u ON u.id = tm.user_id
+            WHERE tm.team_id = ? ORDER BY CASE tm.role WHEN 'owner' THEN 0 ELSE 1 END, tm.joined_at
+            """,
+            (membership["team_id"],),
+        ).fetchall()
+        invitations = []
+        if membership["team_role"] == "owner":
+            invitations = conn.execute(
+                """SELECT id, email, status, created_at, expires_at
+                   FROM team_invitations WHERE team_id = ? AND status = 'pending'
+                   ORDER BY created_at DESC""",
+                (membership["team_id"],),
+            ).fetchall()
+        team = {
+            "id": int(membership["team_id"]),
+            "name": str(membership["team_name"]),
+            "owner_id": int(membership["team_owner_id"]),
+            "role": str(membership["team_role"]),
+            "persona_name": str(membership["persona_name"] or "Vigzone AI"),
+            "persona_instructions": str(membership["persona_instructions"] or ""),
+            "seat_limit": TEAM_SEAT_LIMIT,
+            "seats_used": len(members),
+            "seats_pending": len(invitations),
+        }
+    return {"team": team, "members": [dict(row) for row in members], "invitations": [dict(row) for row in invitations]}
+
+
+def create_team_invitation(user_id: int, email: str) -> dict:
+    email = (email or "").strip().lower()
+    if not EMAIL_RE.match(email):
+        raise AuthError("Enter a valid email address.")
+    raw_token = secrets.token_urlsafe(32)
+    now_dt = datetime.now(timezone.utc)
+    now = now_dt.isoformat()
+    expires_at = (now_dt + timedelta(days=TEAM_INVITE_TTL_DAYS)).isoformat()
+    with _connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        membership = _require_active_team_conn(conn, user_id)
+        if membership["team_role"] != "owner":
+            raise AuthError("Only the team owner can invite members.")
+        conn.execute(
+            "UPDATE team_invitations SET status = 'expired' WHERE team_id = ? AND status = 'pending' AND expires_at <= ?",
+            (membership["team_id"], now),
+        )
+        existing_member = conn.execute(
+            """SELECT 1 FROM team_members tm JOIN users u ON u.id = tm.user_id
+               WHERE tm.team_id = ? AND lower(u.email) = ?""",
+            (membership["team_id"], email),
+        ).fetchone()
+        if existing_member:
+            raise AuthError("That email already has a seat on this team.")
+        active_count = int(conn.execute(
+            "SELECT COUNT(*) FROM team_members WHERE team_id = ?", (membership["team_id"],)
+        ).fetchone()[0])
+        pending_count = int(conn.execute(
+            "SELECT COUNT(*) FROM team_invitations WHERE team_id = ? AND status = 'pending'",
+            (membership["team_id"],),
+        ).fetchone()[0])
+        if active_count + pending_count >= TEAM_SEAT_LIMIT:
+            raise AuthError(f"All {TEAM_SEAT_LIMIT} TEAM seats are already assigned or invited.")
+        if conn.execute(
+            "SELECT 1 FROM team_invitations WHERE team_id = ? AND email = ? AND status = 'pending'",
+            (membership["team_id"], email),
+        ).fetchone():
+            raise AuthError("A pending invitation already exists for that email.")
+        cur = conn.execute(
+            """INSERT INTO team_invitations
+               (team_id, email, token_hash, invited_by, status, created_at, expires_at)
+               VALUES (?, ?, ?, ?, 'pending', ?, ?)""",
+            (membership["team_id"], email, _token_hash(raw_token), user_id, now, expires_at),
+        )
+    return {"id": int(cur.lastrowid), "email": email, "token": raw_token, "expires_at": expires_at}
+
+
+def accept_team_invitation(user_id: int, raw_token: str) -> dict:
+    token = (raw_token or "").strip()
+    if len(token) < 20 or len(token) > 256:
+        raise AuthError("That team invitation is invalid.")
+    now = _utc_now()
+    with _connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        invitation = conn.execute(
+            """SELECT i.*, t.owner_user_id, t.name AS team_name, owner.plan AS owner_plan, owner.role AS owner_role,
+                      u.email AS accepting_email
+               FROM team_invitations i
+               JOIN teams t ON t.id = i.team_id
+               JOIN users owner ON owner.id = t.owner_user_id
+               JOIN users u ON u.id = ?
+               WHERE i.token_hash = ?""",
+            (user_id, _token_hash(token)),
+        ).fetchone()
+        if not invitation or invitation["status"] != "pending":
+            raise AuthError("That team invitation is invalid or has already been used.")
+        if invitation["expires_at"] <= now:
+            conn.execute("UPDATE team_invitations SET status = 'expired' WHERE id = ?", (invitation["id"],))
+            raise AuthError("That team invitation has expired.")
+        if not (invitation["owner_plan"] == "team" or invitation["owner_role"] == "admin"):
+            raise AuthError("That team's subscription is not active.")
+        if str(invitation["accepting_email"]).lower() != str(invitation["email"]).lower():
+            raise AuthError("Sign in with the email address that was invited.")
+        current = conn.execute("SELECT team_id FROM team_members WHERE user_id = ?", (user_id,)).fetchone()
+        if current and int(current["team_id"]) != int(invitation["team_id"]):
+            raise AuthError("This account already belongs to another team.")
+        seats = int(conn.execute(
+            "SELECT COUNT(*) FROM team_members WHERE team_id = ?", (invitation["team_id"],)
+        ).fetchone()[0])
+        if seats >= TEAM_SEAT_LIMIT:
+            raise AuthError("That team has no available seats.")
+        conn.execute(
+            "INSERT OR IGNORE INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, 'member', ?)",
+            (invitation["team_id"], user_id, now),
+        )
+        conn.execute(
+            "UPDATE team_invitations SET status = 'accepted', accepted_user_id = ?, accepted_at = ? WHERE id = ?",
+            (user_id, now, invitation["id"]),
+        )
+    return {"team_id": int(invitation["team_id"]), "team_name": str(invitation["team_name"]), "role": "member"}
+
+
+def revoke_team_invitation(user_id: int, invitation_id: int) -> None:
+    with _connect() as conn:
+        membership = _require_active_team_conn(conn, user_id)
+        if membership["team_role"] != "owner":
+            raise AuthError("Only the team owner can revoke invitations.")
+        cur = conn.execute(
+            "UPDATE team_invitations SET status = 'revoked' WHERE id = ? AND team_id = ? AND status = 'pending'",
+            (invitation_id, membership["team_id"]),
+        )
+        if cur.rowcount == 0:
+            raise AuthError("Pending invitation not found.")
+
+
+def remove_team_member(user_id: int, member_user_id: int) -> None:
+    with _connect() as conn:
+        membership = _require_active_team_conn(conn, user_id)
+        if membership["team_role"] != "owner":
+            raise AuthError("Only the team owner can remove members.")
+        if int(member_user_id) == int(membership["team_owner_id"]):
+            raise AuthError("The team owner cannot be removed.")
+        cur = conn.execute(
+            "DELETE FROM team_members WHERE team_id = ? AND user_id = ? AND role = 'member'",
+            (membership["team_id"], member_user_id),
+        )
+        if cur.rowcount == 0:
+            raise AuthError("Team member not found.")
+
+
+def leave_team(user_id: int) -> None:
+    with _connect() as conn:
+        # Members must be able to detach even after the owning subscription is
+        # canceled. Otherwise the inactive row would prevent them from
+        # accepting a seat on a different active team.
+        membership = conn.execute(
+            """SELECT tm.team_id, tm.role AS team_role, t.owner_user_id AS team_owner_id
+               FROM team_members tm JOIN teams t ON t.id = tm.team_id
+               WHERE tm.user_id = ? LIMIT 1""",
+            (user_id,),
+        ).fetchone()
+        if not membership:
+            raise AuthError("This account does not belong to a team.")
+        if membership["team_role"] == "owner":
+            raise AuthError("The team owner cannot leave their own team.")
+        conn.execute("DELETE FROM team_members WHERE team_id = ? AND user_id = ?", (membership["team_id"], user_id))
+
+
+def update_team_profile(user_id: int, name: Optional[str], persona_name: Optional[str], persona_instructions: Optional[str]) -> dict:
+    updates: list[str] = []
+    values: list[Any] = []
+    if name is not None:
+        cleaned = name.strip()[:80]
+        if len(cleaned) < 2:
+            raise AuthError("Team name is too short.")
+        updates.append("name = ?")
+        values.append(cleaned)
+    if persona_name is not None:
+        cleaned = persona_name.strip()[:60] or "Vigzone AI"
+        updates.append("persona_name = ?")
+        values.append(cleaned)
+    if persona_instructions is not None:
+        cleaned = persona_instructions.replace("\x00", "").strip()[:2400]
+        updates.append("persona_instructions = ?")
+        values.append(cleaned)
+    with _connect() as conn:
+        membership = _require_active_team_conn(conn, user_id)
+        if membership["team_role"] != "owner":
+            raise AuthError("Only the team owner can change team settings.")
+        if updates:
+            updates.append("updated_at = ?")
+            values.append(_utc_now())
+            values.append(membership["team_id"])
+            conn.execute(f"UPDATE teams SET {', '.join(updates)} WHERE id = ?", tuple(values))
+        row = conn.execute("SELECT * FROM teams WHERE id = ?", (membership["team_id"],)).fetchone()
+    return dict(row)
+
+
+def get_team_persona_context(user_id: int) -> str:
+    with _connect() as conn:
+        membership = _active_team_membership_conn(conn, user_id)
+    if not membership:
+        return ""
+    persona_name = str(membership["persona_name"] or "Vigzone AI").strip()[:60]
+    instructions = str(membership["persona_instructions"] or "").strip()[:2400]
+    if not instructions and persona_name == "Vigzone AI":
+        return ""
+    return f"Persona name: {persona_name}\nTeam instructions: {instructions or 'Use the persona name naturally.'}"
+
+
+def get_team_analytics(user_id: int, days: int = 30) -> dict:
+    days = max(1, min(int(days), 90))
+    since_ts = int(time.time()) - days * 86400
+    since_date = (datetime.now(timezone.utc) - timedelta(days=days - 1)).date().isoformat()
+    with _connect() as conn:
+        membership = _require_active_team_conn(conn, user_id)
+        rows = conn.execute(
+            """
+            SELECT u.id, u.name, u.email, tm.role,
+                   COUNT(tu.id) AS request_count,
+                   COALESCE(SUM(tu.total_tokens), 0) AS total_tokens,
+                   COALESCE(SUM(tu.prompt_tokens), 0) AS prompt_tokens,
+                   COALESCE(SUM(tu.completion_tokens), 0) AS completion_tokens,
+                   COALESCE(AVG(NULLIF(tu.latency_ms, 0)), 0) AS average_latency_ms
+            FROM team_members tm
+            JOIN users u ON u.id = tm.user_id
+            LEFT JOIN token_usage tu ON tu.user_id = u.id AND tu.ts >= ?
+            WHERE tm.team_id = ?
+            GROUP BY u.id, u.name, u.email, tm.role
+            ORDER BY total_tokens DESC, u.id
+            """,
+            (since_ts, membership["team_id"]),
+        ).fetchall()
+        message_rows = conn.execute(
+            """SELECT d.user_id, COALESCE(SUM(d.messages), 0) AS messages
+               FROM daily_message_usage d JOIN team_members tm ON tm.user_id = d.user_id
+               WHERE tm.team_id = ? AND d.usage_date >= ? GROUP BY d.user_id""",
+            (membership["team_id"], since_date),
+        ).fetchall()
+    messages = {int(row["user_id"]): int(row["messages"] or 0) for row in message_rows}
+    members = []
+    for row in rows:
+        item = dict(row)
+        item["messages"] = messages.get(int(row["id"]), 0)
+        item["average_latency_ms"] = round(float(item.get("average_latency_ms") or 0))
+        members.append(item)
+    return {
+        "team_id": int(membership["team_id"]),
+        "period_days": days,
+        "members": members,
+        "totals": {
+            "request_count": sum(int(row["request_count"] or 0) for row in members),
+            "total_tokens": sum(int(row["total_tokens"] or 0) for row in members),
+            "messages": sum(int(row["messages"] or 0) for row in members),
+        },
+    }
+
+
+def create_support_ticket(user: dict, subject: str, message: str) -> dict:
+    subject = (subject or "").strip()[:160]
+    message = (message or "").replace("\x00", "").strip()[:6000]
+    if len(subject) < 3 or len(message) < 10:
+        raise AuthError("Add a clear subject and at least 10 characters of detail.")
+    level = (
+        "dedicated"
+        if billing.feature_allowed(user, "dedicated_support")
+        else ("priority" if billing.feature_allowed(user, "priority_support") else "standard")
+    )
+    ticket_id = "tkt_" + secrets.token_urlsafe(9).replace("-", "").replace("_", "")[:12]
+    now = _utc_now()
+    with _connect() as conn:
+        count = int(conn.execute("SELECT COUNT(*) FROM support_tickets WHERE user_id = ?", (user["id"],)).fetchone()[0])
+        if count >= MAX_SUPPORT_TICKETS_PER_USER:
+            raise AuthError("Support ticket history limit reached. Please reply to an existing ticket.")
+        membership = _active_team_membership_conn(conn, user["id"])
+        conn.execute(
+            """INSERT INTO support_tickets
+               (id, user_id, team_id, support_level, subject, message, status, admin_response, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, 'open', '', ?, ?)""",
+            (ticket_id, user["id"], membership["team_id"] if membership else None, level, subject, message, now, now),
+        )
+        row = conn.execute("SELECT * FROM support_tickets WHERE id = ?", (ticket_id,)).fetchone()
+    return dict(row)
+
+
+def list_support_tickets(user_id: int) -> list[dict]:
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM support_tickets WHERE user_id = ? ORDER BY created_at DESC LIMIT 100",
+            (user_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_admin_support_tickets(status: str = "") -> list[dict]:
+    where = "WHERE st.status = ?" if status in {"open", "in_progress", "resolved", "closed"} else ""
+    params: tuple[Any, ...] = (status,) if where else ()
+    with _connect() as conn:
+        rows = conn.execute(
+            f"""SELECT st.*, u.name AS user_name, u.email AS user_email, t.name AS team_name
+                FROM support_tickets st JOIN users u ON u.id = st.user_id
+                LEFT JOIN teams t ON t.id = st.team_id
+                {where}
+                ORDER BY CASE st.support_level WHEN 'dedicated' THEN 0 WHEN 'priority' THEN 1 ELSE 2 END,
+                         CASE st.status WHEN 'open' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END,
+                         st.created_at ASC LIMIT 300""",
+            params,
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def update_support_ticket(ticket_id: str, status: str, admin_response: str) -> dict:
+    if status not in {"open", "in_progress", "resolved", "closed"}:
+        raise AuthError("Invalid support ticket status.")
+    response = (admin_response or "").replace("\x00", "").strip()[:6000]
+    now = _utc_now()
+    with _connect() as conn:
+        cur = conn.execute(
+            """UPDATE support_tickets SET status = ?, admin_response = ?, updated_at = ?,
+               responded_at = CASE WHEN ? <> '' THEN ? ELSE responded_at END WHERE id = ?""",
+            (status, response, now, response, now, ticket_id),
+        )
+        if cur.rowcount == 0:
+            raise AuthError("Support ticket not found.")
+        row = conn.execute("SELECT * FROM support_tickets WHERE id = ?", (ticket_id,)).fetchone()
+    return dict(row)
+
+
+# ==========================================
+# DEEP FEATURES V3: PERSONAL + SHARED WORKSPACES
 # ==========================================
 def _workspace_row_to_dict(row: sqlite3.Row) -> dict:
     return {
         "id": row["id"],
         "user_id": row["user_id"],
+        "team_id": _row_value(row, "team_id"),
+        "shared": _row_value(row, "team_id") is not None,
         "name": row["name"],
         "description": row["description"] or "",
         "mode": row["mode"] or "general",
@@ -785,19 +1295,26 @@ def _workspace_row_to_dict(row: sqlite3.Row) -> dict:
 
 def list_workspaces(user_id: int) -> list[dict]:
     with _connect() as conn:
-        rows = conn.execute(
-            """
-            SELECT id, user_id, name, description, mode, created_at, updated_at
-            FROM workspaces
-            WHERE user_id = ?
-            ORDER BY updated_at DESC, id DESC
-            """,
-            (user_id,),
-        ).fetchall()
+        membership = _active_team_membership_conn(conn, user_id)
+        if membership:
+            rows = conn.execute(
+                """SELECT id, user_id, team_id, name, description, mode, created_at, updated_at
+                   FROM workspaces
+                   WHERE (user_id = ? AND team_id IS NULL) OR team_id = ?
+                   ORDER BY updated_at DESC, id DESC""",
+                (user_id, membership["team_id"]),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT id, user_id, team_id, name, description, mode, created_at, updated_at
+                   FROM workspaces WHERE user_id = ? AND team_id IS NULL
+                   ORDER BY updated_at DESC, id DESC""",
+                (user_id,),
+            ).fetchall()
     return [_workspace_row_to_dict(r) for r in rows]
 
 
-def create_workspace(user_id: int, name: str, description: str = "", mode: str = "general") -> dict:
+def create_workspace(user_id: int, name: str, description: str = "", mode: str = "general", shared: bool = False) -> dict:
     name = (name or "").strip()[:80]
     description = (description or "").strip()[:600]
     mode = (mode or "general").strip()[:40]
@@ -806,26 +1323,47 @@ def create_workspace(user_id: int, name: str, description: str = "", mode: str =
     now = datetime.now(timezone.utc).isoformat()
     with _connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        count = conn.execute(
-            "SELECT COUNT(*) FROM workspaces WHERE user_id = ?",
-            (user_id,),
-        ).fetchone()[0]
+        team_id = None
+        if shared:
+            membership = _require_active_team_conn(conn, user_id)
+            team_id = int(membership["team_id"])
+            count = conn.execute("SELECT COUNT(*) FROM workspaces WHERE team_id = ?", (team_id,)).fetchone()[0]
+        else:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM workspaces WHERE user_id = ? AND team_id IS NULL",
+                (user_id,),
+            ).fetchone()[0]
         if int(count) >= MAX_WORKSPACES_PER_USER:
             raise AuthError(
                 f"Workspace limit reached ({MAX_WORKSPACES_PER_USER} per account)."
             )
         cur = conn.execute(
             """
-            INSERT INTO workspaces (user_id, name, description, mode, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO workspaces (user_id, team_id, name, description, mode, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (user_id, name, description, mode, now, now),
+            (user_id, team_id, name, description, mode, now, now),
         )
         row = conn.execute(
-            "SELECT id, user_id, name, description, mode, created_at, updated_at FROM workspaces WHERE id = ? AND user_id = ?",
-            (cur.lastrowid, user_id),
+            "SELECT id, user_id, team_id, name, description, mode, created_at, updated_at FROM workspaces WHERE id = ?",
+            (cur.lastrowid,),
         ).fetchone()
     return _workspace_row_to_dict(row)
+
+
+def _workspace_for_user_conn(conn: sqlite3.Connection, user_id: int, workspace_id: int) -> tuple[Optional[sqlite3.Row], Optional[sqlite3.Row]]:
+    row = conn.execute(
+        "SELECT id, user_id, team_id, name, description, mode, created_at, updated_at FROM workspaces WHERE id = ?",
+        (workspace_id,),
+    ).fetchone()
+    if not row:
+        return None, None
+    if row["team_id"] is None:
+        return (row, None) if int(row["user_id"]) == int(user_id) else (None, None)
+    membership = _active_team_membership_conn(conn, user_id)
+    if not membership or int(membership["team_id"]) != int(row["team_id"]):
+        return None, None
+    return row, membership
 
 
 def update_workspace(user_id: int, workspace_id: int, name: Optional[str] = None, description: Optional[str] = None, mode: Optional[str] = None) -> dict:
@@ -845,24 +1383,24 @@ def update_workspace(user_id: int, workspace_id: int, name: Optional[str] = None
     if updates:
         updates.append("updated_at = ?")
         values.append(datetime.now(timezone.utc).isoformat())
-        values.extend([workspace_id, user_id])
         with _connect() as conn:
+            workspace, _membership = _workspace_for_user_conn(conn, user_id, workspace_id)
+            if not workspace:
+                raise AuthError("Workspace not found.")
+            values.append(workspace_id)
             cur = conn.execute(
-                f"UPDATE workspaces SET {', '.join(updates)} WHERE id = ? AND user_id = ?",
+                f"UPDATE workspaces SET {', '.join(updates)} WHERE id = ?",
                 tuple(values),
             )
             if cur.rowcount == 0:
                 raise AuthError("Workspace not found.")
             row = conn.execute(
-                "SELECT id, user_id, name, description, mode, created_at, updated_at FROM workspaces WHERE id = ? AND user_id = ?",
-                (workspace_id, user_id),
+                "SELECT id, user_id, team_id, name, description, mode, created_at, updated_at FROM workspaces WHERE id = ?",
+                (workspace_id,),
             ).fetchone()
     else:
         with _connect() as conn:
-            row = conn.execute(
-                "SELECT id, user_id, name, description, mode, created_at, updated_at FROM workspaces WHERE id = ? AND user_id = ?",
-                (workspace_id, user_id),
-            ).fetchone()
+            row, _membership = _workspace_for_user_conn(conn, user_id, workspace_id)
     if not row:
         raise AuthError("Workspace not found.")
     return _workspace_row_to_dict(row)
@@ -870,7 +1408,12 @@ def update_workspace(user_id: int, workspace_id: int, name: Optional[str] = None
 
 def delete_workspace(user_id: int, workspace_id: int) -> None:
     with _connect() as conn:
-        cur = conn.execute("DELETE FROM workspaces WHERE id = ? AND user_id = ?", (workspace_id, user_id))
+        workspace, membership = _workspace_for_user_conn(conn, user_id, workspace_id)
+        if not workspace:
+            raise AuthError("Workspace not found.")
+        if workspace["team_id"] is not None and int(workspace["user_id"]) != int(user_id) and membership["team_role"] != "owner":
+            raise AuthError("Only the workspace creator or team owner can delete a shared workspace.")
+        cur = conn.execute("DELETE FROM workspaces WHERE id = ?", (workspace_id,))
         if cur.rowcount == 0:
             raise AuthError("Workspace not found.")
 
@@ -886,12 +1429,12 @@ def add_workspace_note(user_id: int, workspace_id: int, title: str, content: str
     now = datetime.now(timezone.utc).isoformat()
     with _connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        ws = conn.execute("SELECT id FROM workspaces WHERE id = ? AND user_id = ?", (workspace_id, user_id)).fetchone()
+        ws, _membership = _workspace_for_user_conn(conn, user_id, workspace_id)
         if not ws:
             raise AuthError("Workspace not found.")
         count = conn.execute(
-            "SELECT COUNT(*) FROM workspace_notes WHERE workspace_id = ? AND user_id = ?",
-            (workspace_id, user_id),
+            "SELECT COUNT(*) FROM workspace_notes WHERE workspace_id = ?",
+            (workspace_id,),
         ).fetchone()[0]
         if int(count) >= MAX_WORKSPACE_NOTES_PER_WORKSPACE:
             raise AuthError(
@@ -904,28 +1447,28 @@ def add_workspace_note(user_id: int, workspace_id: int, title: str, content: str
             """,
             (workspace_id, user_id, title, content, kind, now),
         )
-        conn.execute("UPDATE workspaces SET updated_at = ? WHERE id = ? AND user_id = ?", (now, workspace_id, user_id))
+        conn.execute("UPDATE workspaces SET updated_at = ? WHERE id = ?", (now, workspace_id))
         row = conn.execute(
-            "SELECT id, workspace_id, user_id, title, content, kind, created_at FROM workspace_notes WHERE id = ? AND user_id = ?",
-            (cur.lastrowid, user_id),
+            "SELECT id, workspace_id, user_id, title, content, kind, created_at FROM workspace_notes WHERE id = ?",
+            (cur.lastrowid,),
         ).fetchone()
     return dict(row)
 
 
 def list_workspace_notes(user_id: int, workspace_id: int, limit: int = 30) -> list[dict]:
     with _connect() as conn:
-        ws = conn.execute("SELECT id FROM workspaces WHERE id = ? AND user_id = ?", (workspace_id, user_id)).fetchone()
+        ws, _membership = _workspace_for_user_conn(conn, user_id, workspace_id)
         if not ws:
             raise AuthError("Workspace not found.")
         rows = conn.execute(
             """
             SELECT id, workspace_id, user_id, title, content, kind, created_at
             FROM workspace_notes
-            WHERE workspace_id = ? AND user_id = ?
+            WHERE workspace_id = ?
             ORDER BY created_at DESC, id DESC
             LIMIT ?
             """,
-            (workspace_id, user_id, limit),
+            (workspace_id, limit),
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -938,23 +1481,21 @@ def get_workspace_context(user_id: int, workspace_id: Optional[int], query: str 
     except Exception:
         return ""
     with _connect() as conn:
-        ws = conn.execute(
-            "SELECT id, name, description, mode FROM workspaces WHERE id = ? AND user_id = ?",
-            (workspace_id, user_id),
-        ).fetchone()
+        ws, _membership = _workspace_for_user_conn(conn, user_id, workspace_id)
         if not ws:
             return ""
         rows = conn.execute(
             """
             SELECT title, content, kind, created_at
             FROM workspace_notes
-            WHERE workspace_id = ? AND user_id = ?
+            WHERE workspace_id = ?
             ORDER BY created_at DESC, id DESC
             LIMIT ?
             """,
-            (workspace_id, user_id, limit),
+            (workspace_id, limit),
         ).fetchall()
-    lines = [f"Active workspace: {ws['name']} (mode: {ws['mode'] or 'general'})."]
+    scope = "shared TEAM" if ws["team_id"] is not None else "private"
+    lines = [f"Active {scope} workspace: {ws['name']} (mode: {ws['mode'] or 'general'})."]
     if ws["description"]:
         lines.append(f"Workspace description: {ws['description']}")
     if rows:
@@ -1277,11 +1818,19 @@ def product_analytics() -> dict:
             "SELECT COUNT(*) FROM feedback WHERE rating = 'down'"
         ).fetchone()[0]
         shares = conn.execute("SELECT COUNT(*) FROM shared_chats").fetchone()[0]
+        teams = conn.execute("SELECT COUNT(*) FROM teams").fetchone()[0]
+        team_members = conn.execute("SELECT COUNT(*) FROM team_members").fetchone()[0]
+        shared_workspaces = conn.execute("SELECT COUNT(*) FROM workspaces WHERE team_id IS NOT NULL").fetchone()[0]
+        open_support = conn.execute("SELECT COUNT(*) FROM support_tickets WHERE status IN ('open', 'in_progress')").fetchone()[0]
     return {
         "brain_users": int(brain_users),
         "feedback_count": int(feedback_count),
         "negative_feedback": int(negative),
         "share_count": int(shares),
+        "team_count": int(teams),
+        "team_member_count": int(team_members),
+        "shared_workspace_count": int(shared_workspaces),
+        "open_support_count": int(open_support),
     }
 
 
@@ -1418,7 +1967,7 @@ def export_user_data(user_id: int) -> dict:
     with _connect() as conn:
         user = conn.execute(
             """
-            SELECT id, email, name, auth_provider, role, email_verified,
+            SELECT id, email, name, auth_provider, role, plan, email_verified,
                    created_at, updated_at
             FROM users WHERE id = ?
             """,
@@ -1459,6 +2008,15 @@ def export_user_data(user_id: int) -> dict:
             """,
             (user_id,),
         ).fetchall()]
+        team_membership = conn.execute(
+            """SELECT tm.team_id, tm.role, tm.joined_at, t.name AS team_name, t.owner_user_id
+               FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.user_id = ?""",
+            (user_id,),
+        ).fetchone()
+        support = [dict(row) for row in conn.execute(
+            "SELECT * FROM support_tickets WHERE user_id = ? ORDER BY created_at",
+            (user_id,),
+        ).fetchall()]
     return {
         "exported_at": _utc_now(),
         "account": dict(user) if user else {},
@@ -1473,6 +2031,8 @@ def export_user_data(user_id: int) -> dict:
         "shared_chats": list_shared_chats(user_id),
         "usage": usage,
         "feedback": feedback,
+        "team_membership": dict(team_membership) if team_membership else None,
+        "support_tickets": support,
     }
 
 
@@ -1555,6 +2115,9 @@ def _public_user(row: sqlite3.Row) -> dict:
         "email_verified": bool(_row_value(row, "email_verified", 0)),
         "is_admin": role == "admin",
     }
+    membership = get_active_team_membership(public["id"])
+    if membership:
+        public.update(membership)
     public["entitlements"] = billing.entitlement_snapshot(public)
     return public
 

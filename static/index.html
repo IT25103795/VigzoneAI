@@ -13,7 +13,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Sinhala:wght@400;500;600&display=swap" rel="stylesheet">
   <script>
     const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r16';
-    const UI_ASSET_REVISION = 'billing-r6';
+    const UI_ASSET_REVISION = 'team-live-r1';
     (function () {
       var key = 'vigzone_doodle_theme';
       var tones = {
@@ -38,7 +38,7 @@
       document.documentElement.setAttribute('data-theme', tones[saved] || 'dark');
     })();
   </script>
-  <link rel="stylesheet" href="/static/css/styles.css?v=billing-r6">
+  <link rel="stylesheet" href="/static/css/styles.css?v=team-live-r1">
 </head>
 <body>
 <div class="offline-status-banner" id="offlineStatusBanner" role="status" aria-live="polite">
@@ -162,7 +162,7 @@
 
         <div id="apiKeyInputSection">
           <div class="api-key-input-row">
-            <input type="password" id="groqKeyInput" placeholder="Paste your Groq API key…" autocomplete="off" spellcheck="false" />
+            <input type="text" id="groqKeyInput" name="vigzone-groq-api-key" class="masked-secret-input" placeholder="Paste your Groq API key…" autocomplete="one-time-code" data-form-type="other" data-lpignore="true" data-1p-ignore="true" autocapitalize="none" spellcheck="false" />
             <button class="api-key-check-btn" id="groqKeyCheckBtn">Check</button>
           </div>
           <div class="api-key-status" id="groqKeyStatus"></div>
@@ -199,6 +199,12 @@
         </button>
       </div>
       <div class="sidebar-footer-row">
+        <span class="history-label" style="padding:0;margin:0;">Team Hub</span>
+        <button class="sidebar-teach-btn" id="teamHubBtn" data-requires-feature="team_workspace" aria-label="Open Team Hub" title="Manage TEAM seats, persona, and analytics">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+        </button>
+      </div>
+      <div class="sidebar-footer-row">
         <span class="history-label" style="padding:0;margin:0;">Learning</span>
         <button class="sidebar-teach-btn" id="teachVigzoneBtn" aria-label="Teach Vigzone" title="Teach Vigzone about specific topics">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></svg>
@@ -224,6 +230,18 @@
         <span class="history-label" style="padding:0;margin:0;">Website Studio</span>
         <button class="sidebar-teach-btn" id="websiteStudioBtn" data-requires-feature="website_studio" aria-label="Open Website Studio" title="Open Website Studio">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M3 9h18"></path><path d="M8 14h4M8 17h8"></path></svg>
+        </button>
+      </div>
+      <div class="sidebar-footer-row">
+        <span class="history-label" style="padding:0;margin:0;">Image search</span>
+        <button class="sidebar-teach-btn" id="imageSearchBtn" data-requires-feature="image_search" aria-label="Search licensed images" title="Search real openly licensed images">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path><path d="M8 12l2-2 3 3 2-2 3 3"></path></svg>
+        </button>
+      </div>
+      <div class="sidebar-footer-row">
+        <span class="history-label" style="padding:0;margin:0;">Support</span>
+        <button class="sidebar-teach-btn" id="supportCenterBtn" aria-label="Open support center" title="Open support center">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"></path></svg>
         </button>
       </div>
       <div class="sidebar-footer-row">
@@ -357,6 +375,37 @@
       <button class="usage-modal-close" id="workspaceModalCloseBtn" aria-label="Close">&times;</button>
     </div>
     <div id="workspaceModalBody"><div class="usage-modal-loading">Loading workspaces…</div></div>
+  </div>
+</div>
+
+<div class="usage-modal-overlay" id="teamHubModalOverlay">
+  <div class="usage-modal team-hub-modal">
+    <div class="usage-modal-head">
+      <h3>TEAM Hub</h3>
+      <button class="usage-modal-close" id="teamHubCloseBtn" aria-label="Close">&times;</button>
+    </div>
+    <div id="teamHubModalBody"><div class="usage-modal-loading">Loading your team…</div></div>
+  </div>
+</div>
+
+<div class="usage-modal-overlay" id="imageSearchModalOverlay">
+  <div class="usage-modal image-search-modal">
+    <div class="usage-modal-head">
+      <h3>Licensed image search</h3>
+      <button class="usage-modal-close" id="imageSearchCloseBtn" aria-label="Close">&times;</button>
+    </div>
+    <div class="image-search-form"><input id="imageSearchQuery" maxlength="300" placeholder="Search real photos…"><button class="deep-action-btn" id="imageSearchSubmitBtn" type="button">Search</button></div>
+    <div id="imageSearchModalBody"><div class="usage-modal-note">Powered by Openverse. Results include creator and license information.</div></div>
+  </div>
+</div>
+
+<div class="usage-modal-overlay" id="supportModalOverlay">
+  <div class="usage-modal support-modal">
+    <div class="usage-modal-head">
+      <h3>Support Center</h3>
+      <button class="usage-modal-close" id="supportCloseBtn" aria-label="Close">&times;</button>
+    </div>
+    <div id="supportModalBody"><div class="usage-modal-loading">Loading support…</div></div>
   </div>
 </div>
 
@@ -604,27 +653,23 @@
     <div class="actions">
       <div class="model-picker-wrap" id="modelPickerWrap">
         <button class="model-picker-btn" id="modelPickerBtn" type="button" aria-label="Select AI Model" title="Select AI Model">
-          <span id="modelPickerIcon">⚡</span>
-          <span id="modelPickerName">Llama 3.3 70B</span>
-          <span class="model-picker-badge" id="modelPickerBadge">Powerhouse</span>
+          <span id="modelPickerIcon">🚀</span>
+          <span id="modelPickerName">GPT-OSS 20B</span>
+          <span class="model-picker-badge" id="modelPickerBadge">Fast</span>
           <span class="model-picker-arrow">▼</span>
         </button>
         <div class="model-dropdown-menu" id="modelDropdownMenu">
-          <div class="model-dropdown-item" data-model="llama-3.3-70b-versatile" data-plan="pro">
-            <div class="model-item-header"><span>⚡ Llama 3.3 70B</span><span class="model-picker-badge">Powerhouse</span></div>
-            <div class="model-item-desc">High intelligence, versatile reasoning &amp; analysis</div>
+          <div class="model-dropdown-item active" data-model="openai/gpt-oss-20b">
+            <div class="model-item-header"><span>🚀 GPT-OSS 20B</span><span class="model-picker-badge" style="background:#10b981;">Fast</span></div>
+            <div class="model-item-desc">Fast production model for everyday chat and documents</div>
           </div>
-          <div class="model-dropdown-item" data-model="deepseek-r1-distill-llama-70b" data-plan="pro">
-            <div class="model-item-header"><span>🧠 DeepSeek R1 70B</span><span class="model-picker-badge" style="background:#8b5cf6;">Reasoning</span></div>
-            <div class="model-item-desc">Deep multi-step thinking, math &amp; complex logic</div>
-          </div>
-          <div class="model-dropdown-item active" data-model="llama-3.1-8b-instant">
-            <div class="model-item-header"><span>🚀 Llama 3.1 8B</span><span class="model-picker-badge" style="background:#10b981;">Fast</span></div>
-            <div class="model-item-desc">Ultra high-speed instant answers</div>
+          <div class="model-dropdown-item" data-model="openai/gpt-oss-120b" data-plan="pro">
+            <div class="model-item-header"><span>⚡ GPT-OSS 120B</span><span class="model-picker-badge">Powerhouse</span></div>
+            <div class="model-item-desc">Quality-first production reasoning and analysis</div>
           </div>
           <div class="model-dropdown-item" data-model="qwen/qwen3.6-27b" data-plan="pro">
-            <div class="model-item-header"><span>💻 Qwen 3.6</span><span class="model-picker-badge" style="background:#06b6d4;">Coding</span></div>
-            <div class="model-item-desc">Specialized code generation &amp; technical tasks</div>
+            <div class="model-item-header"><span>👁️ Qwen 3.6 27B</span><span class="model-picker-badge" style="background:#06b6d4;">Preview · Vision</span></div>
+            <div class="model-item-desc">Preview image understanding, coding, and reasoning</div>
           </div>
         </div>
       </div>
@@ -856,9 +901,9 @@
             <div class="pricing-desc">Perfect for trying out Vigzone AI</div>
             <ul class="pricing-features">
               <li>✅ 50 messages / day</li>
-              <li>✅ Llama 3.1 8B model</li>
+              <li>✅ GPT-OSS 20B production model</li>
               <li>✅ Web search</li>
-              <li>✅ File Studio</li>
+              <li>✅ File Studio for documents</li>
               <li>❌ Advanced models</li>
               <li>❌ Priority support</li>
             </ul>
@@ -873,11 +918,11 @@
             <div class="pricing-desc">For power users and professionals</div>
             <ul class="pricing-features">
               <li>✅ Unlimited messages</li>
-              <li>✅ All models (Llama 70B, DeepSeek R1, Qwen)</li>
+              <li>✅ All models (GPT-OSS 120B/20B, Qwen Vision)</li>
               <li>✅ Web search + image search</li>
               <li>✅ File Studio + Website Studio</li>
               <li>✅ Priority support</li>
-              <li>✅ Early access to new features</li>
+              <li>✅ Preview access (Qwen 3.6 vision)</li>
             </ul>
             <button class="pricing-cta primary" id="paddleProBtn" data-paddle-plan="pro">Upgrade to Pro →</button>
           </div>
@@ -907,6 +952,6 @@
     </div>
   </div>
 
-  <script src="/static/js/app.js?v=billing-r6"></script>
+  <script src="/static/js/app.js?v=team-live-r1"></script>
 </body>
 </html>
