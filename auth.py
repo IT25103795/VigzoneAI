@@ -24,6 +24,8 @@ from typing import Any, Optional
 
 import httpx
 
+import billing
+
 logger = logging.getLogger("vigzone.auth")
 
 DATA_DIR = os.getenv("VIGZONE_DATA_DIR", "data")
@@ -203,6 +205,65 @@ def init_db() -> None:
             conn.execute("UPDATE users SET updated_at = COALESCE(created_at, ?)", (_utc_now(),))
         if "plan" not in existing_user_cols:
             conn.execute("ALTER TABLE users ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'")
+
+        # Paddle is the source of truth for paid access.  Keep individual
+        # subscriptions so duplicate, delayed and out-of-order webhooks cannot
+        # accidentally downgrade a customer with another active membership.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS billing_subscriptions (
+                subscription_id TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                customer_id TEXT,
+                plan TEXT NOT NULL CHECK (plan IN ('pro', 'team')),
+                status TEXT NOT NULL,
+                price_id TEXT,
+                product_id TEXT,
+                current_period_end TEXT,
+                last_event_id TEXT NOT NULL,
+                last_event_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_billing_subscriptions_user_status "
+            "ON billing_subscriptions(user_id, status)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_billing_subscriptions_customer "
+            "ON billing_subscriptions(customer_id)"
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS billing_webhook_events (
+                event_id TEXT PRIMARY KEY,
+                event_type TEXT NOT NULL,
+                occurred_at TEXT NOT NULL,
+                user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                subscription_id TEXT,
+                processing_status TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                error TEXT,
+                processed_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_billing_events_user "
+            "ON billing_webhook_events(user_id, occurred_at DESC)"
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS daily_message_usage (
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                usage_date TEXT NOT NULL,
+                messages INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, usage_date)
+            )
+            """
+        )
 
         existing_session_cols = _columns(conn, "sessions")
         if "last_seen_at" not in existing_session_cols:
@@ -1484,7 +1545,7 @@ def _row_value(row: sqlite3.Row, key: str, default: Any = None) -> Any:
 
 def _public_user(row: sqlite3.Row) -> dict:
     role = str(_row_value(row, "role", "user") or "user")
-    return {
+    public = {
         "id": int(row["id"]),
         "email": str(row["email"]),
         "name": str(row["name"]),
@@ -1494,6 +1555,8 @@ def _public_user(row: sqlite3.Row) -> dict:
         "email_verified": bool(_row_value(row, "email_verified", 0)),
         "is_admin": role == "admin",
     }
+    public["entitlements"] = billing.entitlement_snapshot(public)
+    return public
 
 
 def _bootstrap_founders(conn: sqlite3.Connection) -> None:
@@ -1605,14 +1668,16 @@ def create_user_with_password(email: str, password: str, name: str) -> dict:
             raise AuthError("An account with that email already exists. Try signing in instead.")
 
         now = _utc_now()
+        role = "admin" if email in FOUNDER_EMAILS else "user"
+        verified = 1 if role == "admin" else 0
         cur = conn.execute(
             """
             INSERT INTO users (
                 email, name, password_hash, auth_provider, role,
                 email_verified, created_at, updated_at
-            ) VALUES (?, ?, ?, 'email', 'user', 0, ?, ?)
+            ) VALUES (?, ?, ?, 'email', ?, ?, ?, ?)
             """,
-            (email, name, _hash_password(password), now, now),
+            (email, name, _hash_password(password), role, verified, now, now),
         )
         row = conn.execute("SELECT * FROM users WHERE id = ?", (cur.lastrowid,)).fetchone()
         return _public_user(row)
@@ -1907,6 +1972,44 @@ def create_session(user_id: int, client_fingerprint: str = "") -> str:
         for old in rows[10:]:
             conn.execute("DELETE FROM sessions WHERE token = ?", (old["token"],))
     return token
+
+
+def consume_daily_message(user_id: int, limit: int) -> Optional[int]:
+    """Atomically count a submitted Free-plan message; return remaining or None."""
+    offset_minutes = int(os.getenv("USAGE_TZ_OFFSET_MINUTES", "330"))
+    usage_date = (datetime.now(timezone.utc) + timedelta(minutes=offset_minutes)).date().isoformat()
+    now = _utc_now()
+    with _connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT messages FROM daily_message_usage WHERE user_id = ? AND usage_date = ?",
+            (user_id, usage_date),
+        ).fetchone()
+        used = int(row["messages"] if row else 0)
+        if used >= int(limit):
+            return None
+        if row:
+            conn.execute(
+                "UPDATE daily_message_usage SET messages = messages + 1, updated_at = ? WHERE user_id = ? AND usage_date = ?",
+                (now, user_id, usage_date),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO daily_message_usage(user_id, usage_date, messages, updated_at) VALUES (?, ?, 1, ?)",
+                (user_id, usage_date, now),
+            )
+        return int(limit) - used - 1
+
+
+def get_daily_message_count(user_id: int) -> int:
+    offset_minutes = int(os.getenv("USAGE_TZ_OFFSET_MINUTES", "330"))
+    usage_date = (datetime.now(timezone.utc) + timedelta(minutes=offset_minutes)).date().isoformat()
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT messages FROM daily_message_usage WHERE user_id = ? AND usage_date = ?",
+            (user_id, usage_date),
+        ).fetchone()
+    return int(row["messages"] if row else 0)
 
 
 def get_user_by_session(token: Optional[str]) -> Optional[dict]:

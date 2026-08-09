@@ -52,6 +52,12 @@ Configure these variables before deploying:
 | `CORS_ORIGINS` | The exact Back4App HTTPS URL, without a trailing slash |
 | `PUBLIC_BASE_URL` | The same exact Back4App HTTPS URL |
 | `ENABLE_API_DOCS` | `false` |
+| `PADDLE_CLIENT_TOKEN` | Paddle Billing live client-side token (`live_...`) |
+| `PADDLE_PRO_PRICE_ID` | Exact recurring PRO price (`pri_...`) |
+| `PADDLE_TEAM_PRICE_ID` | Exact recurring TEAM price (`pri_...`) |
+| `PADDLE_WEBHOOK_SECRET` | Secret for `/api/billing/paddle/webhook` |
+| `PADDLE_API_KEY` | Server API key for purchase restoration |
+| `PADDLE_ENVIRONMENT` | `production` (`sandbox` only for test catalog IDs) |
 
 Generate the encryption secret locally and store it only in Back4App's secret
 variables:

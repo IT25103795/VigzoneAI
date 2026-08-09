@@ -11,6 +11,7 @@ Modes (set APP_MODE in .env):
 
 import logging
 import asyncio
+import hashlib
 import os
 import re
 import io
@@ -80,6 +81,7 @@ from security import (
     validate_production_settings,
 )
 import auth as authmod
+import billing
 import mailer
 import secrets as _secrets
 import httpx
@@ -397,9 +399,69 @@ GOOGLE_DRIVE_CLIENT_ID = os.getenv("GOOGLE_DRIVE_CLIENT_ID", os.getenv("GOOGLE_C
 
 # ── Paddle Billing ────────────────────────────────────────────────────────────
 PADDLE_VENDOR_ID = os.getenv("PADDLE_VENDOR_ID", "").strip()
-PADDLE_PRO_PRODUCT_ID = os.getenv("PADDLE_PRO_PRODUCT_ID", "").strip()
-PADDLE_TEAM_PRODUCT_ID = os.getenv("PADDLE_TEAM_PRODUCT_ID", "").strip()
+PADDLE_CLIENT_TOKEN = os.getenv("PADDLE_CLIENT_TOKEN", "").strip() or PADDLE_VENDOR_ID
+_PADDLE_PRO_LEGACY_ID = os.getenv("PADDLE_PRO_PRODUCT_ID", "").strip()
+_PADDLE_TEAM_LEGACY_ID = os.getenv("PADDLE_TEAM_PRODUCT_ID", "").strip()
+PADDLE_PRO_PRICE_ID = os.getenv("PADDLE_PRO_PRICE_ID", "").strip() or (
+    _PADDLE_PRO_LEGACY_ID if _PADDLE_PRO_LEGACY_ID.startswith("pri_") else ""
+)
+PADDLE_TEAM_PRICE_ID = os.getenv("PADDLE_TEAM_PRICE_ID", "").strip() or (
+    _PADDLE_TEAM_LEGACY_ID if _PADDLE_TEAM_LEGACY_ID.startswith("pri_") else ""
+)
+PADDLE_PRO_PRODUCT_ID = os.getenv("PADDLE_PRO_CATALOG_PRODUCT_ID", "").strip() or (
+    _PADDLE_PRO_LEGACY_ID if _PADDLE_PRO_LEGACY_ID.startswith("pro_") else ""
+)
+PADDLE_TEAM_PRODUCT_ID = os.getenv("PADDLE_TEAM_CATALOG_PRODUCT_ID", "").strip() or (
+    _PADDLE_TEAM_LEGACY_ID if _PADDLE_TEAM_LEGACY_ID.startswith("pro_") else ""
+)
 PADDLE_WEBHOOK_SECRET = os.getenv("PADDLE_WEBHOOK_SECRET", "").strip()
+PADDLE_API_KEY = os.getenv("PADDLE_API_KEY", "").strip()
+PADDLE_ENVIRONMENT = os.getenv("PADDLE_ENVIRONMENT", "").strip().lower() or (
+    "sandbox" if PADDLE_CLIENT_TOKEN.startswith("test_") else "production"
+)
+
+
+def _paddle_catalog() -> dict:
+    return {
+        "pro": {"price_ids": [PADDLE_PRO_PRICE_ID], "product_ids": [PADDLE_PRO_PRODUCT_ID]},
+        "team": {"price_ids": [PADDLE_TEAM_PRICE_ID], "product_ids": [PADDLE_TEAM_PRODUCT_ID]},
+    }
+
+
+def _require_feature(user: dict, feature: str, label: str) -> None:
+    if not billing.feature_allowed(user, feature):
+        raise HTTPException(
+            status_code=403,
+            detail=f"{label} is available on Vigzone PRO and TEAM. Upgrade to unlock it.",
+        )
+
+
+def _assert_chat_entitlements(user: dict, chat_request: ChatRequest, *, has_own_key: bool, estimated_tokens: int) -> None:
+    if not billing.model_allowed(user, chat_request.model):
+        raise HTTPException(
+            status_code=403,
+            detail="That model is available on Vigzone PRO and TEAM. Free includes Llama 3.1 8B.",
+        )
+    if not billing.chat_mode_allowed(user, chat_request.ai_mode):
+        raise HTTPException(
+            status_code=403,
+            detail="That AI mode is available on Vigzone PRO and TEAM.",
+        )
+    if billing.effective_plan(user) != "free":
+        return
+    if authmod.consume_daily_message(user["id"], 50) is None:
+        raise HTTPException(
+            status_code=429,
+            detail="You have used your 50 Free messages for today. Upgrade to PRO or TEAM for unlimited messages.",
+        )
+    try:
+        assert_user_can_chat(
+            user["id"],
+            has_own_key=has_own_key,
+            estimated_request_tokens=estimated_tokens,
+        )
+    except UsageLimitError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
 
 NEW_CHAT_TOPLINE = os.getenv("VIGZONE_NEW_CHAT_TOPLINE", "Start with a real task")
 NEW_CHAT_SUBTITLE = os.getenv(
@@ -547,9 +609,10 @@ async def public_config():
             "api_own": "Groq (your key)",
         },
         # Paddle billing (empty strings if not configured)
-        "paddle_vendor_id": PADDLE_VENDOR_ID or None,
-        "paddle_pro_price_id": PADDLE_PRO_PRODUCT_ID or None,
-        "paddle_team_price_id": PADDLE_TEAM_PRODUCT_ID or None,
+        "paddle_client_token": PADDLE_CLIENT_TOKEN or None,
+        "paddle_vendor_id": PADDLE_CLIENT_TOKEN or None,
+        "paddle_pro_price_id": PADDLE_PRO_PRICE_ID or None,
+        "paddle_team_price_id": PADDLE_TEAM_PRICE_ID or None,
     })
 
 
@@ -1239,6 +1302,9 @@ async def my_usage_today(user: dict = Depends(require_current_user)):
     return JSONResponse({
         "has_own_key": key_status["has_key"],
         "using_own_key": key_status["active"],
+        "effective_plan": billing.effective_plan(user),
+        "plan_messages_today": authmod.get_daily_message_count(user["id"]),
+        "plan_message_limit": 50 if billing.effective_plan(user) == "free" else None,
         **usage,
     })
 
@@ -1782,6 +1848,7 @@ async def api_export_chat(req: ExportRequest, user: dict = Depends(require_curre
 
 @app.post("/api/website/export", tags=["Website Studio"])
 async def api_export_website(req: WebsiteExportRequest, user: dict = Depends(require_current_user)):
+    _require_feature(user, "website_studio", "Website Studio")
     html = req.html.strip()
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -2462,148 +2529,92 @@ async def admin_reset_user_usage(user_id: int, admin: dict = Depends(require_adm
 
 
 # ── Paddle Billing Webhook ─────────────────────────────────────────────────────
+@app.post("/api/billing/paddle/restore", tags=["Billing"])
+async def restore_paddle_purchase(
+    request: Request,
+    user: dict = Depends(require_current_user),
+):
+    """Reconcile the signed-in account with Paddle by its exact email."""
+    _enforce_rate_limit(request, "paddle_restore", 5, user=user, window_seconds=3600)
+    if not PADDLE_API_KEY:
+        raise HTTPException(status_code=503, detail="Purchase restore is not configured yet.")
+    base_url = "https://sandbox-api.paddle.com" if PADDLE_ENVIRONMENT == "sandbox" else "https://api.paddle.com"
+    headers = {"Authorization": f"Bearer {PADDLE_API_KEY}", "Accept": "application/json"}
+    restored: list[dict] = []
+    try:
+        async with httpx.AsyncClient(base_url=base_url, headers=headers, timeout=15.0) as client:
+            customer_response = await client.get("/customers", params={"email": user["email"]})
+            customer_response.raise_for_status()
+            customers = customer_response.json().get("data") or []
+            for customer in customers:
+                customer_id = str(customer.get("id") or "")
+                if not customer_id:
+                    continue
+                subscription_response = await client.get("/subscriptions", params={"customer_id": customer_id})
+                subscription_response.raise_for_status()
+                for subscription in subscription_response.json().get("data") or []:
+                    if str(subscription.get("status") or "").lower() not in billing.ACTIVE_SUBSCRIPTION_STATUSES:
+                        continue
+                    subscription = dict(subscription)
+                    custom = dict(subscription.get("custom_data") or {})
+                    custom.update({"vigzone_user_id": str(user["id"]), "vigzone_email": user["email"]})
+                    subscription["custom_data"] = custom
+                    occurred_at = subscription.get("updated_at") or subscription.get("created_at") or datetime.now(timezone.utc).isoformat()
+                    identity = f"{subscription.get('id')}:{subscription.get('status')}:{occurred_at}"
+                    event = {
+                        "event_id": "restore_" + hashlib.sha256(identity.encode("utf-8")).hexdigest()[:32],
+                        "event_type": "subscription.updated",
+                        "occurred_at": occurred_at,
+                        "data": subscription,
+                    }
+                    result = billing.process_paddle_event(authmod.DB_PATH, event, _paddle_catalog())
+                    if result.get("ok") and result.get("action") in {"processed", "duplicate", "stale"}:
+                        restored.append(result)
+    except httpx.HTTPStatusError as exc:
+        logger.warning("Paddle restore API rejected the request: status=%s", exc.response.status_code)
+        raise HTTPException(status_code=502, detail="Paddle could not verify this purchase right now.") from exc
+    except httpx.HTTPError as exc:
+        logger.warning("Paddle restore API unavailable: %s", type(exc).__name__)
+        raise HTTPException(status_code=502, detail="Paddle is temporarily unavailable. Try again shortly.") from exc
+    if not restored:
+        return JSONResponse({"ok": True, "restored": False, "message": "No active PRO or TEAM membership matched this account."})
+    restored_plan = billing.recompute_user_plan(authmod.DB_PATH, user["id"])
+    return JSONResponse({"ok": True, "restored": True, "memberships": len(restored), "plan": restored_plan})
+
+
 @app.post("/api/billing/paddle/webhook", tags=["Billing"])
 async def paddle_webhook(request: Request):
-    """Receive Paddle webhook events and update user subscription plan.
-
-    Set PADDLE_WEBHOOK_SECRET in your Render env to the secret key from
-    Paddle Dashboard → Developer Tools → Notifications → your endpoint.
-    """
-    import sqlite3
-    import hashlib
-    import hmac as _hmac
-    import json as _json
-
+    """Verify and durably apply a Paddle Billing webhook."""
     raw_body = await request.body()
-
-    # ── Signature verification ──────────────────────────────────────────────────
-    # ONLY enforce if PADDLE_WEBHOOK_SECRET is set in environment.
-    # If not set, we accept all requests (dev/test mode).
-    if PADDLE_WEBHOOK_SECRET:
-        signature = request.headers.get("Paddle-Signature", "")
-        try:
-            parts = dict(item.split("=", 1) for item in signature.split(";") if "=" in item)
-            ts = parts.get("ts", "")
-            h1 = parts.get("h1", "")
-            if not ts or not h1:
-                logging.warning("Paddle webhook: missing ts or h1 in signature header: %r", signature)
-                # Return 200 anyway so Paddle stops retrying — log for manual inspection
-                return JSONResponse({"ok": False, "error": "missing_signature_parts"})
-            signed_payload = f"{ts}:".encode() + raw_body
-            expected = _hmac.new(
-                PADDLE_WEBHOOK_SECRET.encode(),
-                signed_payload,
-                hashlib.sha256,
-            ).hexdigest()
-            if not _hmac.compare_digest(expected, h1):
-                logging.warning(
-                    "Paddle webhook SIGNATURE MISMATCH. "
-                    "Check PADDLE_WEBHOOK_SECRET env var matches the secret key in Paddle Dashboard. "
-                    "Expected=%s Got=%s", expected[:12], h1[:12]
-                )
-                # Return 200 to stop Paddle retrying — this is a config issue, not a transient error
-                return JSONResponse({"ok": False, "error": "signature_mismatch"})
-        except Exception as exc:
-            logging.warning("Paddle signature parse error: %s", exc)
-            return JSONResponse({"ok": False, "error": "signature_parse_error"})
-
-    # ── Parse event body ────────────────────────────────────────────────────────
+    signature = request.headers.get("Paddle-Signature", "")
+    verified, verification_result = billing.verify_paddle_signature(
+        PADDLE_WEBHOOK_SECRET,
+        signature,
+        raw_body,
+    )
+    if not verified:
+        status = 503 if verification_result == "webhook_not_configured" else 401
+        logger.warning("Rejected Paddle webhook: %s", verification_result)
+        return JSONResponse({"ok": False, "error": verification_result}, status_code=status)
     try:
-        event = _json.loads(raw_body)
-    except Exception:
-        logging.warning("Paddle webhook: invalid JSON body")
-        return JSONResponse({"ok": False, "error": "invalid_json"})
-
-    event_type = str(event.get("event_type") or event.get("alert_name", ""))
-    data = event.get("data") or event  # Paddle v2 wraps payload in "data"
-
-    logging.info("Paddle webhook received: event_type=%s data_keys=%s", event_type, list(data.keys()) if isinstance(data, dict) else type(data))
-
-    # ── Extract customer email ──────────────────────────────────────────────────
-    customer_email = ""
-    if isinstance(data, dict):
-        # 1. custom_data.email (set by our frontend checkout)
-        custom_data = data.get("custom_data")
-        if isinstance(custom_data, dict):
-            customer_email = str(custom_data.get("email", "")).strip().lower()
-        # 2. customer.email (Paddle populates from account)
-        if not customer_email and isinstance(data.get("customer"), dict):
-            customer_email = str(data["customer"].get("email", "")).strip().lower()
-        # 3. top-level email fallback
-        if not customer_email:
-            customer_email = str(data.get("email", "")).strip().lower()
-
-    logging.info("Paddle webhook: customer_email=%r event_type=%s", customer_email, event_type)
-
-    # ── Extract price ID ────────────────────────────────────────────────────────
-    price_id = ""
-    items = data.get("items")
-    details = data.get("details")
-    
-    if isinstance(items, list) and len(items) > 0:
-        # subscription.created payload
-        price_id = str(items[0].get("price", {}).get("id", ""))
-    elif isinstance(details, dict) and isinstance(details.get("line_items"), list) and len(details["line_items"]) > 0:
-        # transaction.completed payload
-        price_id = str(details["line_items"][0].get("price_id", ""))
-    
-    if not price_id:
-        price_id = str(data.get("product_id", "") or data.get("passthrough", "") if isinstance(data, dict) else "")
-
-    logging.info("Paddle webhook: price_id=%r pro_id=%r team_id=%r", price_id, PADDLE_PRO_PRODUCT_ID, PADDLE_TEAM_PRODUCT_ID)
-
-    if PADDLE_PRO_PRODUCT_ID and price_id == PADDLE_PRO_PRODUCT_ID:
-        new_plan = "pro"
-    elif PADDLE_TEAM_PRODUCT_ID and price_id == PADDLE_TEAM_PRODUCT_ID:
-        new_plan = "team"
-    else:
-        new_plan = "pro"  # Safe fallback: any paid transaction → pro
-
-    active_events = {
-        "subscription_created",
-        "subscription.created",
-        "subscription_updated",
-        "subscription.updated",
-        "subscription_payment_succeeded",
-        "transaction_completed",
-        "transaction.completed",
-    }
-    cancel_events = {
-        "subscription_cancelled", "subscription.cancelled",
-        "subscription_paused", "subscription.paused",
-    }
-
-    if event_type in active_events and customer_email:
-        plan = new_plan
-    elif event_type in cancel_events and customer_email:
-        plan = "free"
-    else:
-        # Unknown event — ack without processing
-        return JSONResponse({"ok": True, "action": "ignored", "event_type": event_type})
-
+        event = json.loads(raw_body)
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "invalid_json"}, status_code=400)
     try:
-        db_path = authmod.DB_PATH
-        with sqlite3.connect(db_path) as conn:
-            cur = conn.execute(
-                "UPDATE users SET plan = ?, updated_at = ? WHERE email = ?",
-                (plan, int(__import__('time').time()), customer_email),
-            )
-            conn.commit()
-            rows_updated = cur.rowcount
-        logging.info(
-            "Paddle webhook DB: plan=%s email=%s rows_updated=%d event=%s",
-            plan, customer_email, rows_updated, event_type
-        )
-        if rows_updated == 0:
-            logging.warning(
-                "Paddle webhook: no user found with email=%r — "
-                "user may need to register first", customer_email
-            )
+        result = billing.process_paddle_event(authmod.DB_PATH, event, _paddle_catalog())
     except Exception as exc:
-        logging.error("Paddle webhook DB update failed: %s", exc)
-        return JSONResponse({"ok": False, "error": "db_error", "detail": str(exc)})
-
-    return JSONResponse({"ok": True, "action": "plan_updated", "plan": plan, "email": customer_email})
+        logger.exception("Paddle webhook processing failed")
+        return JSONResponse({"ok": False, "error": "processing_failed"}, status_code=500)
+    if not result.get("ok"):
+        # A missing local account is recoverable: Paddle should retry rather
+        # than recording a misleading successful delivery.
+        status = 409 if result.get("error") == "user_not_found" else 400
+        return JSONResponse(result, status_code=status)
+    logger.info(
+        "Paddle webhook %s: event=%s user=%s plan=%s",
+        result.get("action"), result.get("event_id"), result.get("user_id"), result.get("plan"),
+    )
+    return JSONResponse(result)
 
 
 # ── Voice transcription endpoint ──────────────────────────────────────────────
@@ -2811,6 +2822,7 @@ async def transcribe_voice(
     reliable server fallback, using either the user's activated Groq key or the
     deployment default key.
     """
+    _require_feature(user, "voice", "Voice transcription")
     _enforce_rate_limit(request, "voice", 10, user=user, window_seconds=60)
 
     provider_override, _ = _resolve_provider_for_user(user)
@@ -2968,6 +2980,9 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
     entirely and run on their own personal quota.
     """
     provider_override, override_model = _resolve_provider_for_user(user)
+    paid_model_access = billing.effective_plan(user) != "free"
+    if not paid_model_access:
+        override_model = FAST_MODEL
     _check_chat_rate_limit(request, user)
     messages = _normalize_chat_messages([
         {"role": message.role, "content": message.content}
@@ -2978,10 +2993,12 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
     # Vigzone daily plan is exhausted or too close to exhausted.
     key_status = authmod.get_user_key_status(user["id"])
     estimated_request_tokens = estimate_budgeted_request_tokens(messages)
-    try:
-        assert_user_can_chat(user["id"], has_own_key=key_status["active"], estimated_request_tokens=estimated_request_tokens)
-    except UsageLimitError as e:
-        raise HTTPException(status_code=429, detail=str(e))
+    _assert_chat_entitlements(
+        user,
+        chat_request,
+        has_own_key=key_status["active"],
+        estimated_tokens=estimated_request_tokens,
+    )
 
     if provider_override is None and not await is_configured():
         raise HTTPException(
@@ -3042,6 +3059,7 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
                     routing_mode=chat_request.ai_mode or "general",
                     conversation_id=chat_request.conversation_id or "",
                     metadata_callback=response_meta.update,
+                    allowed_models=None if paid_model_access else {FAST_MODEL},
                 ):
                     if is_cancelled(stream_id):
                         break
@@ -3085,6 +3103,9 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
 async def chat_sync(request: Request, chat_request: ChatRequest, user: dict = Depends(require_current_user)):
     """Non-streaming variant — returns the full reply in one JSON response."""
     provider_override, override_model = _resolve_provider_for_user(user)
+    paid_model_access = billing.effective_plan(user) != "free"
+    if not paid_model_access:
+        override_model = FAST_MODEL
     _check_chat_rate_limit(request, user)
     messages = _normalize_chat_messages([
         {"role": message.role, "content": message.content}
@@ -3093,10 +3114,12 @@ async def chat_sync(request: Request, chat_request: ChatRequest, user: dict = De
 
     key_status = authmod.get_user_key_status(user["id"])
     estimated_request_tokens = estimate_budgeted_request_tokens(messages)
-    try:
-        assert_user_can_chat(user["id"], has_own_key=key_status["active"], estimated_request_tokens=estimated_request_tokens)
-    except UsageLimitError as e:
-        raise HTTPException(status_code=429, detail=str(e))
+    _assert_chat_entitlements(
+        user,
+        chat_request,
+        has_own_key=key_status["active"],
+        estimated_tokens=estimated_request_tokens,
+    )
 
     if provider_override is None and not await is_configured():
         raise HTTPException(
@@ -3133,6 +3156,7 @@ async def chat_sync(request: Request, chat_request: ChatRequest, user: dict = De
             routing_mode=chat_request.ai_mode or "general",
             conversation_id=chat_request.conversation_id or "",
             metadata_callback=response_meta.update,
+            allowed_models=None if paid_model_access else {FAST_MODEL},
         )
     except VigzoneAIError as e:
         logger.error("Chat failed: %s", e)
@@ -3179,6 +3203,7 @@ async def api_generate_image(
     req: ImageRequest,
     user: dict = Depends(require_current_user),
 ):
+    _require_feature(user, "image_generation", "Image generation")
     _enforce_rate_limit(request, "image_generate", 10, user=user, window_seconds=3600)
     try:
         result = await generate_image(req.prompt, size=req.size or "1024x1024")
@@ -3207,6 +3232,7 @@ async def api_edit_image(
     req: EditImageRequest,
     user: dict = Depends(require_current_user),
 ):
+    _require_feature(user, "image_generation", "Image editing")
     _enforce_rate_limit(request, "image_edit", 10, user=user, window_seconds=3600)
     try:
         result = await edit_image(req.image_data_uri, req.prompt, size=req.size or "1024x1024")

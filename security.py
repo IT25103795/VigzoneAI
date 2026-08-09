@@ -112,6 +112,22 @@ def validate_production_settings() -> None:
     if not os.getenv("GROQ_API_KEY", "").strip():
         errors.append("GROQ_API_KEY is required for the default chat plan")
 
+    paddle_token = os.getenv("PADDLE_CLIENT_TOKEN", "").strip() or os.getenv("PADDLE_VENDOR_ID", "").strip()
+    legacy_pro = os.getenv("PADDLE_PRO_PRODUCT_ID", "").strip()
+    legacy_team = os.getenv("PADDLE_TEAM_PRODUCT_ID", "").strip()
+    paddle_pro_price = os.getenv("PADDLE_PRO_PRICE_ID", "").strip() or (legacy_pro if legacy_pro.startswith("pri_") else "")
+    paddle_team_price = os.getenv("PADDLE_TEAM_PRICE_ID", "").strip() or (legacy_team if legacy_team.startswith("pri_") else "")
+    paddle_secret = os.getenv("PADDLE_WEBHOOK_SECRET", "").strip()
+    if any((paddle_token, paddle_pro_price, paddle_team_price, paddle_secret)):
+        if not paddle_token.startswith(("live_", "test_")):
+            errors.append("PADDLE_CLIENT_TOKEN must be a Paddle Billing client-side token")
+        if not paddle_pro_price.startswith("pri_"):
+            errors.append("PADDLE_PRO_PRICE_ID must be the exact recurring PRO price ID (pri_...)")
+        if not paddle_team_price.startswith("pri_"):
+            errors.append("PADDLE_TEAM_PRICE_ID must be the exact recurring TEAM price ID (pri_...)")
+        if not paddle_secret:
+            errors.append("PADDLE_WEBHOOK_SECRET is required when Paddle billing is enabled")
+
     public_base = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
     parsed_base = urlparse(public_base)
     if not public_base:

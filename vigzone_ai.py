@@ -1173,7 +1173,11 @@ def estimate_budgeted_request_tokens(messages: list[dict]) -> int:
     return estimate + 256
 
 
-def _model_candidates(requested_model: str, contains_image: bool = False) -> list[str]:
+def _model_candidates(
+    requested_model: str,
+    contains_image: bool = False,
+    allowed_models: Optional[set[str]] = None,
+) -> list[str]:
     """Primary model followed by configured backups, with duplicates removed."""
     requested_model = (requested_model or "").strip()
     if requested_model not in ALLOWED_CHAT_MODELS:
@@ -1192,12 +1196,18 @@ def _model_candidates(requested_model: str, contains_image: bool = False) -> lis
     )
     seen = set()
     out = []
+    permitted = {_current_model(item) for item in allowed_models} if allowed_models else None
     for item in candidates:
         item = (item or "").strip()
-        if item and item not in seen:
+        if item and item not in seen and (permitted is None or item in permitted):
             out.append(item)
             seen.add(item)
-    return out or ([VISION_MODEL] if contains_image else [DEFAULT_MODEL])
+    if out:
+        return out
+    if permitted:
+        preferred = _current_model(requested_model)
+        return [preferred if preferred in permitted else sorted(permitted)[0]]
+    return [VISION_MODEL] if contains_image else [DEFAULT_MODEL]
 
 
 def _should_try_fallback(status_code: int) -> bool:
@@ -1868,6 +1878,7 @@ async def stream_chat(
     routing_mode: str = "general",
     conversation_id: str = "",
     metadata_callback: Optional[Callable[[dict], None]] = None,
+    allowed_models: Optional[set[str]] = None,
 ) -> AsyncGenerator[str, None]:
     """Stream a chat completion token-by-token with Groq model fallback."""
     using_override = provider_override is not None
@@ -1888,7 +1899,7 @@ async def stream_chat(
         contains_image=contains_image,
         ai_mode=routing_mode,
     )
-    candidates = _model_candidates(routed_model, contains_image=contains_image)
+    candidates = _model_candidates(routed_model, contains_image=contains_image, allowed_models=allowed_models)
     _notify_metadata(
         metadata_callback,
         {
@@ -2177,6 +2188,7 @@ async def chat_once(
     routing_mode: str = "general",
     conversation_id: str = "",
     metadata_callback: Optional[Callable[[dict], None]] = None,
+    allowed_models: Optional[set[str]] = None,
 ) -> str:
     """Non-streaming convenience wrapper with routing and Groq fallback."""
     using_override = provider_override is not None
@@ -2196,7 +2208,7 @@ async def chat_once(
         contains_image=contains_image,
         ai_mode=routing_mode,
     )
-    candidates = _model_candidates(routed_model, contains_image=contains_image)
+    candidates = _model_candidates(routed_model, contains_image=contains_image, allowed_models=allowed_models)
     _notify_metadata(
         metadata_callback,
         {

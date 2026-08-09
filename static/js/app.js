@@ -2609,6 +2609,10 @@
           <span>${(data.request_count_today || 0).toLocaleString()} requests today</span>
           <span>${exact.toLocaleString()} exact${estimated ? ` · ${estimated.toLocaleString()} estimated` : ''}</span>
         </div>
+        <div class="usage-modal-total-row">
+          <span>${(data.plan_messages_today || 0).toLocaleString()} messages today</span>
+          <span>${data.plan_message_limit ? `${data.plan_message_limit} Free-plan daily limit` : `${String(data.effective_plan || 'paid').toUpperCase()} · unlimited plan messages`}</span>
+        </div>
         ${providerParts.map((part, index) => `<div class="usage-modal-total-row"><span>${index === 0 ? 'Live provider signal' : ''}</span><span>${escapeHtml(part)}</span></div>`).join('')}
         <div class="usage-modal-total-row">
           <span>Daily window</span>
@@ -3139,6 +3143,107 @@
     if (settingsUserDot) settingsUserDot.textContent = userName ? accountInitial(userName) : '?';
   }
 
+  function applyFeatureRestrictions(entitlements = {}) {
+    const features = entitlements.features || {};
+    window._vigzoneEntitlements = entitlements;
+    document.querySelectorAll('[data-requires-feature]').forEach(el => {
+      const locked = features[el.dataset.requiresFeature] !== true;
+      el.classList.toggle('plan-feature-locked', locked);
+      el.setAttribute('aria-disabled', locked ? 'true' : 'false');
+      if (locked) el.title = `${el.title || 'This feature'} — PRO or TEAM required`;
+    });
+    if (features.premium_modes !== true && ['website', 'code', 'business', 'voice'].includes(activeAiMode)) {
+      activeAiMode = 'general';
+      localStorage.setItem('vigzone_ai_mode', 'general');
+    }
+    if (features.image_generation !== true && imageMode) setImageMode(false);
+  }
+
+  function updatePricingPlanState(displayPlan) {
+    const rank = {free: 0, pro: 1, team: 2, admin: 3};
+    const labels = {free: 'Free plan', pro: 'Upgrade to Pro →', team: 'Upgrade to Team →'};
+    document.querySelectorAll('[data-pricing-plan]').forEach(card => {
+      const plan = card.dataset.pricingPlan;
+      const button = card.querySelector('.pricing-cta');
+      card.classList.toggle('current-plan', plan === displayPlan);
+      if (!button) return;
+      button.classList.toggle('current', plan === displayPlan);
+      if (displayPlan === 'admin') {
+        button.textContent = plan === 'team' ? 'Admin access · All unlocked' : 'Included';
+        button.disabled = true;
+      } else if (plan === displayPlan) {
+        button.textContent = 'Current plan';
+        button.disabled = true;
+      } else if ((rank[displayPlan] || 0) > rank[plan]) {
+        button.textContent = 'Included in your plan';
+        button.disabled = true;
+      } else {
+        button.textContent = labels[plan] || 'Select plan';
+        button.disabled = plan === 'free';
+      }
+    });
+  }
+
+  function applyAccountPlan(user = {}) {
+    const entitlements = user.entitlements || {};
+    const isAdmin = !!user.is_admin;
+    const effectivePlan = entitlements.effective_plan || (isAdmin ? 'team' : (user.plan || 'free'));
+    const displayPlan = entitlements.display_plan || (isAdmin ? 'admin' : effectivePlan);
+    window._vigzoneUserPlan = effectivePlan;
+    window._vigzoneUserIsAdmin = isAdmin;
+    window._vigzoneUserId = user.id || null;
+    window._vigzoneUserEmail = user.email || '';
+
+    const planLabel = document.getElementById('sidebarPlanLabel');
+    const planBadge = document.getElementById('sidebarPlanBadge');
+    const upgradeBtn = document.getElementById('upgradePlanBtn');
+    const upgradeRow = document.getElementById('upgradePlanRow');
+    const headerBadge = document.getElementById('headerPlanBadge');
+    const paidBadge = displayPlan === 'admin' ? 'ADMIN' : (effectivePlan === 'free' ? '' : effectivePlan.toUpperCase());
+
+    if (headerBadge) {
+      headerBadge.className = 'header-plan-badge';
+      if (displayPlan === 'admin') headerBadge.classList.add('plan-admin');
+      if (effectivePlan === 'team' && displayPlan !== 'admin') headerBadge.classList.add('plan-team');
+      headerBadge.textContent = paidBadge;
+      headerBadge.hidden = !paidBadge;
+    }
+    if (planBadge) {
+      planBadge.className = 'sidebar-plan-badge';
+      if (displayPlan === 'admin') planBadge.classList.add('plan-admin');
+      if (effectivePlan === 'team' && displayPlan !== 'admin') planBadge.classList.add('plan-team');
+      planBadge.textContent = displayPlan === 'admin' ? '👑 Admin' : (effectivePlan === 'team' ? '⭐ Team' : '⚡ Pro');
+      planBadge.style.display = effectivePlan === 'free' ? 'none' : '';
+    }
+    if (isAdmin) {
+      if (upgradeRow) upgradeRow.style.display = 'none';
+    } else {
+      if (upgradeRow) upgradeRow.style.display = '';
+      if (effectivePlan === 'team') {
+        if (planLabel) planLabel.textContent = 'Your plan';
+        if (upgradeBtn) upgradeBtn.style.display = 'none';
+      } else if (effectivePlan === 'pro') {
+        if (planLabel) planLabel.textContent = 'Upgrade to Team';
+        if (upgradeBtn) upgradeBtn.style.display = '';
+      } else {
+        if (planLabel) planLabel.textContent = 'Upgrade plan';
+        if (upgradeBtn) upgradeBtn.style.display = '';
+      }
+    }
+    applyModelPlanRestrictions(effectivePlan);
+    applyFeatureRestrictions(entitlements);
+    updatePricingPlanState(displayPlan);
+  }
+
+  document.addEventListener('click', (event) => {
+    const locked = event.target.closest?.('.plan-feature-locked[data-requires-feature]');
+    if (!locked) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    suiteToast?.('This feature is available on Vigzone PRO and TEAM.');
+    openPricingModal();
+  }, true);
+
   async function loadAccount(){
     try {
       const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
@@ -3148,48 +3253,7 @@
         if (data.user) switchAccountStorageScope(data.user);
 
         const isAdmin = !!(data.user && data.user.is_admin);
-        const rawPlan = (data.user && data.user.plan) || 'free';
-        // Admin always gets full access regardless of DB plan
-        const effectivePlan = isAdmin ? 'team' : rawPlan;
-
-        window._vigzoneUserPlan = effectivePlan;
-        window._vigzoneUserIsAdmin = isAdmin;
-
-        // ── Update sidebar plan badge ──────────────────────────────────────────
-        const planLabel   = document.getElementById('sidebarPlanLabel');
-        const planBadge   = document.getElementById('sidebarPlanBadge');
-        const upgradeBtn  = document.getElementById('upgradePlanBtn');
-        const upgradeRow  = document.getElementById('upgradePlanRow');
-
-        if (planBadge) {
-          planBadge.className = 'sidebar-plan-badge';
-          if (isAdmin) {
-            planBadge.classList.add('plan-admin');
-            planBadge.textContent = '👑 Admin';
-            planBadge.style.display = '';
-            if (planLabel) planLabel.textContent = 'Your plan';
-            if (upgradeBtn) upgradeBtn.style.display = 'none';
-          } else if (effectivePlan === 'team') {
-            planBadge.classList.add('plan-team');
-            planBadge.textContent = '⭐ Team';
-            planBadge.style.display = '';
-            if (planLabel) planLabel.textContent = 'Your plan';
-            if (upgradeBtn) upgradeBtn.style.display = 'none';
-          } else if (effectivePlan === 'pro') {
-            planBadge.textContent = '⚡ Pro';
-            planBadge.style.display = '';
-            if (planLabel) planLabel.textContent = 'Your plan';
-            if (upgradeBtn) upgradeBtn.style.display = 'none';
-          } else {
-            // free — show upgrade button, hide badge
-            planBadge.style.display = 'none';
-            if (planLabel) planLabel.textContent = 'Upgrade plan';
-            if (upgradeBtn) upgradeBtn.style.display = '';
-          }
-        }
-
-        // ── Apply model restrictions ───────────────────────────────────────────
-        applyModelPlanRestrictions(effectivePlan);
+        applyAccountPlan(data.user || {});
 
         if (isAdmin) {
           // Founder/Admin: stay in chat interface — show admin sidebar button + badge
@@ -7030,7 +7094,7 @@ Requirements:
   applyChatTheme(getChatTheme(), false);
   registerOfflineServiceWorker();
   setOfflineUiState();
-  loadLiveConfig();
+  const liveConfigReady = loadLiveConfig();
 
   setSidebarCollapsed(isMobile() ? true : (localStorage.getItem(SIDEBAR_KEY) === '1'));
   renderHistoryList();
@@ -7039,7 +7103,7 @@ Requirements:
   setTimeout(renderContinueBanner, 80);
   loadBrainCloudOnStart();
   checkHealth();
-  loadAccount();
+  const accountReady = loadAccount();
   autoResize();
   usageCycleRefreshTimer = setInterval(refreshUsageCycle, 60000);
 
@@ -7065,9 +7129,56 @@ Requirements:
 
   // Paddle checkout — wires up Pro and Team upgrade buttons
   // Supports Paddle Billing (v2) using client-side tokens
+  let pendingCheckoutPlan = '';
+
+  async function waitForPlanActivation(targetPlan) {
+    const rank = {free: 0, pro: 1, team: 2};
+    for (let attempt = 0; attempt < 16; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, attempt === 0 ? 900 : 1250));
+      try {
+        const response = await fetch('/api/auth/me', {credentials: 'same-origin', cache: 'no-store'});
+        if (!response.ok) continue;
+        const payload = await response.json();
+        const user = payload?.user || {};
+        applyAccountPlan(user);
+        const activePlan = user?.entitlements?.effective_plan || user.plan || 'free';
+        if ((rank[activePlan] || 0) >= (rank[targetPlan] || 0) || user.is_admin) {
+          suiteToast?.(`🎉 ${targetPlan.toUpperCase()} is active — all included features are unlocked.`);
+          setTimeout(() => window.location.reload(), 700);
+          return;
+        }
+      } catch {}
+    }
+    suiteToast?.('Payment completed. Paddle is still confirming the membership; your plan will update automatically.');
+  }
+
+  document.getElementById('restorePurchaseBtn')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    button.textContent = 'Checking Paddle…';
+    try {
+      const response = await fetch('/api/billing/paddle/restore', {
+        method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.detail || 'Purchase restore failed.');
+      if (!payload.restored) {
+        suiteToast?.(payload.message || 'No active membership matched this account.');
+      } else {
+        suiteToast?.('Membership restored. Unlocking your plan…');
+        await waitForPlanActivation(payload.plan || 'pro');
+      }
+    } catch (error) {
+      suiteToast?.(error.message || 'Could not restore the purchase right now.');
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Restore an existing purchase';
+    }
+  });
+
   async function initPaddleCheckout() {
     // If we're on the new Paddle Billing, the vendor ID is actually a Client-Side Token (e.g., test_... or live_...)
-    const paddleToken = (liveConfig && liveConfig.paddle_vendor_id) || null;
+    const paddleToken = (liveConfig && (liveConfig.paddle_client_token || liveConfig.paddle_vendor_id)) || null;
     const PADDLE_PRO_PRICE_ID = (liveConfig && liveConfig.paddle_pro_price_id) || null;
     const PADDLE_TEAM_PRICE_ID = (liveConfig && liveConfig.paddle_team_price_id) || null;
 
@@ -7085,10 +7196,9 @@ Requirements:
         window.Paddle.Initialize({ 
           token: paddleToken,
           eventCallback: function(data) {
-            // Handle successful checkout locally for instant feedback
             if (data.name === "checkout.completed") {
-               suiteToast?.('🎉 Upgrade successful! Refreshing your plan…');
-               setTimeout(() => window.location.reload(), 1500);
+               suiteToast?.('🎉 Payment complete. Confirming your membership…');
+               waitForPlanActivation(pendingCheckoutPlan || 'pro');
             } else if (data.name === "checkout.closed") {
                suiteToast?.('Checkout closed.');
             } else if (data.name === "checkout.error") {
@@ -7102,7 +7212,7 @@ Requirements:
       document.head.appendChild(s);
     });
 
-    const openCheckout = async (priceId) => {
+    const openCheckout = async (priceId, plan) => {
       if (!priceId) {
         suiteToast?.('Paddle product not configured yet. Check back soon!');
         return;
@@ -7114,30 +7224,26 @@ Requirements:
         return;
       }
       closePricingModal();
+      pendingCheckoutPlan = plan;
       const checkoutOptions = {
         items: [{ priceId: priceId, quantity: 1 }],
-        customData: {}
+        customData: {
+          vigzone_user_id: window._vigzoneUserId || '',
+          vigzone_email: window._vigzoneUserEmail || '',
+          vigzone_plan: plan
+        }
       };
       if (window._vigzoneUserEmail) {
         checkoutOptions.customer = { email: window._vigzoneUserEmail };
-        checkoutOptions.customData.email = window._vigzoneUserEmail;
       }
       window.Paddle.Checkout.open(checkoutOptions);
     };
 
-    document.getElementById('paddleProBtn')?.addEventListener('click', () => openCheckout(PADDLE_PRO_PRICE_ID));
-    document.getElementById('paddleTeamBtn')?.addEventListener('click', () => openCheckout(PADDLE_TEAM_PRICE_ID));
+    document.getElementById('paddleProBtn')?.addEventListener('click', () => openCheckout(PADDLE_PRO_PRICE_ID, 'pro'));
+    document.getElementById('paddleTeamBtn')?.addEventListener('click', () => openCheckout(PADDLE_TEAM_PRICE_ID, 'team'));
   }
 
-  // Store user email for Paddle checkout pre-fill, then init Paddle
-  (async () => {
-    try {
-      const r = await fetch('/api/auth/me', { credentials: 'same-origin' });
-      if (r.ok) {
-        const d = await r.json().catch(() => ({}));
-        window._vigzoneUserEmail = d?.user?.email || '';
-      }
-    } catch {}
-    initPaddleCheckout();
-  })();
+  // Wait for both living config and account identity, preventing a race where
+  // checkout opened without a price ID or durable Vigzone user identifier.
+  Promise.allSettled([liveConfigReady, accountReady]).then(initPaddleCheckout);
 
