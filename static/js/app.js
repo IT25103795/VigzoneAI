@@ -3146,19 +3146,58 @@
         const data = await res.json().catch(() => ({}));
         userName = (data.user && data.user.name) || (data.user && data.user.email) || '';
         if (data.user) switchAccountStorageScope(data.user);
-        // Store plan globally so model selector and other features can use it
-        window._vigzoneUserPlan = (data.user && data.user.plan) || 'free';
-        // Apply plan-based model restrictions after plan is known
-        applyModelPlanRestrictions(window._vigzoneUserPlan);
-        if (data.user && data.user.is_admin) {
+
+        const isAdmin = !!(data.user && data.user.is_admin);
+        const rawPlan = (data.user && data.user.plan) || 'free';
+        // Admin always gets full access regardless of DB plan
+        const effectivePlan = isAdmin ? 'team' : rawPlan;
+
+        window._vigzoneUserPlan = effectivePlan;
+        window._vigzoneUserIsAdmin = isAdmin;
+
+        // ── Update sidebar plan badge ──────────────────────────────────────────
+        const planLabel   = document.getElementById('sidebarPlanLabel');
+        const planBadge   = document.getElementById('sidebarPlanBadge');
+        const upgradeBtn  = document.getElementById('upgradePlanBtn');
+        const upgradeRow  = document.getElementById('upgradePlanRow');
+
+        if (planBadge) {
+          planBadge.className = 'sidebar-plan-badge';
+          if (isAdmin) {
+            planBadge.classList.add('plan-admin');
+            planBadge.textContent = '👑 Admin';
+            planBadge.style.display = '';
+            if (planLabel) planLabel.textContent = 'Your plan';
+            if (upgradeBtn) upgradeBtn.style.display = 'none';
+          } else if (effectivePlan === 'team') {
+            planBadge.classList.add('plan-team');
+            planBadge.textContent = '⭐ Team';
+            planBadge.style.display = '';
+            if (planLabel) planLabel.textContent = 'Your plan';
+            if (upgradeBtn) upgradeBtn.style.display = 'none';
+          } else if (effectivePlan === 'pro') {
+            planBadge.textContent = '⚡ Pro';
+            planBadge.style.display = '';
+            if (planLabel) planLabel.textContent = 'Your plan';
+            if (upgradeBtn) upgradeBtn.style.display = 'none';
+          } else {
+            // free — show upgrade button, hide badge
+            planBadge.style.display = 'none';
+            if (planLabel) planLabel.textContent = 'Upgrade plan';
+            if (upgradeBtn) upgradeBtn.style.display = '';
+          }
+        }
+
+        // ── Apply model restrictions ───────────────────────────────────────────
+        applyModelPlanRestrictions(effectivePlan);
+
+        if (isAdmin) {
           // Founder/Admin: stay in chat interface — show admin sidebar button + badge
           document.body.classList.remove('admin-only');
           if (adminPanelRow) adminPanelRow.style.display = '';
           const quickAdminBtn = document.getElementById('quickAdminBtn');
           if (quickAdminBtn) quickAdminBtn.style.display = '';
-          // Show founder crown badge on the user dot
           if (sidebarUserDot) sidebarUserDot.setAttribute('title', '👑 Founder · Admin');
-          // Update greeting
           updateGreeting();
           refreshApiKeyBox();
           refreshUsageCycle();
