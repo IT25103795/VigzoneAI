@@ -1,10 +1,10 @@
 """Security and production configuration helpers for Vigzone AI.
 
 The application intentionally remains a single-process deployment because it
-uses in-process stream state and SQLite.  This is a supported production shape
-for a small deployment when the data directory is mounted on persistent
-storage.  Startup validation refuses unsafe production combinations instead
-of silently running with weak defaults.
+uses in-process stream state. Production data belongs in PostgreSQL; SQLite is
+retained for local development or an explicitly approved persistent-volume
+deployment. Startup validation refuses unsafe combinations instead of silently
+running with weak defaults.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import secrets
 import time
 from pathlib import Path
 from typing import Iterable
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from fastapi import HTTPException, Request
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -98,16 +98,37 @@ def validate_production_settings() -> None:
 
     workers = int(os.getenv("WORKERS", "1") or "1")
     if workers != 1:
-        errors.append("WORKERS must be 1 while using SQLite and in-process streaming")
+        errors.append("WORKERS must be 1 while in-process streaming is enabled")
 
-    data_dir = Path(os.getenv("VIGZONE_DATA_DIR", "data"))
-    if _is_ephemeral_path(data_dir):
-        errors.append("VIGZONE_DATA_DIR cannot point inside /tmp in production")
-    if not env_bool("ALLOW_EPHEMERAL_STORAGE", False) and data_dir == Path("data"):
-        logger.warning(
-            "VIGZONE_DATA_DIR uses the default relative path. Mount /app/data "
-            "as a persistent volume before serving real users."
-        )
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    if database_url:
+        parsed_database = urlparse(database_url)
+        if parsed_database.scheme not in {"postgres", "postgresql"}:
+            errors.append("DATABASE_URL must be a PostgreSQL connection URL")
+        if not parsed_database.hostname or not parsed_database.username or not parsed_database.path.strip("/"):
+            errors.append("DATABASE_URL must include a host, database, and user")
+        if parsed_database.password in {None, ""} or "*" in str(parsed_database.password):
+            errors.append("DATABASE_URL must contain the real database password, not a masked value")
+        database_query = parse_qs(parsed_database.query)
+        ssl_mode = (database_query.get("sslmode") or [""])[0].lower()
+        if parsed_database.hostname not in {"localhost", "127.0.0.1", "::1"} and ssl_mode not in {
+            "require", "verify-ca", "verify-full"
+        }:
+            errors.append("External DATABASE_URL connections must require TLS with sslmode=require or stronger")
+    else:
+        if not env_bool("ALLOW_SQLITE_PRODUCTION", False):
+            errors.append(
+                "DATABASE_URL is required for production. Set ALLOW_SQLITE_PRODUCTION=true only "
+                "when SQLite is stored on a verified persistent volume"
+            )
+        data_dir = Path(os.getenv("VIGZONE_DATA_DIR", "data"))
+        if _is_ephemeral_path(data_dir):
+            errors.append("VIGZONE_DATA_DIR cannot point inside /tmp in production")
+        if not env_bool("ALLOW_EPHEMERAL_STORAGE", False) and data_dir == Path("data"):
+            logger.warning(
+                "VIGZONE_DATA_DIR uses the default relative path. Mount /app/data "
+                "as a persistent volume before serving real users."
+            )
 
     if not os.getenv("GROQ_API_KEY", "").strip():
         errors.append("GROQ_API_KEY is required for the default chat plan")

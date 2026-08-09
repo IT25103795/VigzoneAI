@@ -3,7 +3,7 @@
 ## 1. Prerequisites
 
 - HTTPS reverse proxy or managed platform TLS.
-- One application replica with a persistent volume mounted at `/app/data`.
+- One application replica connected to a durable TLS-protected PostgreSQL database.
 - Groq API key, stable encryption secret, public URL, and exact CORS origin.
 - Working outbound HTTPS to configured AI/data providers and SMTP if enabled.
 
@@ -16,7 +16,7 @@ Copy `.env.example` to `.env` and set production values. The application refuses
 - CORS uses `*`, a non-HTTPS non-loopback origin, or no explicit origin;
 - `PUBLIC_BASE_URL` is missing or insecure;
 - workers are not exactly one;
-- the data directory is under `/tmp`;
+- `DATABASE_URL` is absent or is not a complete TLS-protected PostgreSQL URL;
 - the default Groq key is missing;
 - ClamAV cannot complete a real scan.
 
@@ -44,11 +44,11 @@ Configure these variables before deploying:
 | `ENV` | `production` |
 | `PORT` | `8000` |
 | `WORKERS` | `1` |
+| `DATABASE_URL` | Complete pooled PostgreSQL URL with `sslmode=require` or stronger |
 | `GROQ_API_KEY` | A real `gsk_...` Groq key |
 | `ENCRYPTION_SECRET` | A stable random value of at least 32 characters |
 | `COOKIE_SECURE` | `true` |
 | `VIRUS_SCAN_STRICT` | `true` |
-| `VIGZONE_DATA_DIR` | `/app/data` |
 | `CORS_ORIGINS` | The exact Back4App HTTPS URL, without a trailing slash |
 | `PUBLIC_BASE_URL` | The same exact Back4App HTTPS URL |
 | `ENABLE_API_DOCS` | `false` |
@@ -58,6 +58,20 @@ Configure these variables before deploying:
 | `PADDLE_WEBHOOK_SECRET` | Secret for `/api/billing/paddle/webhook` |
 | `PADDLE_API_KEY` | Server API key for purchase restoration |
 | `PADDLE_ENVIRONMENT` | `production` (`sandbox` only for test catalog IDs) |
+
+### Render Free + Neon PostgreSQL
+
+Render's free filesystem is ephemeral, so production accounts and Paddle state
+must not use the local SQLite fallback. Create a Neon project, enable its pooled
+connection, and store the complete secret URL only in Render as `DATABASE_URL`.
+Use **Save only** until a PostgreSQL-capable Vigzone build is ready, then deploy.
+The hostname should contain `-pooler` and the query string must contain
+`sslmode=require` (or a stronger verification mode). Vigzone creates its schema
+at startup and reports `"database_backend": "postgresql"` from `/health/ready`.
+
+Never set `VIGZONE_DB_PATH` to a PostgreSQL URL. `VIGZONE_DATA_DIR` and
+`ALLOW_SQLITE_PRODUCTION=true` are only for an explicitly verified persistent
+SQLite volume, not Render Free.
 
 ### Paddle Sandbox → Live cutover
 
@@ -94,8 +108,8 @@ variables:
 python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-Mount persistent storage at `/app/data` before serving real accounts. A
-Back4App temporary URL can change or expire; whenever its hostname changes,
+Use managed PostgreSQL before serving real accounts. A Back4App temporary URL
+can change or expire; whenever its hostname changes,
 update both URL variables and any Google OAuth origin/redirect configuration.
 A permanent URL is strongly recommended.
 
@@ -116,13 +130,9 @@ Then use a staging account to verify signup/login, one chat stream, cancel/pause
 
 ## 5. Backups
 
-Back up the persistent volume while coordinating with SQLite:
-
-```bash
-sqlite3 /path/to/data/vigzone.db ".backup '/safe/location/vigzone-backup.db'"
-```
-
-Test restores regularly. Keep backup access narrower than application access and define a retention/deletion policy.
+Use the PostgreSQL provider's automated backups/restore points and test a
+restore regularly. Keep database credentials narrower than owner credentials,
+rotate them periodically, and define a retention/deletion policy.
 
 ## 6. Updates
 
@@ -134,4 +144,6 @@ Test restores regularly. Keep backup access narrower than application access and
 
 ## Scaling
 
-Do not increase workers or replicas. For horizontal scaling, migrate SQLite to PostgreSQL, rate/stream state to Redis, and generated/uploaded artifacts to object storage before changing `WORKERS`.
+Do not increase workers or replicas yet. PostgreSQL and durable rate limits are
+shared, but pause/resume stream state is still process-local. Move stream state
+to a shared service before changing `WORKERS`.

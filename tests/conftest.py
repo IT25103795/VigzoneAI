@@ -15,6 +15,9 @@ os.environ.setdefault("COOKIE_SECURE", "false")
 os.environ.setdefault("VIRUS_SCAN_STRICT", "false")
 os.environ.setdefault("CORS_ORIGINS", "http://localhost:8000")
 os.environ.setdefault("ENCRYPTION_SECRET", "vigzone-test-encryption-secret-at-least-32-characters")
+# Tests must never connect to a developer or deployment PostgreSQL database,
+# even if the shell or a local .env file contains DATABASE_URL.
+os.environ["DATABASE_URL"] = ""
 
 
 @pytest.fixture
@@ -22,8 +25,11 @@ def auth_db(tmp_path, monkeypatch):
     """Give every test a fresh SQLite database and neutral role config."""
 
     import auth
+    import database
 
     monkeypatch.setattr(auth, "DB_PATH", str(tmp_path / "vigzone-test.db"))
+    monkeypatch.setenv("DATABASE_URL", "")
+    database.close_pool()
     monkeypatch.setenv(
         "ENCRYPTION_SECRET",
         "vigzone-test-encryption-secret-at-least-32-characters",

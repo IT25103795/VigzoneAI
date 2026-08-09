@@ -69,7 +69,7 @@ ENCRYPTION_SECRET=<unique random value, at least 32 characters>
 COOKIE_SECURE=true
 VIRUS_SCAN_STRICT=true
 WORKERS=1
-VIGZONE_DATA_DIR=/app/data
+DATABASE_URL=postgresql://.../vigzone?sslmode=require
 CORS_ORIGINS=https://ai.example.com
 PUBLIC_BASE_URL=https://ai.example.com
 ```
@@ -98,7 +98,10 @@ cp .env.example .env
 docker compose up --build -d
 ```
 
-Mount `/app/data` persistently and back up `vigzone.db`. Use one process and one replica: pause/resume stream state is process-local and the current persistence layer is SQLite.
+Use a managed PostgreSQL database and its tested backup/restore facilities.
+SQLite remains available only for local development or an explicitly approved
+persistent-volume deployment. Use one process and one replica because
+pause/resume stream state is still process-local.
 
 See [DEPLOYMENT.md](DEPLOYMENT.md), [SECURITY.md](SECURITY.md), and [PRIVACY.md](PRIVACY.md).
 

@@ -5,10 +5,11 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-import sqlite3
 import time
 from datetime import datetime, timezone
 from typing import Any, Iterable
+
+import database
 
 
 VALID_PLANS = ("free", "pro", "team")
@@ -285,7 +286,7 @@ def _event_subscription_status(parsed: dict) -> str:
     return parsed["status"] or ("active" if event_type in {"subscription.created", "subscription.updated"} else "")
 
 
-def _recompute_user_plan(conn: sqlite3.Connection, user_id: int) -> str:
+def _recompute_user_plan(conn: Any, user_id: int) -> str:
     active = conn.execute(
         "SELECT plan FROM billing_subscriptions WHERE user_id = ? AND status IN ('active', 'trialing', 'past_due')",
         (user_id,),
@@ -303,18 +304,10 @@ def _recompute_user_plan(conn: sqlite3.Connection, user_id: int) -> str:
 
 
 def recompute_user_plan(db_path: str, user_id: int) -> str:
-    conn = sqlite3.connect(db_path, timeout=15.0)
-    conn.row_factory = sqlite3.Row
-    try:
+    with database.connect(db_path) as conn:
         conn.execute("BEGIN IMMEDIATE")
         plan = _recompute_user_plan(conn, int(user_id))
-        conn.commit()
         return plan
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
 
 
 def process_paddle_event(db_path: str, event: dict, catalog: dict) -> dict:
@@ -330,10 +323,7 @@ def process_paddle_event(db_path: str, event: dict, catalog: dict) -> dict:
     if parsed["event_type"] not in supported:
         return {"ok": True, "action": "ignored", "event_type": parsed["event_type"]}
 
-    conn = sqlite3.connect(db_path, timeout=15.0)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    try:
+    with database.connect(db_path) as conn:
         conn.execute("BEGIN IMMEDIATE")
         prior_event = conn.execute(
             "SELECT processing_status FROM billing_webhook_events WHERE event_id = ?",
@@ -448,8 +438,3 @@ def process_paddle_event(db_path: str, event: dict, catalog: dict) -> dict:
             "plan": effective_billing_plan,
             "subscription_status": status,
         }
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()

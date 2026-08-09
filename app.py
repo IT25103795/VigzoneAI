@@ -6,7 +6,7 @@ Chat backend: Groq's hosted API (https://api.groq.com). This build is Groq-only;
 
 Modes (set APP_MODE in .env):
   testing    → unlimited messages, no rate limits (default)
-  production → token usage tracked per user in SQLite
+  production → token usage and product state stored in PostgreSQL
 """
 
 import logging
@@ -82,6 +82,7 @@ from security import (
 )
 import auth as authmod
 import billing
+import database
 import mailer
 import secrets as _secrets
 import httpx
@@ -107,8 +108,11 @@ async def lifespan(app: FastAPI):
     authmod.init_db()
     purge_stale_streams()
     mode = "TESTING (unlimited)" if IS_TESTING else "PRODUCTION (token tracking ON)"
-    logger.info("Vigzone AI started — mode: %s", mode)
-    yield
+    logger.info("Vigzone AI started — mode: %s; database: %s", mode, database.backend_name())
+    try:
+        yield
+    finally:
+        database.close_pool()
 
 
 app = FastAPI(
@@ -925,6 +929,7 @@ async def _readiness_response() -> JSONResponse:
         setup_message="" if configured else _setup_message(),
     ).model_dump()
     body["database_ready"] = database_ready
+    body["database_backend"] = database.backend_name()
     return JSONResponse(body, status_code=200 if ready else 503)
 
 
@@ -2345,12 +2350,8 @@ def _admin_today_start_ts() -> int:
 @app.get("/api/admin/overview", tags=["Admin"])
 async def admin_overview(admin: dict = Depends(require_admin)):
     """Small production dashboard: users, today's tokens, top users."""
-    import sqlite3
-
-    db_path = authmod.DB_PATH
     start_ts = _admin_today_start_ts()
-    with sqlite3.connect(db_path) as conn:
-        conn.row_factory = sqlite3.Row
+    with authmod._connect() as conn:
         total_users = conn.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"]
         active_today = conn.execute(
             "SELECT COUNT(DISTINCT user_id) AS c FROM token_usage WHERE ts >= ?",
@@ -2414,10 +2415,8 @@ async def admin_overview(admin: dict = Depends(require_admin)):
 @app.get("/api/admin/full-dashboard", tags=["Admin"])
 async def admin_full_dashboard(admin: dict = Depends(require_admin)):
     """Professional all-in-one admin dashboard data: usage, users, feedback, shares, Brain, and trends."""
-    import sqlite3
     from datetime import timedelta
 
-    db_path = authmod.DB_PATH
     tz_offset_minutes = int(os.getenv("USAGE_TZ_OFFSET_MINUTES", "330"))
     local_tz = timezone(timedelta(minutes=tz_offset_minutes))
     now_local = datetime.now(local_tz)
@@ -2425,8 +2424,7 @@ async def admin_full_dashboard(admin: dict = Depends(require_admin)):
     today_start_ts = int(today_start_local.timestamp())
     week_start_ts = int((today_start_local - timedelta(days=6)).timestamp())
 
-    with sqlite3.connect(db_path) as conn:
-        conn.row_factory = sqlite3.Row
+    with authmod._connect() as conn:
         total_users = conn.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"]
         active_today = conn.execute(
             "SELECT COUNT(DISTINCT user_id) AS c FROM token_usage WHERE ts >= ?",
@@ -2727,13 +2725,9 @@ async def admin_full_dashboard(admin: dict = Depends(require_admin)):
 @app.post("/api/admin/users/{user_id}/usage/reset", tags=["Admin"])
 async def admin_reset_user_usage(user_id: int, admin: dict = Depends(require_admin)):
     """Delete today's tracked usage rows for a user. Groq-side usage is not reset."""
-    import sqlite3
-
-    db_path = authmod.DB_PATH
     start_ts = _admin_today_start_ts()
-    with sqlite3.connect(db_path) as conn:
+    with authmod._connect() as conn:
         cur = conn.execute("DELETE FROM token_usage WHERE user_id = ? AND ts >= ?", (user_id, start_ts))
-        conn.commit()
     return JSONResponse({"ok": True, "deleted_rows": cur.rowcount})
 
 

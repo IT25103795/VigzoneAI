@@ -229,6 +229,10 @@ def test_safe_production_configuration_is_accepted(monkeypatch):
     monkeypatch.setenv("GROQ_API_KEY", "gsk_configured_for_test")
     monkeypatch.setenv("WORKERS", "1")
     monkeypatch.setenv("VIGZONE_DATA_DIR", "/srv/vigzone/data")
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql://vigzone:database-test-password@db.example.com/vigzone?sslmode=require",
+    )
     monkeypatch.setattr(virus_scanner, "scanner_healthcheck", lambda: True)
 
     security.validate_production_settings()
@@ -246,6 +250,10 @@ def test_production_preflight_rejects_mixed_paddle_environments(monkeypatch):
     monkeypatch.setenv("GROQ_API_KEY", "gsk_configured_for_test")
     monkeypatch.setenv("WORKERS", "1")
     monkeypatch.setenv("VIGZONE_DATA_DIR", "/srv/vigzone/data")
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql://vigzone:database-test-password@db.example.com/vigzone?sslmode=require",
+    )
     monkeypatch.setenv("PADDLE_ENVIRONMENT", "production")
     monkeypatch.setenv("PADDLE_CLIENT_TOKEN", "live_123456789012345678901234567")
     monkeypatch.setenv("PADDLE_PRO_PRICE_ID", "pri_pro")
@@ -254,4 +262,39 @@ def test_production_preflight_rejects_mixed_paddle_environments(monkeypatch):
     monkeypatch.setenv("PADDLE_API_KEY", "pdl_sdbx_apikey_legacy_test_value")
 
     with pytest.raises(RuntimeError, match="Paddle live API key"):
+        security.validate_production_settings()
+
+
+def test_production_preflight_requires_durable_database(monkeypatch):
+    import security
+
+    monkeypatch.setenv("APP_MODE", "production")
+    monkeypatch.setenv("ENCRYPTION_SECRET", "a-unique-production-secret-with-more-than-32-characters")
+    monkeypatch.setenv("COOKIE_SECURE", "true")
+    monkeypatch.setenv("VIRUS_SCAN_STRICT", "false")
+    monkeypatch.setenv("CORS_ORIGINS", "https://vigzone.example")
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://vigzone.example")
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_configured_for_test")
+    monkeypatch.setenv("WORKERS", "1")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("ALLOW_SQLITE_PRODUCTION", raising=False)
+
+    with pytest.raises(RuntimeError, match="DATABASE_URL is required"):
+        security.validate_production_settings()
+
+
+def test_production_preflight_rejects_masked_or_insecure_database_url(monkeypatch):
+    import security
+
+    monkeypatch.setenv("APP_MODE", "production")
+    monkeypatch.setenv("ENCRYPTION_SECRET", "a-unique-production-secret-with-more-than-32-characters")
+    monkeypatch.setenv("COOKIE_SECURE", "true")
+    monkeypatch.setenv("VIRUS_SCAN_STRICT", "false")
+    monkeypatch.setenv("CORS_ORIGINS", "https://vigzone.example")
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://vigzone.example")
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_configured_for_test")
+    monkeypatch.setenv("WORKERS", "1")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://vigzone:********@db.example.com/vigzone")
+
+    with pytest.raises(RuntimeError, match="real database password"):
         security.validate_production_settings()

@@ -1,9 +1,8 @@
 """
 Vigzone AI - Authentication
 ============================
-Email/password accounts + Google OAuth, backed by a local SQLite database.
-No external auth dependencies — everything here is stdlib + httpx (already
-a project dependency), so there's nothing extra to `pip install`.
+Email/password accounts + Google OAuth, backed by PostgreSQL in production and
+SQLite for zero-setup local development and isolated tests.
 
 Sessions are opaque random tokens stored server-side (so logout actually
 revokes access immediately) and handed to the browser as an HttpOnly cookie.
@@ -16,7 +15,6 @@ import logging
 import os
 import re
 import secrets
-import sqlite3
 import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -25,6 +23,7 @@ from typing import Any, Optional
 import httpx
 
 import billing
+import database
 
 logger = logging.getLogger("vigzone.auth")
 
@@ -87,25 +86,12 @@ def google_is_configured() -> bool:
 # ==========================================
 @contextmanager
 def _connect():
-    os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, timeout=15.0)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA busy_timeout = 15000")
-    conn.execute("PRAGMA journal_mode = WAL")
-    conn.execute("PRAGMA synchronous = NORMAL")
-    try:
+    with database.connect(DB_PATH) as conn:
         yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
 
 
-def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
-    return {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})")}
+def _columns(conn: Any, table: str) -> set[str]:
+    return database.table_columns(conn, table)
 
 
 def _utc_now() -> str:
@@ -686,7 +672,7 @@ def set_learning_enabled(user_id: int, enabled: bool) -> dict:
     return get_learning_status(user_id)
 
 
-def _memory_row_to_dict(row: sqlite3.Row) -> dict:
+def _memory_row_to_dict(row: Any) -> dict:
     return {
         "id": row["id"],
         "memory_text": row["memory_text"],
@@ -858,7 +844,7 @@ def get_learning_context(user_id: int, query: str = "", limit: int = 10) -> str:
 # ==========================================
 # TEAM ACCOUNTS, SEATS, PERSONA, ANALYTICS, SUPPORT
 # ==========================================
-def _active_team_membership_conn(conn: sqlite3.Connection, user_id: int) -> Optional[sqlite3.Row]:
+def _active_team_membership_conn(conn: Any, user_id: int) -> Optional[Any]:
     return conn.execute(
         """
         SELECT t.id AS team_id, t.owner_user_id AS team_owner_id, t.name AS team_name,
@@ -928,7 +914,7 @@ def ensure_team_for_owner(user_id: int, owner_name: str = "") -> dict:
     return dict(row)
 
 
-def _require_active_team_conn(conn: sqlite3.Connection, user_id: int) -> sqlite3.Row:
+def _require_active_team_conn(conn: Any, user_id: int) -> Any:
     row = _active_team_membership_conn(conn, user_id)
     if not row:
         raise AuthError("An active TEAM membership is required.")
@@ -1060,7 +1046,8 @@ def accept_team_invitation(user_id: int, raw_token: str) -> dict:
         if seats >= TEAM_SEAT_LIMIT:
             raise AuthError("That team has no available seats.")
         conn.execute(
-            "INSERT OR IGNORE INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, 'member', ?)",
+            """INSERT INTO team_members (team_id, user_id, role, joined_at)
+               VALUES (?, ?, 'member', ?) ON CONFLICT DO NOTHING""",
             (invitation["team_id"], user_id, now),
         )
         conn.execute(
@@ -1279,7 +1266,7 @@ def update_support_ticket(ticket_id: str, status: str, admin_response: str) -> d
 # ==========================================
 # DEEP FEATURES V3: PERSONAL + SHARED WORKSPACES
 # ==========================================
-def _workspace_row_to_dict(row: sqlite3.Row) -> dict:
+def _workspace_row_to_dict(row: Any) -> dict:
     return {
         "id": row["id"],
         "user_id": row["user_id"],
@@ -1351,7 +1338,7 @@ def create_workspace(user_id: int, name: str, description: str = "", mode: str =
     return _workspace_row_to_dict(row)
 
 
-def _workspace_for_user_conn(conn: sqlite3.Connection, user_id: int, workspace_id: int) -> tuple[Optional[sqlite3.Row], Optional[sqlite3.Row]]:
+def _workspace_for_user_conn(conn: Any, user_id: int, workspace_id: int) -> tuple[Optional[Any], Optional[Any]]:
     row = conn.execute(
         "SELECT id, user_id, team_id, name, description, mode, created_at, updated_at FROM workspaces WHERE id = ?",
         (workspace_id,),
@@ -2099,11 +2086,11 @@ def is_admin_email(email: str) -> bool:
     return (email or "").strip().lower() in _configured_admin_emails()
 
 
-def _row_value(row: sqlite3.Row, key: str, default: Any = None) -> Any:
+def _row_value(row: Any, key: str, default: Any = None) -> Any:
     return row[key] if key in row.keys() else default
 
 
-def _public_user(row: sqlite3.Row) -> dict:
+def _public_user(row: Any) -> dict:
     role = str(_row_value(row, "role", "user") or "user")
     public = {
         "id": int(row["id"]),
@@ -2122,7 +2109,7 @@ def _public_user(row: sqlite3.Row) -> dict:
     return public
 
 
-def _bootstrap_founders(conn: sqlite3.Connection) -> None:
+def _bootstrap_founders(conn: Any) -> None:
     """Ensure hardcoded founder emails always have admin role.
 
     Promotes existing accounts unconditionally, and creates minimal local
@@ -2143,7 +2130,7 @@ def _bootstrap_founders(conn: sqlite3.Connection) -> None:
         # email+password, at which point the bootstrap runs again and promotes them.
 
 
-def _bootstrap_admin(conn: sqlite3.Connection) -> None:
+def _bootstrap_admin(conn: Any) -> None:
 
     """Safely assign admin roles.
 
@@ -2486,7 +2473,7 @@ def delete_account(user_id: int) -> None:
 # ==========================================
 # SESSIONS
 # ==========================================
-def purge_expired_sessions(*, conn: sqlite3.Connection | None = None) -> int:
+def purge_expired_sessions(*, conn: Any | None = None) -> int:
     own_connection = conn is None
     if own_connection:
         ctx = _connect()
