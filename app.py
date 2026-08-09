@@ -278,8 +278,10 @@ class ProjectFileInput(BaseModel):
 class ProjectAssistRequest(BaseModel):
     project_id: int = Field(..., ge=1)
     action: Literal["analyze", "edit"]
-    instruction: str = Field(default="", max_length=4000)
+    instruction: str = Field(default="", max_length=12_000)
     model: str = Field(default=FAST_MODEL, max_length=120)
+    conversation_id: Optional[str] = Field(default=None, max_length=120)
+    history: List[ChatMessage] = Field(default_factory=list, max_length=20)
     tree: List[str] = Field(default_factory=list, max_length=500)
     files: List[ProjectFileInput] = Field(..., min_length=1, max_length=12)
 
@@ -2043,8 +2045,9 @@ async def api_add_workspace_note(workspace_id: int, req: WorkspaceNoteRequest, u
 
 
 _PROJECT_CONTEXT_CHAR_LIMIT = 120_000
-_PROJECT_TREE_CHAR_LIMIT = 40_000
+_PROJECT_TREE_CHAR_LIMIT = 20_000
 _PROJECT_CHANGE_CHAR_LIMIT = 240_000
+_PROJECT_HISTORY_CHAR_LIMIT = 16_000
 
 
 def _safe_project_path(value: str) -> str:
@@ -2152,6 +2155,22 @@ async def api_project_assist(
             break
         safe_tree.append(path)
 
+    recent_history: list[dict] = []
+    history_chars = 0
+    for message in reversed(req.history[-12:]):
+        content = message.content
+        if not isinstance(content, str):
+            continue
+        remaining = _PROJECT_HISTORY_CHAR_LIMIT - history_chars
+        if remaining <= 0:
+            break
+        text = content[:remaining]
+        if not text.strip():
+            continue
+        recent_history.append({"role": message.role, "content": text})
+        history_chars += len(text)
+    recent_history.reverse()
+
     instruction = (req.instruction or "").strip()
     if not instruction:
         instruction = (
@@ -2176,6 +2195,7 @@ async def api_project_assist(
             },
             "action": req.action,
             "instruction": instruction,
+            "recent_conversation": recent_history,
             "folder_tree": safe_tree,
             "selected_files": files,
         },
@@ -2225,7 +2245,11 @@ async def api_project_assist(
             },
             feature_policy=billing.entitlement_snapshot(user)["features"],
             routing_mode="project",
-            conversation_id=f"project:{req.project_id}",
+            conversation_id=(
+                f"project:{req.project_id}:{req.conversation_id}"
+                if req.conversation_id
+                else f"project:{req.project_id}"
+            )[:120],
             metadata_callback=response_meta.update,
             allowed_models=None if paid_model_access else {FAST_MODEL},
             quota_reservation=quota_reservation,

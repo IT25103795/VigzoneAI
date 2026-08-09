@@ -12,8 +12,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Sinhala:wght@400;500;600&display=swap" rel="stylesheet">
   <script>
-    const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r20';
-    const UI_ASSET_REVISION = 'projects-r1';
+    const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r21';
+    const UI_ASSET_REVISION = 'project-chat-r1';
     (function () {
       var key = 'vigzone_doodle_theme';
       var tones = {
@@ -38,7 +38,7 @@
       document.documentElement.setAttribute('data-theme', tones[saved] || 'dark');
     })();
   </script>
-  <link rel="stylesheet" href="/static/css/styles.css?v=projects-r1">
+  <link rel="stylesheet" href="/static/css/styles.css?v=project-chat-r1">
 </head>
 <body>
 <div class="offline-status-banner" id="offlineStatusBanner" role="status" aria-live="polite">
@@ -153,6 +153,15 @@
       </span>
     </button>
     <div class="sidebar-scroll-area" id="sidebarScrollArea">
+    <section class="sidebar-projects" aria-labelledby="sidebarProjectsHeading">
+      <div class="sidebar-projects-head">
+        <span class="history-label" id="sidebarProjectsHeading">Projects</span>
+        <button class="sidebar-project-add" id="sidebarProjectAddBtn" type="button" aria-label="Create project" title="Create project">+</button>
+      </div>
+      <div class="sidebar-project-list" id="sidebarProjectsList">
+        <div class="history-empty">Loading projects…</div>
+      </div>
+    </section>
     <div class="sidebar-footer">
       <div class="api-key-box" id="apiKeyBox">
         <div class="api-key-box-label">
@@ -192,12 +201,7 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18h1.2a1.8 1.8 0 0 0 1.25-3.08l-.2-.2a1.65 1.65 0 0 1 1.17-2.82H17a4 4 0 0 0 4-4A7.9 7.9 0 0 0 12 3Z"></path><circle cx="7.5" cy="10" r="1"></circle><circle cx="10" cy="6.8" r="1"></circle><circle cx="15" cy="7.3" r="1"></circle></svg>
         </button>
       </div>
-      <div class="sidebar-footer-row">
-        <span class="history-label" style="padding:0;margin:0;">Projects</span>
-        <button class="sidebar-teach-btn" id="workspaceSidebarBtn" aria-label="Open Projects" title="Open Projects">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h7l2 2h9v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2"></path></svg>
-        </button>
-      </div>
+      <button id="workspaceSidebarBtn" type="button" hidden aria-hidden="true"></button>
       <div class="sidebar-footer-row">
         <span class="history-label" style="padding:0;margin:0;">Team Hub</span>
         <button class="sidebar-teach-btn" id="teamHubBtn" data-requires-feature="team_workspace" aria-label="Open Team Hub" title="Manage TEAM seats, persona, and analytics">
@@ -373,7 +377,7 @@
     <div class="usage-modal-head">
       <div>
         <h3>Projects</h3>
-        <div class="brain-subtitle">Connect a folder, inspect files, ask Vigzone to analyze them, and review every edit before saving.</div>
+        <div class="brain-subtitle">Create projects and choose which local folder files are available in each project chat.</div>
       </div>
       <button class="usage-modal-close" id="workspaceModalCloseBtn" aria-label="Close">&times;</button>
     </div>
@@ -702,6 +706,20 @@
     </div>
   </header>
 
+  <div class="project-chat-bar" id="projectChatBar" hidden>
+    <div class="project-chat-identity">
+      <span class="project-chat-icon" aria-hidden="true">⌘</span>
+      <div>
+        <strong id="projectChatName">Project</strong>
+        <span id="projectChatStatus">Preparing project context…</span>
+      </div>
+    </div>
+    <div class="project-chat-actions">
+      <button id="projectChatNewBtn" type="button">New conversation</button>
+      <button id="projectChatSettingsBtn" type="button">Files &amp; settings</button>
+    </div>
+  </div>
+
   <main id="main">
     <div class="chat-inner" id="chatInner">
       <div class="empty-state" id="emptyState">
@@ -958,7 +976,7 @@
     </div>
   </div>
 
-  <script src="/static/js/app.js?v=projects-r1"></script>
-  <script src="/static/js/projects.js?v=projects-r1"></script>
+  <script src="/static/js/app.js?v=project-chat-r1"></script>
+  <script src="/static/js/projects.js?v=project-chat-r1"></script>
 </body>
 </html>

@@ -82,9 +82,9 @@ def test_chat_ui_asset_revision_is_consistent():
     index = _read("static/index.html")
     service_worker = _read("static/service-worker.js")
 
-    assert index.count("projects-r1") == 4
-    assert "const UI_ASSET_REVISION = 'projects-r1';" in service_worker
-    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r20';" in service_worker
+    assert index.count("project-chat-r1") == 4
+    assert "const UI_ASSET_REVISION = 'project-chat-r1';" in service_worker
+    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r21';" in service_worker
     assert "/static/icons/vigzone-doodles.svg?v=doodle-r1" in service_worker
 
 

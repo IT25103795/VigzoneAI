@@ -29,6 +29,9 @@ uploads/
 # Logs
 *.log
 
+# Local Vigzone Projects QA artifacts
+test-projects/
+
 # OS
 .DS_Store
 Thumbs.db

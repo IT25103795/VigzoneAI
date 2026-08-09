@@ -108,7 +108,7 @@ def test_project_ai_uses_durable_plan_quota_and_filters_unsafe_changes(
     async def fake_chat_once(messages, **kwargs):
         calls.append({"messages": messages, "kwargs": kwargs})
         assert kwargs["quota_reservation"]["active"] is True
-        assert kwargs["conversation_id"] == f"project:{project_id}"
+        assert kwargs["conversation_id"] == f"project:{project_id}:thread-123"
         usage_id = vigzone_ai.track_token_usage(
             kwargs["user_id"],
             120,
@@ -148,6 +148,11 @@ def test_project_ai_uses_durable_plan_quota_and_filters_unsafe_changes(
             "action": "edit",
             "instruction": "Fix the selected bug safely.",
             "model": "openai/gpt-oss-20b",
+            "conversation_id": "thread-123",
+            "history": [
+                {"role": "user", "content": "The bug happens after saving."},
+                {"role": "assistant", "content": "I will inspect the save flow."},
+            ],
             "tree": ["src/app.py", "../outside.txt"],
             "files": [{"path": "src/app.py", "content": "print('broken')\n"}],
         },
@@ -162,6 +167,7 @@ def test_project_ai_uses_durable_plan_quota_and_filters_unsafe_changes(
     ]
     assert len(calls) == 1
     assert "print('broken')" in calls[0]["messages"][0]["content"]
+    assert "The bug happens after saving." in calls[0]["messages"][0]["content"]
 
     usage = vigzone_ai.get_user_daily_usage(user, has_own_key=False)
     assert usage["used_today"] == 200
@@ -227,17 +233,23 @@ def test_projects_ui_uses_explicit_folder_permission_and_reviewed_writes():
     script = Path("static/js/projects.js").read_text(encoding="utf-8")
     service_worker = Path("static/service-worker.js").read_text(encoding="utf-8")
 
-    assert ">Projects</span>" in index
+    assert 'id="sidebarProjectsList"' in index
+    assert 'id="projectChatBar"' in index
+    assert 'id="projectChatNewBtn"' in index
     assert 'id="workspaceSidebarBtn"' in index
     assert "showDirectoryPicker({mode: 'readwrite'})" in script
     assert "createWritable()" in script
-    assert "Review full replacement content" in script
+    assert "Review full replacement" in script
     assert "window.confirm('Write '" in script
     assert "fetch('/api/projects/assist'" in script
-    assert "refreshUsageCycle()" in script
+    assert "conversation_id" in script
+    assert "recent_conversation" in Path("app.py").read_text(encoding="utf-8")
+    assert "renderMessageResult" in script
+    assert "openProjectConversation" in Path("static/js/app.js").read_text(encoding="utf-8")
+    assert "projectThreadTitle" in Path("static/js/app.js").read_text(encoding="utf-8")
     assert "isSensitivePath" in script
     assert "name === '.env'" in script
     assert "node_modules" in script
     assert "Do not claim to run commands or tests" in Path("app.py").read_text(encoding="utf-8")
-    assert "/static/js/projects.js?v=projects-r1" in index
+    assert "/static/js/projects.js?v=project-chat-r1" in index
     assert "/static/js/projects.js?v=${UI_ASSET_REVISION}" in service_worker

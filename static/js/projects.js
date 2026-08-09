@@ -4,6 +4,13 @@
 
   const modal = document.getElementById('workspaceModalOverlay');
   const body = document.getElementById('workspaceModalBody');
+  const sidebarList = document.getElementById('sidebarProjectsList');
+  const sidebarAddButton = document.getElementById('sidebarProjectAddBtn');
+  const chatBar = document.getElementById('projectChatBar');
+  const chatName = document.getElementById('projectChatName');
+  const chatStatus = document.getElementById('projectChatStatus');
+  const chatNewButton = document.getElementById('projectChatNewBtn');
+  const chatSettingsButton = document.getElementById('projectChatSettingsBtn');
   const DB_NAME = 'vigzone-project-folders';
   const DB_STORE = 'folder-handles';
   const MAX_FILES = 500;
@@ -38,14 +45,8 @@
     files: [],
     ignoredCount: 0,
     selectedPaths: new Set(),
-    currentPath: '',
-    currentText: '',
-    dirty: false,
     readOnly: false,
     loading: false,
-    busy: false,
-    instruction: '',
-    result: null
   };
 
   function esc(value) {
@@ -60,6 +61,25 @@
   function notify(message) {
     if (typeof suiteToast === 'function') suiteToast(message);
     else window.alert(message);
+  }
+
+  function selectionStorageKey(projectId) {
+    const scope = typeof accountStorageScope !== 'undefined' ? accountStorageScope : 'guest';
+    return 'vigzone_project_files:' + encodeURIComponent(scope) + ':' + Number(projectId || 0);
+  }
+
+  function loadSelectedPaths(projectId) {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(selectionStorageKey(projectId)) || '[]');
+      return new Set(Array.isArray(parsed) ? parsed.filter(function (path) { return !!safeRelativePath(path); }) : []);
+    } catch (error) {
+      return new Set();
+    }
+  }
+
+  function saveSelectedPaths() {
+    if (!state.projectId) return;
+    localStorage.setItem(selectionStorageKey(state.projectId), JSON.stringify(Array.from(state.selectedPaths)));
   }
 
   function openDb() {
@@ -129,15 +149,9 @@
     state.permission = 'none';
     state.files = [];
     state.ignoredCount = 0;
-    state.selectedPaths = new Set();
-    state.currentPath = '';
-    state.currentText = '';
-    state.dirty = false;
+    state.selectedPaths = loadSelectedPaths(state.projectId);
     state.readOnly = false;
     state.loading = false;
-    state.busy = false;
-    state.instruction = '';
-    state.result = null;
   }
 
   function safeRelativePath(value) {
@@ -223,10 +237,9 @@
       state.files = scanned.files;
       state.ignoredCount = scanned.ignoredCount;
       state.permission = 'granted';
-      if (state.currentPath && !state.files.some(function (item) { return item.path === state.currentPath; })) {
-        state.currentPath = '';
-        state.currentText = '';
-        state.dirty = false;
+      if (!state.selectedPaths.size) {
+        rankedContextEntries().forEach(function (item) { state.selectedPaths.add(item.path); });
+        saveSelectedPaths();
       }
     } catch (error) {
       state.permission = 'prompt';
@@ -235,6 +248,7 @@
     } finally {
       state.loading = false;
       renderWorkbench();
+      renderChatBar();
     }
   }
 
@@ -250,6 +264,7 @@
     state.loading = false;
     if (!handle) {
       renderWorkbench();
+      renderChatBar();
       return;
     }
     state.handle = handle;
@@ -262,7 +277,10 @@
       state.permission = 'prompt';
     }
     if (state.permission === 'granted') await rescanFolder();
-    else renderWorkbench();
+    else {
+      renderWorkbench();
+      renderChatBar();
+    }
   }
 
   async function useFallbackFolderPicker() {
@@ -287,7 +305,10 @@
         return {path: safeRelativePath(path), handle: null, file: file, size: file.size};
       }).filter(function (item) { return !!item.path; });
       state.files.sort(function (a, b) { return a.path.localeCompare(b.path); });
+      rankedContextEntries().forEach(function (item) { state.selectedPaths.add(item.path); });
+      saveSelectedPaths();
       renderWorkbench();
+      renderChatBar();
     }, {once: true});
     input.click();
   }
@@ -327,18 +348,110 @@
   async function disconnectFolder() {
     if (!state.projectId) return;
     await folderDbDelete(state.projectId);
+    localStorage.removeItem(selectionStorageKey(state.projectId));
     resetFolderState(state.projectId);
     renderWorkbench();
+    renderChatBar();
   }
 
   function activeProject() {
     return (workspaces || []).find(function (item) {
-      return Number(item.id) === Number(activeWorkspaceId);
+      return Number(item.id) === Number(state.projectId || activeWorkspaceId);
     }) || null;
   }
 
   function updateProjectIndicator() {
     if (typeof updateWorkspacePill === 'function') updateWorkspacePill();
+  }
+
+  function currentProjectConversation() {
+    const conversation = window.VigzoneChatBridge?.currentConversation?.();
+    return conversation && Number(conversation.projectId) ? conversation : null;
+  }
+
+  function renderSidebarProjects() {
+    if (!sidebarList) return;
+    const activeId = Number(currentProjectConversation()?.projectId || 0);
+    const activeConversationId = currentProjectConversation()?.id || '';
+    if (!workspaces.length) {
+      sidebarList.innerHTML = '<div class="history-empty">No projects yet. Use + to create one.</div>';
+      return;
+    }
+    sidebarList.innerHTML = workspaces.map(function (project) {
+      const active = Number(project.id) === activeId ? ' active' : '';
+      const subtitle = project.shared ? 'Shared TEAM project' : (project.description || 'Private project');
+      const conversations = Number(project.id) === activeId
+        ? (window.VigzoneChatBridge?.listProjectConversations?.(project.id) || [])
+        : [];
+      const threads = conversations.length ? '<div class="sidebar-project-threads">' + conversations.map(function (conversation) {
+        const selected = conversation.id === activeConversationId ? ' active' : '';
+        return '<button class="sidebar-project-thread' + selected + '" data-project-conversation-id="' + esc(conversation.id) +
+          '" type="button"><span>↳</span><strong>' + esc(conversation.projectThreadTitle || 'New conversation') + '</strong></button>';
+      }).join('') + '<button class="sidebar-project-thread new" data-new-project-conversation="' + Number(project.id) +
+        '" type="button"><span>＋</span><strong>Start new conversation</strong></button></div>' : '';
+      return '<div class="sidebar-project-group"><button class="sidebar-project-item' + active + '" data-sidebar-project-id="' + Number(project.id) +
+        '" type="button" aria-label="Open ' + esc(project.name) + '">' +
+        '<span class="sidebar-project-folder" aria-hidden="true">⌘</span>' +
+        '<span class="sidebar-project-copy"><strong>' + esc(project.name) + '</strong><small>' +
+        esc(subtitle) + '</small></span><span class="sidebar-project-chevron" aria-hidden="true">›</span></button>' + threads + '</div>';
+    }).join('');
+    sidebarList.querySelectorAll('[data-sidebar-project-id]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        openProjectChat(Number(button.getAttribute('data-sidebar-project-id')), false);
+      });
+    });
+    sidebarList.querySelectorAll('[data-project-conversation-id]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        window.VigzoneChatBridge?.switchConversation?.(button.getAttribute('data-project-conversation-id'));
+      });
+    });
+    sidebarList.querySelectorAll('[data-new-project-conversation]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        openProjectChat(Number(button.getAttribute('data-new-project-conversation')), true);
+      });
+    });
+  }
+
+  function renderChatBar() {
+    if (!chatBar) return;
+    const conversation = currentProjectConversation();
+    const project = conversation
+      ? workspaces.find(function (item) { return Number(item.id) === Number(conversation.projectId); })
+      : null;
+    const visible = !!project;
+    chatBar.hidden = !visible;
+    document.body.classList.toggle('project-chat-active', visible);
+    renderSidebarProjects();
+    if (!visible) return;
+    if (chatName) chatName.textContent = project.name;
+    if (!chatStatus) return;
+    if (state.projectId !== Number(project.id)) {
+      chatStatus.textContent = 'Loading the approved local folder…';
+      return;
+    }
+    if (state.loading) chatStatus.textContent = 'Scanning local text and code files…';
+    else if (state.files.length) {
+      const chosen = rankedContextEntries().length;
+      chatStatus.textContent = state.files.length + ' files connected · ' + chosen + ' in AI context · edits require approval';
+    } else if (state.handle) chatStatus.textContent = 'Folder permission required — open Files & settings';
+    else chatStatus.textContent = 'No folder connected — open Files & settings';
+  }
+
+  async function openProjectChat(projectId, forceNew) {
+    const project = workspaces.find(function (item) { return Number(item.id) === Number(projectId); });
+    if (!project) return;
+    window.VigzoneChatBridge?.openProjectConversation?.(project, !!forceNew);
+    if (state.projectId !== Number(project.id)) resetFolderState(project.id);
+    renderChatBar();
+    renderSidebarProjects();
+    await restoreFolder(project.id);
+    renderChatBar();
+    modal?.classList.remove('visible');
+  }
+
+  async function openProjectSettings(projectId) {
+    if (projectId && state.projectId !== Number(projectId)) resetFolderState(Number(projectId));
+    await open();
   }
 
   async function loadProjects() {
@@ -354,17 +467,15 @@
       resetFolderState(null);
     }
     updateProjectIndicator();
+    renderSidebarProjects();
+    renderChatBar();
   }
 
   async function selectProject(projectId) {
-    if (state.dirty && !window.confirm('Discard the unsaved local file edit and switch projects?')) return;
-    activeWorkspaceId = Number(projectId);
-    localStorage.setItem('vigzone_active_workspace_id', String(activeWorkspaceId));
-    resetFolderState(activeWorkspaceId);
-    updateProjectIndicator();
+    resetFolderState(Number(projectId));
     renderProjects();
-    await restoreFolder(activeWorkspaceId);
-    await loadNotes(activeWorkspaceId);
+    await restoreFolder(state.projectId);
+    await loadNotes(state.projectId);
   }
 
   async function createProject() {
@@ -404,7 +515,10 @@
     const data = await response.json().catch(function () { return {}; });
     if (!response.ok) return notify(data.detail || 'Could not update project.');
     await loadProjects();
+    const updated = workspaces.find(function (item) { return Number(item.id) === Number(project.id); });
+    if (updated) window.VigzoneChatBridge?.renameProjectConversations?.(updated.id, updated.name);
     renderProjects();
+    renderChatBar();
     notify('Project details saved.');
   }
 
@@ -418,8 +532,8 @@
     const data = await response.json().catch(function () { return {}; });
     if (!response.ok) return notify(data.detail || 'Could not delete project.');
     await folderDbDelete(project.id);
-    activeWorkspaceId = null;
-    localStorage.removeItem('vigzone_active_workspace_id');
+    localStorage.removeItem(selectionStorageKey(project.id));
+    window.VigzoneChatBridge?.removeProjectConversations?.(project.id);
     resetFolderState(null);
     await loadProjects();
     renderProjects();
@@ -428,7 +542,7 @@
 
   async function loadNotes(projectId) {
     const target = document.getElementById('projectNotesList');
-    if (!target || Number(projectId) !== Number(activeWorkspaceId)) return;
+    if (!target || Number(projectId) !== Number(state.projectId)) return;
     const response = await fetch('/api/projects/' + Number(projectId) + '/notes', {credentials: 'same-origin'});
     const data = await response.json().catch(function () { return {}; });
     if (!response.ok) {
@@ -463,20 +577,6 @@
     await loadNotes(project.id);
   }
 
-  async function openFile(path) {
-    if (state.dirty && state.currentPath !== path && !window.confirm('Discard the unsaved edit in ' + state.currentPath + '?')) return;
-    const entry = state.files.find(function (item) { return item.path === path; });
-    try {
-      state.currentText = await readEntry(entry);
-      state.currentPath = path;
-      state.dirty = false;
-      state.selectedPaths.add(path);
-      renderWorkbench();
-    } catch (error) {
-      notify(error.message || 'Could not open this file.');
-    }
-  }
-
   async function fileHandleForPath(path, create) {
     if (!state.handle) throw new Error('Reconnect the folder with read/write access first.');
     const parts = safeRelativePath(path).split('/');
@@ -500,23 +600,8 @@
     }
   }
 
-  async function saveCurrentFile() {
-    if (!state.currentPath || state.readOnly) return;
-    try {
-      await writeFile(state.currentPath, state.currentText);
-      state.dirty = false;
-      notify('Saved ' + state.currentPath + ' to the local folder.');
-      renderWorkbench();
-    } catch (error) {
-      notify(error.message || 'Could not save this file.');
-    }
-  }
-
   function rankedContextEntries() {
     let entries = state.files.filter(function (item) { return state.selectedPaths.has(item.path); });
-    if (!entries.length && state.currentPath) {
-      entries = state.files.filter(function (item) { return item.path === state.currentPath; });
-    }
     if (!entries.length) {
       const important = /(^|\/)(readme|package\.json|pyproject\.toml|requirements.*\.txt|dockerfile|main\.|app\.|index\.|src\/)/i;
       entries = state.files.slice().sort(function (a, b) {
@@ -531,9 +616,7 @@
     const files = [];
     let total = 0;
     for (const entry of entries) {
-      let content = state.currentPath === entry.path && state.dirty
-        ? state.currentText
-        : await readEntry(entry);
+      let content = await readEntry(entry);
       content = content.slice(0, MAX_AI_FILE_CHARS);
       if (total + content.length > MAX_AI_TOTAL_CHARS) {
         content = content.slice(0, Math.max(0, MAX_AI_TOTAL_CHARS - total));
@@ -546,53 +629,91 @@
     return files;
   }
 
-  async function runAssistant(action) {
-    const project = activeProject();
-    if (!project || state.busy) return;
-    if (!state.files.length) return notify('Connect a project folder containing text or code files first.');
-    const instructionInput = document.getElementById('projectInstruction');
-    state.instruction = instructionInput ? instructionInput.value.trim() : state.instruction;
-    state.busy = true;
-    state.result = null;
-    renderWorkbench();
-    try {
-      const files = await collectAiFiles();
-      if (!files.length) throw new Error('Select at least one readable text file.');
-      const response = await fetch('/api/projects/assist', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          project_id: Number(project.id),
-          action: action,
-          instruction: state.instruction,
-          model: typeof getActiveModel === 'function' ? getActiveModel() : 'openai/gpt-oss-20b',
-          tree: state.files.map(function (item) { return item.path; }),
-          files: files
-        })
-      });
-      const data = await response.json().catch(function () { return {}; });
-      if (!response.ok) throw new Error(data.detail || 'Project AI action failed.');
-      state.result = {
-        action: action,
-        summary: data.summary || 'Project analysis complete.',
-        changes: Array.isArray(data.changes) ? data.changes : [],
-        meta: data.meta || {}
-      };
-    } catch (error) {
-      state.result = {action: action, summary: error.message || 'Project AI action failed.', changes: [], error: true};
-    } finally {
-      state.busy = false;
-      renderWorkbench();
-      if (typeof refreshUsageCycle === 'function') refreshUsageCycle();
-    }
+  function projectActionForInstruction(instruction) {
+    return /\b(fix|edit|change|implement|add|remove|delete|rename|refactor|rewrite|update|create|build|complete|finish|repair|replace|improve|optimi[sz]e|simplify|migrate|convert|adjust|modify|resolve|make)\b/i.test(instruction || '')
+      ? 'edit'
+      : 'analyze';
   }
 
-  async function applyChanges() {
-    if (state.readOnly || !state.handle || !state.result || !state.result.changes.length) return;
-    const selected = Array.from(document.querySelectorAll('[data-project-change-index]:checked')).map(function (input) {
-      return state.result.changes[Number(input.getAttribute('data-project-change-index'))];
-    }).filter(Boolean);
+  function projectError(message, code) {
+    const error = new Error(message);
+    error.code = code;
+    return error;
+  }
+
+  async function assist(options) {
+    const projectId = Number(options?.projectId || 0);
+    if (!navigator.onLine) throw projectError('Project AI needs an internet connection. Your local folder remains on this device.', 'OFFLINE');
+    if (!projectId) throw projectError('Open a project conversation first.', 'PROJECT_REQUIRED');
+    if (!workspaces.length) await loadProjects();
+    const project = workspaces.find(function (item) { return Number(item.id) === projectId; });
+    if (!project) throw projectError('This project no longer exists.', 'PROJECT_MISSING');
+    if (state.projectId !== projectId) resetFolderState(projectId);
+    if (!state.files.length) await restoreFolder(projectId);
+    if (!state.files.length) {
+      throw projectError('Connect or re-authorize the local folder from Files & settings before asking Vigzone to work on it.', 'FOLDER_REQUIRED');
+    }
+    const files = await collectAiFiles();
+    if (!files.length) throw projectError('Select at least one readable project file in Files & settings.', 'FILES_REQUIRED');
+    const instruction = String(options?.instruction || '').slice(0, 12000);
+    const action = projectActionForInstruction(instruction);
+    const history = Array.isArray(options?.history) ? options.history.slice(-12).map(function (message) {
+      return {
+        role: message.role === 'assistant' ? 'assistant' : 'user',
+        content: String(message.content || '').slice(0, 8000)
+      };
+    }).filter(function (message) { return message.content.trim(); }) : [];
+    const response = await fetch('/api/projects/assist', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        project_id: projectId,
+        action: action,
+        instruction: instruction,
+        model: options?.model || (typeof getActiveModel === 'function' ? getActiveModel() : 'openai/gpt-oss-20b'),
+        conversation_id: String(options?.conversationId || '').slice(0, 120) || null,
+        history: history,
+        tree: state.files.map(function (item) { return item.path; }),
+        files: files
+      })
+    });
+    const data = await response.json().catch(function () { return {}; });
+    if (!response.ok) {
+      const error = projectError(data.detail || 'Project AI action failed.', response.status === 429 ? 'QUOTA' : 'REQUEST_FAILED');
+      error.status = response.status;
+      throw error;
+    }
+    return {
+      projectId: projectId,
+      action: action,
+      summary: data.summary || 'Project review complete.',
+      changes: Array.isArray(data.changes) ? data.changes : [],
+      meta: data.meta || {},
+      applied: false
+    };
+  }
+
+  async function applyMessageChanges(result, messageIndex, root) {
+    const projectId = Number(result?.projectId || 0);
+    if (!projectId || !Array.isArray(result?.changes) || !result.changes.length) return;
+    if (state.projectId !== projectId) resetFolderState(projectId);
+    if (!state.handle) await restoreFolder(projectId);
+    if (state.handle && state.permission !== 'granted' && state.handle.requestPermission) {
+      try {
+        state.permission = await state.handle.requestPermission({mode: 'readwrite'});
+      } catch (error) {
+        state.permission = 'prompt';
+      }
+    }
+    if (!state.handle || state.permission !== 'granted' || state.readOnly) {
+      notify('Open Files & settings and grant read/write access to this project folder first.');
+      return;
+    }
+    const selectedIndexes = Array.from(root.querySelectorAll('[data-project-chat-change]:checked')).map(function (input) {
+      return Number(input.getAttribute('data-project-chat-change'));
+    });
+    const selected = selectedIndexes.map(function (index) { return result.changes[index]; }).filter(Boolean);
     if (!selected.length) return notify('Select at least one proposed file change.');
     if (!window.confirm('Write ' + selected.length + ' reviewed change(s) to your local project folder?')) return;
     try {
@@ -601,45 +722,61 @@
         if (!path) throw new Error('Vigzone proposed an unsafe file path.');
         await writeFile(path, String(change.content == null ? '' : change.content));
       }
-      const currentPath = state.currentPath;
-      state.result = null;
-      state.dirty = false;
-      await rescanFolder();
-      if (currentPath && state.files.some(function (item) { return item.path === currentPath; })) {
-        await openFile(currentPath);
+      result.applied = true;
+      result.appliedPaths = selected.map(function (change) { return change.path; });
+      if (Number.isInteger(messageIndex) && typeof messages !== 'undefined' && messages[messageIndex]?.projectResult) {
+        messages[messageIndex].projectResult = result;
+        if (typeof saveConversation === 'function') saveConversation();
       }
-      notify('Reviewed changes were saved to your local folder.');
+      const button = root.querySelector('.project-chat-apply');
+      if (button) {
+        button.disabled = true;
+        button.textContent = 'Changes applied';
+      }
+      await rescanFolder();
+      notify('Reviewed changes were saved to your local project folder.');
     } catch (error) {
       notify(error.message || 'Could not apply the proposed changes.');
     }
   }
 
-  function renderResult() {
-    if (state.busy) {
-      return '<div class="project-ai-result loading"><div class="usage-modal-loading">Vigzone is reviewing the selected files. This usage counts toward today\'s plan quota…</div></div>';
+  function renderMessageResult(bubble, result, messageIndex) {
+    if (!bubble || !result || bubble.querySelector('.project-chat-result')) return;
+    const changes = Array.isArray(result.changes) ? result.changes : [];
+    const root = document.createElement('section');
+    root.className = 'project-chat-result';
+    if (!changes.length) {
+      root.innerHTML = '<div class="project-chat-result-head">Project files reviewed <span>No file edits proposed</span></div>';
+      bubble.appendChild(root);
+      return;
     }
-    if (!state.result) return '';
-    const changes = state.result.changes || [];
-    const changeHtml = changes.length ? '<div class="project-change-list">' + changes.map(function (change, index) {
-      return '<div class="project-change-row"><input type="checkbox" data-project-change-index="' + index +
-        '" checked><span><strong>' + esc(change.path) + '</strong><small>' +
-        esc(change.reason || 'AI-proposed change') + '</small><details><summary>Review full replacement content</summary><pre>' +
-        esc(change.content || '') + '</pre></details></span></div>';
-    }).join('') + '</div>' : '<div class="suite-note">No file changes were proposed.</div>';
-    const apply = changes.length
-      ? '<button class="deep-action-btn project-primary" id="projectApplyChangesBtn" type="button"' +
-        (state.readOnly ? ' disabled title="Reconnect with read/write access to apply changes"' : '') +
-        '>Apply reviewed changes</button>'
-      : '';
-    return '<div class="project-ai-result' + (state.result.error ? ' error' : '') + '">' +
-      '<div class="settings-section-title">Vigzone result</div><pre>' + esc(state.result.summary) +
-      '</pre>' + changeHtml + '<div class="project-result-actions">' + apply + '</div></div>';
+    root.innerHTML = '<div class="project-chat-result-head">Proposed file changes <span>' + changes.length +
+      ' file' + (changes.length === 1 ? '' : 's') + ' · review before saving</span></div>' +
+      '<div class="project-chat-change-list">' + changes.map(function (change, index) {
+        return '<label class="project-chat-change"><input type="checkbox" data-project-chat-change="' + index + '" checked' +
+          (result.applied ? ' disabled' : '') + '><span class="project-chat-change-copy"><strong>' + esc(change.path) +
+          '</strong><small>' + esc(change.reason || 'AI-proposed change') +
+          '</small><details><summary>Review full replacement</summary><pre>' + esc(change.content || '') +
+          '</pre></details></span></label>';
+      }).join('') + '</div><div class="project-chat-result-actions"><button class="project-chat-apply" type="button"' +
+      (result.applied ? ' disabled' : '') + '>' + (result.applied ? 'Changes applied' : 'Apply selected changes') + '</button></div>';
+    root.querySelector('.project-chat-apply')?.addEventListener('click', function () {
+      applyMessageChanges(result, Number(messageIndex), root);
+    });
+    bubble.appendChild(root);
+  }
+
+  function handleChatError(error) {
+    if (error?.code === 'FOLDER_REQUIRED' || error?.code === 'FILES_REQUIRED') {
+      renderChatBar();
+      notify('Use Files & settings to connect the project folder, then send the message again.');
+    }
   }
 
   function renderWorkbench() {
     const target = document.getElementById('projectWorkbench');
     const project = activeProject();
-    if (!target || !project || Number(project.id) !== Number(activeWorkspaceId)) return;
+    if (!target || !project || Number(project.id) !== Number(state.projectId)) return;
     if (state.projectId !== Number(project.id)) {
       target.innerHTML = '<div class="usage-modal-loading">Loading local folder…</div>';
       restoreFolder(project.id);
@@ -663,63 +800,32 @@
     }
 
     const rows = state.files.map(function (entry) {
-      const active = entry.path === state.currentPath ? ' active' : '';
       const checked = state.selectedPaths.has(entry.path) ? ' checked' : '';
-      return '<div class="project-file-row' + active + '"><input type="checkbox" data-project-select-file="' +
+      return '<label class="project-file-row"><input type="checkbox" data-project-select-file="' +
         esc(entry.path) + '"' + checked + ' aria-label="Include ' + esc(entry.path) + ' in AI context">' +
-        '<button type="button" data-project-open-file="' + esc(entry.path) + '"><span>' +
-        esc(entry.path) + '</span><small>' + Math.max(1, Math.ceil(entry.size / 1024)) + ' KB</small></button></div>';
+        '<span class="project-setting-file"><span>' + esc(entry.path) + '</span><small>' +
+        Math.max(1, Math.ceil(entry.size / 1024)) + ' KB</small></span></label>';
     }).join('');
-    const editor = state.currentPath
-      ? '<div class="project-editor-head"><strong>' + esc(state.currentPath) + '</strong><span>' +
-        (state.dirty ? 'Unsaved changes' : (state.readOnly ? 'Read-only import' : 'Saved locally')) +
-        '</span></div><textarea id="projectFileEditor" class="project-file-editor" spellcheck="false">' +
-        esc(state.currentText) + '</textarea><div class="project-editor-actions"><button class="deep-action-btn" id="projectSaveFileBtn" type="button"' +
-        (state.readOnly || !state.dirty ? ' disabled' : '') + '>Save file</button></div>'
-      : '<div class="project-editor-empty">Select a file to inspect or edit it.</div>';
-    target.innerHTML = '<div class="project-folder-toolbar"><div><strong>📁 ' + esc(state.folderName) +
+    target.innerHTML = '<div class="project-folder-settings"><div class="project-folder-toolbar"><div><strong>📁 ' + esc(state.folderName) +
       '</strong><small>' + state.files.length + ' text/code files · ' + state.ignoredCount +
       ' ignored safely' + (state.readOnly ? ' · read-only browser import' : '') +
       '</small></div><div><button class="deep-action-btn" id="projectRescanBtn" type="button"' +
       (state.handle ? '' : ' disabled') + '>Rescan</button><button class="deep-action-btn" id="projectDisconnectBtn" type="button">Disconnect</button></div></div>' +
-      '<div class="project-workbench-grid"><aside class="project-file-tree"><div class="project-pane-label">Files selected for AI</div>' +
-      rows + '</aside><section class="project-editor-pane">' + editor + '</section></div>' +
-      '<div class="project-ai-panel"><label for="projectInstruction">What should Vigzone do?</label>' +
-      '<textarea id="projectInstruction" maxlength="4000" placeholder="Example: Find the login bug, explain the cause, and propose the smallest safe fix.">' +
-      esc(state.instruction) + '</textarea><div class="project-ai-actions"><span>Selected file text and the approved folder\'s filtered file names are sent securely to Vigzone. AI usage follows your plan quota.</span>' +
-      '<button class="deep-action-btn" id="projectAnalyzeBtn" type="button">Analyze selected</button>' +
-      '<button class="deep-action-btn project-primary" id="projectEditBtn" type="button">Propose edits</button></div></div>' +
-      renderResult();
+      '<div><div class="project-pane-label">Files available to this project chat</div><p class="project-privacy-note">' +
+      'Choose the most relevant files. Vigzone sends their text only when you message this project. Secret files, dependencies, binaries, and oversized files stay excluded.</p></div>' +
+      '<div class="project-folder-file-list">' + rows + '</div></div>';
 
-    target.querySelectorAll('[data-project-open-file]').forEach(function (button) {
-      button.addEventListener('click', function () { openFile(button.getAttribute('data-project-open-file')); });
-    });
     target.querySelectorAll('[data-project-select-file]').forEach(function (checkbox) {
       checkbox.addEventListener('change', function () {
         const path = checkbox.getAttribute('data-project-select-file');
         if (checkbox.checked) state.selectedPaths.add(path);
         else state.selectedPaths.delete(path);
+        saveSelectedPaths();
+        renderChatBar();
       });
     });
-    const editorInput = document.getElementById('projectFileEditor');
-    if (editorInput) editorInput.addEventListener('input', function () {
-      state.currentText = editorInput.value;
-      state.dirty = true;
-      const saveButton = document.getElementById('projectSaveFileBtn');
-      if (saveButton && !state.readOnly) saveButton.disabled = false;
-      const status = target.querySelector('.project-editor-head span');
-      if (status) status.textContent = 'Unsaved changes';
-    });
-    const instructionInput = document.getElementById('projectInstruction');
-    if (instructionInput) instructionInput.addEventListener('input', function () {
-      state.instruction = instructionInput.value;
-    });
-    document.getElementById('projectSaveFileBtn')?.addEventListener('click', saveCurrentFile);
     document.getElementById('projectRescanBtn')?.addEventListener('click', rescanFolder);
     document.getElementById('projectDisconnectBtn')?.addEventListener('click', disconnectFolder);
-    document.getElementById('projectAnalyzeBtn')?.addEventListener('click', function () { runAssistant('analyze'); });
-    document.getElementById('projectEditBtn')?.addEventListener('click', function () { runAssistant('edit'); });
-    document.getElementById('projectApplyChangesBtn')?.addEventListener('click', applyChanges);
   }
 
   function renderProjects() {
@@ -728,7 +834,7 @@
     const canShare = !!(window._vigzoneEntitlements && window._vigzoneEntitlements.features &&
       window._vigzoneEntitlements.features.team_workspace);
     const cards = (workspaces || []).length ? workspaces.map(function (item) {
-      const active = Number(item.id) === Number(activeWorkspaceId) ? ' active' : '';
+      const active = Number(item.id) === Number(state.projectId) ? ' active' : '';
       return '<button class="workspace-card' + active + '" data-project-id="' + Number(item.id) +
         '" type="button"><span class="workspace-card-title">' + esc(item.name) +
         (item.shared ? ' <span class="team-chip">Shared TEAM</span>' : '') +
@@ -741,6 +847,8 @@
       '" aria-label="Project name"><input id="projectEditDescription" maxlength="600" value="' +
       esc(project.description || '') + '" placeholder="Project goal or description" aria-label="Project description">' +
       '<button class="deep-action-btn" id="projectSaveDetailsBtn" type="button">Save details</button></div>' +
+      '<div class="project-open-chat-actions"><button class="deep-action-btn" id="projectNewConversationBtn" type="button">New conversation</button>' +
+      '<button class="deep-action-btn project-primary" id="projectOpenChatBtn" type="button">Open project chat →</button></div>' +
       '<div id="projectWorkbench"></div><details class="project-context-panel"><summary>Project context notes</summary>' +
       '<div id="projectNotesList"><div class="usage-modal-loading">Loading notes…</div></div>' +
       '<input id="projectNoteTitle" maxlength="120" placeholder="Context title"><textarea id="projectNoteContent" maxlength="5000" placeholder="Save requirements, decisions, or instructions used in project chats…"></textarea>' +
@@ -761,6 +869,8 @@
     document.getElementById('projectSaveDetailsBtn')?.addEventListener('click', saveProjectDetails);
     document.getElementById('projectDeleteBtn')?.addEventListener('click', deleteProject);
     document.getElementById('projectAddNoteBtn')?.addEventListener('click', addNote);
+    document.getElementById('projectOpenChatBtn')?.addEventListener('click', function () { openProjectChat(project.id, false); });
+    document.getElementById('projectNewConversationBtn')?.addEventListener('click', function () { openProjectChat(project.id, true); });
     if (project) {
       renderWorkbench();
       loadNotes(project.id);
@@ -773,12 +883,107 @@
     body.innerHTML = '<div class="usage-modal-loading">Loading projects…</div>';
     try {
       await loadProjects();
+      const currentId = Number(currentProjectConversation()?.projectId || 0);
+      if (!state.projectId && (currentId || workspaces[0]?.id)) resetFolderState(currentId || workspaces[0].id);
       renderProjects();
-      if (activeWorkspaceId) await restoreFolder(activeWorkspaceId);
+      if (state.projectId) await restoreFolder(state.projectId);
     } catch (error) {
       body.innerHTML = '<div class="usage-modal-empty">' + esc(error.message || 'Could not load projects.') + '</div>';
     }
   }
 
-  window.VigzoneProjects = {open: open};
+  function decorateEmptyState(conversation) {
+    const projectId = Number(conversation?.projectId || 0);
+    if (!projectId) return;
+    const project = workspaces.find(function (item) { return Number(item.id) === projectId; });
+    if (!project) return;
+    const shell = document.querySelector('#emptyState .empty-shell');
+    if (!shell) return;
+    const topline = shell.querySelector('.empty-topline');
+    if (topline) {
+      const icon = topline.querySelector('svg');
+      topline.textContent = '';
+      if (icon) topline.appendChild(icon);
+      topline.append(document.createTextNode(' Project conversation'));
+    }
+    const title = shell.querySelector('h1');
+    if (title) title.innerHTML = '<span class="greeting-mark">⌘</span><span>' + esc(project.name) + '</span>';
+    const description = shell.querySelector(':scope > p');
+    if (description) description.textContent = project.description
+      ? project.description + ' Ask Vigzone to inspect, explain, fix, or implement work in the connected folder.'
+      : 'Ask Vigzone to inspect, explain, fix, or implement work in the connected project folder.';
+    const starterLabels = shell.querySelectorAll('.starter-item span');
+    if (starterLabels[0]) starterLabels[0].textContent = 'Reads connected files';
+    if (starterLabels[1]) starterLabels[1].textContent = 'Proposes exact edits';
+    if (starterLabels[2]) starterLabels[2].textContent = 'You approve every write';
+    const suggestions = shell.querySelector('.suggestions');
+    if (suggestions) suggestions.innerHTML = [
+      ['Read this whole project and explain its structure, current behavior, and the most important problems.', 'Understand the project', 'Inspect structure, behavior, and risks'],
+      ['Find the root cause of the main broken or incomplete behavior in this project. Explain it, then propose the smallest safe fix.', 'Find and fix the problem', 'Analyze first, then review exact edits'],
+      ['Read the project requirements and implement the missing work without adding unnecessary dependencies.', 'Complete the project', 'Implement focused missing features']
+    ].map(function (item) {
+      return '<div class="suggestion" data-prompt="' + esc(item[0]) + '" tabindex="0" role="button"><div class="suggestion-top">' +
+        '<div class="s-icon">⌘</div><div><div class="s-title">' + esc(item[1]) + '</div><div class="s-sub">' +
+        esc(item[2]) + '</div></div></div></div>';
+    }).join('');
+  }
+
+  async function onConversationChanged(conversation) {
+    const projectId = Number(conversation?.projectId || 0);
+    if (typeof input !== 'undefined' && input) {
+      input.placeholder = projectId ? 'Ask Vigzone to analyze or edit this project…' : 'Ask anything';
+    }
+    renderChatBar();
+    if (!projectId) return;
+    if (!workspaces.length) {
+      try { await loadProjects(); } catch (error) { return; }
+    }
+    if (state.projectId !== projectId) resetFolderState(projectId);
+    renderChatBar();
+    await restoreFolder(projectId);
+    renderChatBar();
+    decorateEmptyState(conversation);
+  }
+
+  async function refresh() {
+    try {
+      await loadProjects();
+      await onConversationChanged(currentProjectConversation());
+    } catch (error) {
+      if (sidebarList) sidebarList.innerHTML = '<div class="history-empty">Projects unavailable.</div>';
+    }
+  }
+
+  async function initialize() {
+    sidebarAddButton?.addEventListener('click', async function () {
+      await openProjectSettings(null);
+      document.getElementById('projectNameInput')?.focus();
+    });
+    chatNewButton?.addEventListener('click', function () {
+      const projectId = Number(currentProjectConversation()?.projectId || 0);
+      if (projectId) openProjectChat(projectId, true);
+    });
+    chatSettingsButton?.addEventListener('click', function () {
+      const projectId = Number(currentProjectConversation()?.projectId || 0);
+      if (projectId) openProjectSettings(projectId);
+    });
+    await refresh();
+  }
+
+  window.VigzoneProjects = {
+    open: open,
+    refresh: refresh,
+    renderSidebar: renderSidebarProjects,
+    assist: assist,
+    renderMessageResult: renderMessageResult,
+    handleChatError: handleChatError,
+    onConversationChanged: onConversationChanged,
+    decorateEmptyState: decorateEmptyState,
+    openProjectChat: openProjectChat
+  };
+
+  const initializationGate = typeof accountReady !== 'undefined' ? accountReady : Promise.resolve();
+  Promise.resolve(initializationGate).then(initialize).catch(function (error) {
+    console.warn('Projects could not initialize', error);
+  });
 })();

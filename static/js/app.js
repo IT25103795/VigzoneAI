@@ -403,6 +403,107 @@
       : null;
   }
 
+  function syncProjectConversationContext(){
+    const conv = currentConversation();
+    const projectId = Number(conv?.projectId || 0) || null;
+    activeWorkspaceId = projectId;
+    if (projectId) localStorage.setItem('vigzone_active_workspace_id', String(projectId));
+    else localStorage.removeItem('vigzone_active_workspace_id');
+    updateWorkspacePill?.();
+    window.VigzoneProjects?.onConversationChanged?.(conv);
+  }
+
+  function openProjectConversation(project, forceNew = false){
+    const projectId = Number(project?.id || project);
+    if (!projectId) return null;
+    const projectName = typeof project === 'object' && project?.name
+      ? String(project.name)
+      : (workspaces.find(item => Number(item.id) === projectId)?.name || 'Project');
+    let conv = null;
+    if (!forceNew) {
+      conv = Object.values(store.conversations || {})
+        .filter(item => Number(item?.projectId) === projectId)
+        .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))[0] || null;
+    }
+    if (!conv) {
+      const id = genId();
+      const now = Date.now();
+      conv = {
+        id,
+        title: projectName,
+        projectThreadTitle: 'New conversation',
+        projectId,
+        projectName,
+        messages: [],
+        createdAt: now,
+        updatedAt: now,
+      };
+      store.conversations[id] = conv;
+      store.order.push(id);
+    } else {
+      conv.projectName = projectName;
+      conv.title = projectName;
+    }
+    store.activeId = conv.id;
+    messages = conv.messages || [];
+    showAllMessages = false;
+    persistStore();
+    renderAll();
+    renderHistoryList();
+    syncProjectConversationContext();
+    if (isMobile()) setSidebarCollapsed(true);
+    input?.focus();
+    return conv;
+  }
+
+  function removeProjectConversations(projectId){
+    const target = Number(projectId);
+    const ids = Object.keys(store.conversations || {}).filter(id => Number(store.conversations[id]?.projectId) === target);
+    ids.forEach(id => {
+      delete store.conversations[id];
+      if (store.pins) delete store.pins[id];
+    });
+    store.order = store.order.filter(id => !ids.includes(id));
+    if (ids.includes(store.activeId)) {
+      store.activeId = null;
+      messages = [];
+      showAllMessages = false;
+      renderAll();
+      syncProjectConversationContext();
+    }
+    persistStore();
+    renderHistoryList();
+  }
+
+  function renameProjectConversations(projectId, projectName){
+    const target = Number(projectId);
+    Object.values(store.conversations || {}).forEach(conv => {
+      if (Number(conv?.projectId) !== target) return;
+      conv.projectName = String(projectName || 'Project');
+      conv.title = conv.projectName;
+    });
+    persistStore();
+  }
+
+  window.VigzoneChatBridge = {
+    openProjectConversation,
+    removeProjectConversations,
+    renameProjectConversations,
+    currentConversation,
+    switchConversation,
+    listProjectConversations(projectId){
+      const target = Number(projectId);
+      return Object.values(store.conversations || {})
+        .filter(item => Number(item?.projectId) === target)
+        .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
+    },
+    refresh(){
+      renderAll();
+      renderHistoryList();
+      syncProjectConversationContext();
+    },
+  };
+
   // The message currently staged from the Reply item in the message context
   // menu, or null if nothing is being quoted.
   // Shape: { role: 'user'|'assistant', fullText: string, index: number|null }
@@ -418,6 +519,7 @@
   let activeWorkspaceId = Number(localStorage.getItem('vigzone_active_workspace_id') || 0) || null;
   let workspaces = [];
   let activeAiMode = localStorage.getItem('vigzone_ai_mode') || 'general';
+  syncProjectConversationContext();
 
 
   // ---------- Living config: no stale hardcoded product text ----------
@@ -1213,16 +1315,25 @@
     const conv = store.conversations[store.activeId];
     conv.messages = messages;
     conv.updatedAt = Date.now();
-    if (!conv.title || conv.title === 'New chat') conv.title = titleFromMessages(messages);
+    if (conv.projectId) {
+      conv.title = conv.projectName || conv.title || 'Project';
+      if (!conv.projectThreadTitle || conv.projectThreadTitle === 'New conversation') {
+        conv.projectThreadTitle = titleFromMessages(messages);
+        if (conv.projectThreadTitle === 'New chat') conv.projectThreadTitle = 'New conversation';
+      }
+    } else if (!conv.title || conv.title === 'New chat') {
+      conv.title = titleFromMessages(messages);
+    }
     persistStore();
     renderHistoryList();
+    window.VigzoneProjects?.renderSidebar?.();
     refreshBrainIfOpen();
   }
 
   function renderHistoryList(){
     store.pins = store.pins || {};
     const ids = Object.keys(store.conversations)
-            .filter(id => store.conversations[id])
+            .filter(id => store.conversations[id] && !store.conversations[id].projectId)
             .sort((a, b) => {
               const pa = store.pins[a] ? 1 : 0;
               const pb = store.pins[b] ? 1 : 0;
@@ -1254,7 +1365,10 @@
   }
 
   function switchConversation(id){
-    if (id === store.activeId) return;
+    if (id === store.activeId) {
+      syncProjectConversationContext();
+      return;
+    }
     const c = store.conversations[id];
     if (!c) return;
     store.activeId = id;
@@ -1263,6 +1377,7 @@
     showAllMessages = false;
     renderAll();
     renderHistoryList();
+    syncProjectConversationContext();
     if (isMobile()) setSidebarCollapsed(true);
   }
 
@@ -1286,6 +1401,7 @@
       messages = [];
       showAllMessages = false;
       renderAll();
+      syncProjectConversationContext();
     }
     persistStore();
     renderHistoryList();
@@ -1325,6 +1441,8 @@
     showAllMessages = false;
     renderHistoryList();
     renderAll();
+    syncProjectConversationContext();
+    window.VigzoneProjects?.refresh?.();
     refreshBrainIfOpen();
   }
 
@@ -1333,11 +1451,14 @@
     pendingFiles = [];
     setImageMode(false);
     store.activeId = null;
+    activeWorkspaceId = null;
+    localStorage.removeItem('vigzone_active_workspace_id');
     showAllMessages = false;
     renderAll();
     setTimeout(renderContinueBanner, 80);
     renderAttachmentsBar();
     renderHistoryList();
+    syncProjectConversationContext();
     if (isMobile()) setSidebarCollapsed(true);
     input.focus();
   }
@@ -4417,6 +4538,10 @@
       bubble.appendChild(textEl);
     }
 
+    if (opts.projectResult && window.VigzoneProjects?.renderMessageResult) {
+      window.VigzoneProjects.renderMessageResult(bubble, opts.projectResult, opts.index);
+    }
+
     // Add feedback + speaker actions (skip placeholders still streaming/loading —
     // those get the row appended once their final text is known)
     if (role === 'assistant' && !opts.typing && !opts.imageLoading && content) {
@@ -4442,6 +4567,7 @@
     chatInner.innerHTML = '';
     if (messages.length === 0) {
       restoreEmptyState();
+      window.VigzoneProjects?.decorateEmptyState?.(currentConversation());
       return;
     }
 
@@ -4481,9 +4607,9 @@
     messagesToRender.forEach((m, idx) => {
       const text = m.displayText !== undefined ? m.displayText : (typeof m.content === 'string' ? m.content : '');
       if (m.imageSrc) {
-        renderMessage(m.role, text, { imageSrc: m.imageSrc, quote: m.quote, responseMeta: m.responseMeta, index: startIndex + idx });
+        renderMessage(m.role, text, { imageSrc: m.imageSrc, quote: m.quote, responseMeta: m.responseMeta, projectResult: m.projectResult, index: startIndex + idx });
       } else {
-        renderMessage(m.role, text, { attachments: m.attachments, quote: m.quote, responseMeta: m.responseMeta, index: startIndex + idx });
+        renderMessage(m.role, text, { attachments: m.attachments, quote: m.quote, responseMeta: m.responseMeta, projectResult: m.projectResult, index: startIndex + idx });
       }
     });
   }
@@ -5045,6 +5171,69 @@ A strong website should include: hero section, clear navigation, services/featur
     return messages.map(m => ({ role: m.role, content: m.content }));
   }
 
+  async function sendProjectChatMessage({projectId, combinedText, typedText, attachmentsMeta, quoteMeta}){
+    messages.push({
+      role: 'user',
+      content: combinedText,
+      displayText: typedText,
+      attachments: attachmentsMeta.length ? attachmentsMeta : undefined,
+      quote: quoteMeta,
+    });
+    renderMessage('user', typedText, { attachments: attachmentsMeta, quote: quoteMeta, index: messages.length - 1 });
+    saveConversation();
+
+    input.value = '';
+    autoResize();
+    pendingFiles = [];
+    renderAttachmentsBar();
+
+    const assistantIndex = messages.length;
+    const assistantBubble = renderMessage('assistant', '', { typing: true, index: assistantIndex });
+    streaming = true;
+    updateSendButtonState();
+    startUsageCycleLiveUpdates();
+
+    try {
+      const history = messages.slice(0, -1).slice(-12).map(message => ({
+        role: message.role,
+        content: typeof message.content === 'string'
+          ? message.content
+          : (message.displayText || ''),
+      })).filter(message => message.content);
+      const result = await window.VigzoneProjects.assist({
+        projectId,
+        instruction: combinedText,
+        history,
+        conversationId: store.activeId,
+        model: getActiveModel(),
+      });
+      const summary = result.summary || 'Project review complete.';
+      assistantBubble.innerHTML = renderContent(summary);
+      enhanceCodeBlocks(assistantBubble);
+      window.VigzoneProjects.renderMessageResult?.(assistantBubble, result, assistantIndex);
+      syncAssistantOutputPresentation(assistantBubble, true);
+      assistantBubble.appendChild(buildMessageActions(() => summary, () => result.meta || {}));
+      messages.push({
+        role: 'assistant',
+        content: summary,
+        displayText: summary,
+        responseMeta: result.meta || {},
+        projectResult: result,
+      });
+      saveConversation();
+    } catch (error) {
+      assistantBubble.classList.add('error-bubble');
+      assistantBubble.innerHTML = `⚠ ${escapeHtml(error.message || 'Project assistance failed.')}`;
+      syncAssistantOutputPresentation(assistantBubble, true);
+      window.VigzoneProjects?.handleChatError?.(error, projectId);
+    } finally {
+      streaming = false;
+      updateSendButtonState();
+      stopUsageCycleLiveUpdates();
+      refreshUsageCycle?.();
+    }
+  }
+
   async function sendMessage(text, opts = {}){
     const offlineNow = !navigator.onLine;
     if (imageMode) {
@@ -5111,6 +5300,21 @@ A strong website should include: hero section, clear navigation, services/featur
 
     const attachmentsMeta = readyFiles.map(f => ({ kind: f.kind, name: f.name }));
     const quoteMeta = quoteAtSend ? { role: quoteAtSend.role, text: quoteAtSend.fullText } : undefined;
+
+    const projectId = Number(currentConversation()?.projectId || 0);
+    if (projectId && window.VigzoneProjects?.assist) {
+      if (images.length) {
+        suiteToast?.('Project chats currently use text/code from the connected folder. Send images in a regular chat.');
+        return;
+      }
+      return sendProjectChatMessage({
+        projectId,
+        combinedText,
+        typedText,
+        attachmentsMeta,
+        quoteMeta,
+      });
+    }
 
     messages.push({
       role: 'user',
