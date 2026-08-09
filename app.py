@@ -54,6 +54,7 @@ from vigzone_ai import (
     get_user_token_stats,
     get_user_daily_usage,
     assert_user_can_chat,
+    release_token_reservation,
     estimate_budgeted_request_tokens,
     is_configured,
     stream_chat,
@@ -499,7 +500,7 @@ def _require_feature(user: dict, feature: str, label: str) -> None:
         )
 
 
-def _assert_chat_entitlements(user: dict, chat_request: ChatRequest, *, has_own_key: bool, estimated_tokens: int) -> None:
+def _assert_chat_entitlements(user: dict, chat_request: ChatRequest, *, has_own_key: bool, estimated_tokens: int) -> dict:
     if not billing.model_allowed(user, chat_request.model):
         raise HTTPException(
             status_code=403,
@@ -520,21 +521,22 @@ def _assert_chat_entitlements(user: dict, chat_request: ChatRequest, *, has_own_
             status_code=403,
             detail="That AI mode is available on Vigzone PRO and TEAM.",
         )
-    if billing.effective_plan(user) != "free":
-        return
-    if authmod.consume_daily_message(user["id"], 50) is None:
-        raise HTTPException(
-            status_code=429,
-            detail="You have used your 50 Free messages for today. Upgrade to PRO or TEAM for unlimited messages.",
-        )
     try:
-        assert_user_can_chat(
-            user["id"],
+        reservation = assert_user_can_chat(
+            user,
             has_own_key=has_own_key,
             estimated_request_tokens=estimated_tokens,
         )
     except UsageLimitError as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
+    if billing.effective_plan(user) == "free":
+        if authmod.consume_daily_message(user["id"], 50) is None:
+            release_token_reservation(reservation)
+            raise HTTPException(
+                status_code=429,
+                detail="You have used your 50 Free messages for today. Upgrade to PRO or TEAM for a larger daily token quota.",
+            )
+    return reservation
 
 NEW_CHAT_TOPLINE = os.getenv("VIGZONE_NEW_CHAT_TOPLINE", "Start with a real task")
 NEW_CHAT_SUBTITLE = os.getenv(
@@ -1394,7 +1396,7 @@ async def my_usage_today(user: dict = Depends(require_current_user)):
             "has_own_key": key_status["has_key"],
             "using_own_key": key_status["active"],
         })
-    usage = get_user_daily_usage(user["id"], has_own_key=key_status["active"])
+    usage = get_user_daily_usage(user, has_own_key=key_status["active"])
     return JSONResponse({
         "has_own_key": key_status["has_key"],
         "using_own_key": key_status["active"],
@@ -3196,7 +3198,7 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
     # Vigzone daily plan is exhausted or too close to exhausted.
     key_status = authmod.get_user_key_status(user["id"])
     estimated_request_tokens = estimate_budgeted_request_tokens(messages)
-    _assert_chat_entitlements(
+    quota_reservation = _assert_chat_entitlements(
         user,
         chat_request,
         has_own_key=key_status["active"],
@@ -3204,6 +3206,7 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
     )
 
     if provider_override is None and not await is_configured():
+        release_token_reservation(quota_reservation)
         raise HTTPException(
             status_code=503,
             detail=(
@@ -3219,6 +3222,7 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
             break
 
     if _is_simple_datetime_request(last_user_query):
+        release_token_reservation(quota_reservation)
         stream_id = create_stream_id()
         register_stream(stream_id, user["id"])
         direct_answer = _build_datetime_answer(last_user_query, chat_request.client_timezone)
@@ -3234,13 +3238,17 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
         )
 
-    context_parts = {
-        "workspace": authmod.get_workspace_context(
-            user["id"], chat_request.workspace_id, last_user_query
-        ),
-        "memory": authmod.get_learning_context(user["id"], last_user_query),
-        "persona": authmod.get_team_persona_context(user["id"]),
-    }
+    try:
+        context_parts = {
+            "workspace": authmod.get_workspace_context(
+                user["id"], chat_request.workspace_id, last_user_query
+            ),
+            "memory": authmod.get_learning_context(user["id"], last_user_query),
+            "persona": authmod.get_team_persona_context(user["id"]),
+        }
+    except Exception:
+        release_token_reservation(quota_reservation)
+        raise
     feature_policy = billing.entitlement_snapshot(user)["features"]
     stream_id = create_stream_id()
     register_stream(stream_id, user["id"])
@@ -3266,6 +3274,7 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
                     conversation_id=chat_request.conversation_id or "",
                     metadata_callback=response_meta.update,
                     allowed_models=None if paid_model_access else {FAST_MODEL},
+                    quota_reservation=quota_reservation,
                 ):
                     if is_cancelled(stream_id):
                         break
@@ -3296,6 +3305,7 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
                     message += f" Reference: {request_id}"
                 yield f"data: {json.dumps({'error': message}, ensure_ascii=False)}\n\n"
         finally:
+            release_token_reservation(quota_reservation)
             unregister_stream(stream_id)
 
     return StreamingResponse(
@@ -3320,7 +3330,7 @@ async def chat_sync(request: Request, chat_request: ChatRequest, user: dict = De
 
     key_status = authmod.get_user_key_status(user["id"])
     estimated_request_tokens = estimate_budgeted_request_tokens(messages)
-    _assert_chat_entitlements(
+    quota_reservation = _assert_chat_entitlements(
         user,
         chat_request,
         has_own_key=key_status["active"],
@@ -3328,6 +3338,7 @@ async def chat_sync(request: Request, chat_request: ChatRequest, user: dict = De
     )
 
     if provider_override is None and not await is_configured():
+        release_token_reservation(quota_reservation)
         raise HTTPException(
             status_code=503,
             detail=(
@@ -3342,15 +3353,20 @@ async def chat_sync(request: Request, chat_request: ChatRequest, user: dict = De
             break
 
     if _is_simple_datetime_request(last_user_query):
+        release_token_reservation(quota_reservation)
         return JSONResponse({"role": "assistant", "content": _build_datetime_answer(last_user_query, chat_request.client_timezone)})
 
-    context_parts = {
-        "workspace": authmod.get_workspace_context(
-            user["id"], chat_request.workspace_id, last_user_query
-        ),
-        "memory": authmod.get_learning_context(user["id"], last_user_query),
-        "persona": authmod.get_team_persona_context(user["id"]),
-    }
+    try:
+        context_parts = {
+            "workspace": authmod.get_workspace_context(
+                user["id"], chat_request.workspace_id, last_user_query
+            ),
+            "memory": authmod.get_learning_context(user["id"], last_user_query),
+            "persona": authmod.get_team_persona_context(user["id"]),
+        }
+    except Exception:
+        release_token_reservation(quota_reservation)
+        raise
     feature_policy = billing.entitlement_snapshot(user)["features"]
     response_meta: dict = {}
     try:
@@ -3366,10 +3382,13 @@ async def chat_sync(request: Request, chat_request: ChatRequest, user: dict = De
             conversation_id=chat_request.conversation_id or "",
             metadata_callback=response_meta.update,
             allowed_models=None if paid_model_access else {FAST_MODEL},
+            quota_reservation=quota_reservation,
         )
     except VigzoneAIError as e:
         logger.error("Chat failed: %s", e)
         raise HTTPException(status_code=502, detail=str(e))
+    finally:
+        release_token_reservation(quota_reservation)
 
     return JSONResponse({"role": "assistant", "content": reply, "meta": response_meta})
 

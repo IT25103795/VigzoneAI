@@ -55,11 +55,12 @@ def test_postgres_backend_selected_only_when_database_url_exists(monkeypatch):
 
 
 def test_application_sql_has_no_unhandled_sqlite_write_syntax():
-    for path in ("auth.py", "billing.py", "app.py"):
+    for path in ("auth.py", "billing.py", "app.py", "vigzone_ai.py"):
         source = open(path, encoding="utf-8").read()
         assert "INSERT OR IGNORE" not in source
-        if path != "auth.py":
+        if path not in {"auth.py", "database.py"}:
             assert "import sqlite3" not in source
+        assert "strftime('%s','now')" not in source
 
 
 def test_full_schema_initialization_translates_to_postgres(monkeypatch):

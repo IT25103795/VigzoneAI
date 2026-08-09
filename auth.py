@@ -168,7 +168,11 @@ def init_db() -> None:
                 workspace_tokens  INTEGER NOT NULL DEFAULT 0,
                 search_tokens     INTEGER NOT NULL DEFAULT 0,
                 user_tokens       INTEGER NOT NULL DEFAULT 0,
-                conversation_id   TEXT
+                conversation_id   TEXT,
+                quota_scope       TEXT NOT NULL DEFAULT 'user',
+                quota_subject_id  INTEGER,
+                quota_plan        TEXT NOT NULL DEFAULT 'free',
+                quota_limit       INTEGER NOT NULL DEFAULT 0
             )
             """
         )
@@ -252,6 +256,39 @@ def init_db() -> None:
                 PRIMARY KEY (user_id, usage_date)
             )
             """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS daily_token_quotas (
+                quota_scope TEXT NOT NULL,
+                quota_subject_id INTEGER NOT NULL,
+                usage_date TEXT NOT NULL,
+                used_tokens INTEGER NOT NULL DEFAULT 0,
+                reserved_tokens INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (quota_scope, quota_subject_id, usage_date)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS token_quota_reservations (
+                reservation_id TEXT PRIMARY KEY,
+                quota_scope TEXT NOT NULL,
+                quota_subject_id INTEGER NOT NULL,
+                usage_date TEXT NOT NULL,
+                reserved_tokens INTEGER NOT NULL,
+                actual_tokens INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_token_quota_reservations_subject "
+            "ON token_quota_reservations(quota_scope, quota_subject_id, usage_date, status)"
         )
 
         # TEAM subscriptions are collaborative accounts, not cosmetic flags.
@@ -383,6 +420,10 @@ def init_db() -> None:
             "search_tokens": "INTEGER NOT NULL DEFAULT 0",
             "user_tokens": "INTEGER NOT NULL DEFAULT 0",
             "conversation_id": "TEXT",
+            "quota_scope": "TEXT NOT NULL DEFAULT 'user'",
+            "quota_subject_id": "INTEGER",
+            "quota_plan": "TEXT NOT NULL DEFAULT 'free'",
+            "quota_limit": "INTEGER NOT NULL DEFAULT 0",
         }
         for column, definition in usage_migrations.items():
             if column not in existing_usage_cols:
@@ -390,8 +431,15 @@ def init_db() -> None:
                     f"ALTER TABLE token_usage ADD COLUMN {column} {definition}"
                 )
         conn.execute(
+            "UPDATE token_usage SET quota_subject_id = user_id WHERE quota_subject_id IS NULL"
+        )
+        conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_token_usage_route "
             "ON token_usage(route_reason, model, ts)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_token_usage_quota "
+            "ON token_usage(quota_scope, quota_subject_id, ts)"
         )
 
 
@@ -2560,6 +2608,14 @@ def get_daily_message_count(user_id: int) -> int:
             (user_id, usage_date),
         ).fetchone()
     return int(row["messages"] if row else 0)
+
+
+def get_user_by_id(user_id: int) -> Optional[dict]:
+    """Return a fresh server-trusted account snapshot for quota accounting."""
+
+    with _connect() as conn:
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (int(user_id),)).fetchone()
+    return _public_user(row) if row else None
 
 
 def get_user_by_session(token: Optional[str]) -> Optional[dict]:

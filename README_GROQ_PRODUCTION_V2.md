@@ -17,8 +17,10 @@ GROQ_VISION_MODEL=qwen/qwen3.6-27b
 GROQ_ALLOWED_VISION_MODELS=qwen/qwen3.6-27b
 GROQ_VISION_FALLBACK_MODELS=qwen/qwen3.6-27b
 GROQ_TRANSCRIPTION_MODEL=whisper-large-v3-turbo
-DAILY_TOKEN_LIMIT=100000
-BYOK_DAILY_TOKEN_LIMIT=100000
+FREE_DAILY_TOKEN_LIMIT=50000
+PRO_DAILY_TOKEN_LIMIT=250000
+TEAM_DAILY_TOKEN_LIMIT=1000000
+ADMIN_DAILY_TOKEN_LIMIT=0
 ENFORCE_DEFAULT_DAILY_LIMIT=true
 ENFORCE_BYOK_DAILY_LIMIT=true
 USAGE_TZ_OFFSET_MINUTES=330
@@ -62,5 +64,8 @@ ROUTING_ANALYTICS_ENABLED=true
 
 Each production usage row records the selected route, final model, fallback and
 retry state, latency, cached tokens when reported by Groq, and an estimated
-system/history/summary/memory/workspace/search/user token breakdown. Existing
-SQLite databases are migrated automatically during startup.
+system/history/summary/memory/workspace/search/user token breakdown. Production
+usage, quota counters, and in-flight reservations are stored in PostgreSQL;
+SQLite remains the automatic local/test fallback. TEAM's configured quota is a
+single pool shared by its seats, and a zero ADMIN limit means unlimited access
+with usage still recorded.

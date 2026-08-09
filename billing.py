@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import time
 from datetime import datetime, timezone
 from typing import Any, Iterable
@@ -18,6 +19,22 @@ ACTIVE_SUBSCRIPTION_STATUSES = {"active", "trialing", "past_due"}
 PREMIUM_CHAT_MODES = {"website", "code", "business", "voice"}
 FREE_MODEL_IDS = {
     "openai/gpt-oss-20b",
+}
+
+# Customer quotas are intentionally plan-specific and server-authoritative.
+# TEAM is a shared pool keyed to the subscription owner, so adding seats never
+# multiplies the owner's bill unexpectedly. A limit of 0 means unlimited.
+DEFAULT_DAILY_TOKEN_LIMITS = {
+    "free": 50_000,
+    "pro": 250_000,
+    "team": 1_000_000,
+    "admin": 0,
+}
+TOKEN_LIMIT_ENV_VARS = {
+    "free": "FREE_DAILY_TOKEN_LIMIT",
+    "pro": "PRO_DAILY_TOKEN_LIMIT",
+    "team": "TEAM_DAILY_TOKEN_LIMIT",
+    "admin": "ADMIN_DAILY_TOKEN_LIMIT",
 }
 
 _FEATURES = {
@@ -88,14 +105,57 @@ def effective_plan(user: dict) -> str:
     return normalize_plan(user.get("plan"))
 
 
+def display_plan(user: dict) -> str:
+    """Return the customer-facing role used by quota and badge displays."""
+
+    if bool(user.get("is_admin")) or user.get("role") == "admin":
+        return "admin"
+    return effective_plan(user)
+
+
+def daily_token_limit(user: dict) -> int:
+    """Return this account's configured non-negative daily AI token limit."""
+
+    plan = display_plan(user)
+    default = DEFAULT_DAILY_TOKEN_LIMITS[plan]
+    try:
+        return max(0, int(os.getenv(TOKEN_LIMIT_ENV_VARS[plan], str(default))))
+    except (TypeError, ValueError):
+        return default
+
+
+def token_quota(user: dict) -> dict:
+    """Return trusted quota identity and presentation data for an account.
+
+    TEAM usage is pooled by owner user ID. This identity is stable before and
+    after the TEAM Hub row is created because an owner's subject is their own
+    user ID and every invited seat carries ``team_owner_id``.
+    """
+
+    plan = display_plan(user)
+    is_team = plan == "team"
+    user_id = int(user.get("id") or 0)
+    subject_id = int(user.get("team_owner_id") or user_id)
+    return {
+        "plan": plan,
+        "display_name": plan.upper(),
+        "daily_limit": daily_token_limit(user),
+        "scope": "team" if is_team else "user",
+        "subject_id": subject_id,
+        "shared": is_team,
+    }
+
+
 def entitlement_snapshot(user: dict) -> dict:
     billed_plan = normalize_plan(user.get("plan"))
     plan = effective_plan(user)
-    is_admin = bool(user.get("is_admin")) or user.get("role") == "admin"
+    shown_plan = display_plan(user)
+    is_admin = shown_plan == "admin"
+    quota = token_quota(user)
     return {
         "billing_plan": billed_plan,
         "effective_plan": plan,
-        "display_plan": "admin" if is_admin else plan,
+        "display_plan": shown_plan,
         "badge": "ADMIN" if is_admin else (plan.upper() if plan != "free" else ""),
         "is_admin": is_admin,
         "can_upgrade": not is_admin and plan != "team",
@@ -103,6 +163,8 @@ def entitlement_snapshot(user: dict) -> dict:
         "limits": {
             "messages_per_day": 50 if plan == "free" else None,
             "team_seats": 5 if plan == "team" else 1,
+            "tokens_per_day": quota["daily_limit"] or None,
+            "token_quota_scope": quota["scope"],
         },
         "team": {
             "id": user.get("team_id"),

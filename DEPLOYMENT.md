@@ -46,6 +46,10 @@ Configure these variables before deploying:
 | `WORKERS` | `1` |
 | `DATABASE_URL` | Complete pooled PostgreSQL URL with `sslmode=require` or stronger |
 | `GROQ_API_KEY` | A real `gsk_...` Groq key |
+| `FREE_DAILY_TOKEN_LIMIT` | `50000` |
+| `PRO_DAILY_TOKEN_LIMIT` | `250000` |
+| `TEAM_DAILY_TOKEN_LIMIT` | `1000000` (shared by all five TEAM seats) |
+| `ADMIN_DAILY_TOKEN_LIMIT` | `0` (unlimited; usage is still recorded) |
 | `ENCRYPTION_SECRET` | A stable random value of at least 32 characters |
 | `COOKIE_SECURE` | `true` |
 | `VIRUS_SCAN_STRICT` | `true` |

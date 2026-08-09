@@ -528,6 +528,11 @@
       width:14px;
       height:14px;
     }
+    .sidebar-usage-label{display:flex;align-items:center;gap:6px;min-width:0;}
+    .sidebar-usage-label small{
+      color:var(--accent);font-size:10px;font-weight:800;letter-spacing:.01em;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:86px;
+    }
 
     /* Usage/admin modals */
     .usage-modal-overlay{

@@ -101,6 +101,7 @@
   const usageCycleCloseBtn = $('#usageCycleCloseBtn');
   const usageCyclePercent = $('#usageCyclePercent');
   const usageCycleNote = $('#usageCycleNote');
+  const sidebarUsageRate = $('#sidebarUsageRate');
   const floatingMenuBackdrop = document.createElement('div');
   floatingMenuBackdrop.className = 'floating-menu-backdrop';
   floatingMenuBackdrop.setAttribute('aria-hidden', 'true');
@@ -2613,12 +2614,15 @@
   function usageStatsFromData(data){
     const limit = Number(data?.daily_limit || 0);
     const used = Number(data?.used_today || 0);
-    const remaining = data?.remaining_today ?? Math.max(limit - used, 0);
-    const pctRaw = limit > 0 ? (used / limit) * 100 : 0;
+    const reserved = Number(data?.reserved_today || 0);
+    const counted = Number(data?.counted_today ?? (used + reserved));
+    const unlimited = !!data?.quota_unlimited || limit <= 0;
+    const remaining = unlimited ? null : Number(data?.remaining_today ?? Math.max(limit - counted, 0));
+    const pctRaw = !unlimited && limit > 0 ? (counted / limit) * 100 : 0;
     const pct = Math.max(0, Math.min(100, pctRaw));
-    const pctLabel = limit > 0 ? `${Math.round(pct)}%` : '—';
+    const pctLabel = unlimited ? 'Unlimited' : `${Math.round(pct)}%`;
     const resetIn = data?.seconds_until_reset ? `Resets in ${formatDuration(data.seconds_until_reset)}` : '';
-    return { limit, used, remaining, pct, pctLabel, resetIn };
+    return { limit, used, reserved, counted, remaining, unlimited, pct, pctLabel, resetIn };
   }
 
   function providerRateSummary(data){
@@ -2640,18 +2644,24 @@
       usageCycleNote.textContent = data?.mode === 'testing' ? 'Usage tracking is off in testing mode.' : 'Usage data not loaded yet.';
       return;
     }
+    if (data.tracking_error) {
+      usageCyclePercent.textContent = 'Unavailable';
+      usageCycleNote.textContent = 'The durable usage service is temporarily unavailable. Limited plans are protected from untracked provider calls.';
+      return;
+    }
     const st = usageStatsFromData(data);
     const ownKey = data.mode === 'own_key' || data.using_own_key;
-    const planName = data.plan_label || (ownKey ? 'Vigzone app cap • Personal Groq key' : 'Vigzone app cap • Default Groq key');
+    const planName = data.quota_label || data.plan_label || (ownKey ? 'Personal Groq quota' : 'Vigzone daily quota');
     const estimated = Number(data.estimated_request_count_today || 0);
     const exact = Math.max(0, Number(data.request_count_today || 0) - estimated);
     const providerParts = providerRateSummary(data);
-    usageCyclePercent.textContent = `${st.pctLabel} used`;
+    usageCyclePercent.textContent = st.unlimited ? 'Unlimited' : `${st.pctLabel} used`;
     usageCycleNote.innerHTML = `
       <strong>${escapeHtml(planName)}</strong>
       <div class="usage-cycle-pop-note">${exact.toLocaleString()} exact usage record${exact === 1 ? '' : 's'}${estimated ? ` · ${estimated.toLocaleString()} estimated` : ''}</div>
-      <div class="usage-cycle-pop-meta"><span>${st.used.toLocaleString()} used</span><span>${st.limit ? st.limit.toLocaleString() : 'No'} limit</span></div>
-      <div class="usage-cycle-pop-meta"><span>${Number(st.remaining || 0).toLocaleString()} left</span><span>${escapeHtml(st.resetIn || '')}</span></div>
+      <div class="usage-cycle-pop-meta"><span>${st.used.toLocaleString()} tokens used</span><span>${st.unlimited ? 'No daily cap' : `${st.limit.toLocaleString()} limit`}</span></div>
+      ${st.reserved ? `<div class="usage-cycle-pop-meta"><span>${st.reserved.toLocaleString()} in progress</span><span>Temporarily reserved</span></div>` : ''}
+      <div class="usage-cycle-pop-meta"><span>${st.unlimited ? 'Unlimited access' : `${Number(st.remaining || 0).toLocaleString()} tokens left`}</span><span>${escapeHtml(st.resetIn || '')}</span></div>
       ${providerParts.length ? `<div class="usage-cycle-pop-note">${providerParts.map(escapeHtml).join('<br>')}</div>` : '<div class="usage-cycle-pop-note">Provider quota headers will appear after Groq returns them.</div>'}
     `;
     if (usageCyclePopover?.classList.contains('visible')) positionUsageCyclePopover();
@@ -2666,16 +2676,29 @@
     if (!current || current.mode === 'testing') {
       usageCycleFill.style.strokeDashoffset = '100';
       usageCycleCenter.textContent = '—';
+      if (sidebarUsageRate) sidebarUsageRate.textContent = '—';
       usageCycleBtn.title = current?.mode === 'testing' ? 'Usage tracking off' : 'Usage today';
+      renderUsageCyclePopover(current);
+      return;
+    }
+
+    if (current.tracking_error) {
+      usageCycleFill.style.strokeDashoffset = '100';
+      usageCycleCenter.textContent = '!';
+      usageCycleBtn.classList.add('danger');
+      if (sidebarUsageRate) sidebarUsageRate.textContent = 'Unavailable';
+      usageCycleBtn.title = 'Usage service unavailable';
       renderUsageCyclePopover(current);
       return;
     }
 
     const st = usageStatsFromData(current);
     usageCycleFill.style.strokeDashoffset = String(100 - st.pct);
-    usageCycleCenter.textContent = st.limit > 0 ? String(Math.round(st.pct)) : '∞';
-    usageCycleBtn.setAttribute('aria-label', `Usage today: ${st.pctLabel} used`);
-    usageCycleBtn.title = `Usage today: ${st.pctLabel} used`;
+    usageCycleCenter.textContent = st.unlimited ? '∞' : String(Math.round(st.pct));
+    if (sidebarUsageRate) sidebarUsageRate.textContent = st.unlimited ? 'Unlimited' : `${Math.round(st.pct)}%`;
+    const usageTitle = st.unlimited ? `${current.quota_label || 'ADMIN'}: unlimited` : `Usage today: ${st.pctLabel} used`;
+    usageCycleBtn.setAttribute('aria-label', usageTitle);
+    usageCycleBtn.title = usageTitle;
     if (st.pct >= 90) usageCycleBtn.classList.add('danger');
     else if (st.pct >= 65) usageCycleBtn.classList.add('warn');
     if (current.is_limited) usageCycleBtn.classList.add('limit-hit');
@@ -2796,41 +2819,44 @@
         usageModalBody.innerHTML = '<div class="usage-modal-empty">Usage tracking is off in testing mode.</div>';
         return;
       }
+      if (data.tracking_error) {
+        usageModalBody.innerHTML = '<div class="usage-modal-empty">The durable usage service is temporarily unavailable. Limited plans are blocked from untracked AI calls until it recovers.</div>';
+        return;
+      }
 
       // mode === 'default_groq' or 'own_key'
-      const limit = data.daily_limit || 0;
-      const used = data.used_today || 0;
-      const remaining = data.remaining_today ?? Math.max(limit - used, 0);
-      const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
-      const barClass = pct >= 90 ? 'danger' : (pct >= 65 ? 'warn' : '');
-      const resetIn = data.seconds_until_reset ? `Resets in ${formatDuration(data.seconds_until_reset)}` : '';
+      const st = usageStatsFromData(data);
+      const barClass = st.pct >= 90 ? 'danger' : (st.pct >= 65 ? 'warn' : '');
       const ownKey = data.mode === 'own_key' || data.using_own_key;
-      const planName = data.plan_label || (ownKey ? 'Vigzone app cap • Personal Groq key' : 'Vigzone app cap • Default Groq key');
+      const planName = data.quota_label || data.plan_label || 'Vigzone daily quota';
       const locked = !!data.is_limited;
       const estimated = Number(data.estimated_request_count_today || 0);
       const exact = Math.max(0, Number(data.request_count_today || 0) - estimated);
       const providerParts = providerRateSummary(data);
+      const displayPlan = String(data.display_plan || data.effective_plan || 'free').toUpperCase();
       const enforcedText = data.limit_enforced ? 'Limit enforced by Vigzone.' : 'Tracking only — no Vigzone block.';
-      const planText = locked
-        ? `${planName} is out of tokens for today. ${resetIn}`
-        : ownKey
-          ? `${planName} ⚡ — using your personal Groq quota. ${enforcedText} ${resetIn}`
-          : `${planName} ⚡ — using Vigzone's default Groq key with an individual daily cap. ${resetIn}`;
+      const sourceText = ownKey ? 'using your personal Groq key' : 'using Vigzone’s Groq key';
+      const planText = st.unlimited
+        ? `${planName} — unlimited ADMIN token access, ${sourceText}. Usage is still recorded accurately.`
+        : locked
+          ? `${planName} is out of tokens for today. ${st.resetIn}`
+          : `${planName} — ${sourceText}. ${enforcedText} ${st.resetIn}`;
 
       usageModalBody.innerHTML = `
         <div class="usage-modal-note">
           ${escapeHtml(planText)}
         </div>
         <div class="usage-modal-bar-track">
-          <div class="usage-modal-bar-fill ${barClass}" style="width:${pct}%"></div>
+          <div class="usage-modal-bar-fill ${barClass}" style="width:${st.unlimited ? 100 : st.pct}%"></div>
         </div>
         <div class="usage-modal-total-row">
-          <span>${used.toLocaleString()} used today</span>
-          <span>${limit ? limit.toLocaleString() + ' daily limit' : ''}</span>
+          <span>${st.used.toLocaleString()} tokens used today</span>
+          <span>${st.unlimited ? 'Unlimited' : `${st.limit.toLocaleString()} daily limit`}</span>
         </div>
+        ${st.reserved ? `<div class="usage-modal-total-row"><span>${st.reserved.toLocaleString()} tokens in progress</span><span>Temporarily reserved</span></div>` : ''}
         <div class="usage-modal-total-row">
-          <span>${remaining.toLocaleString()} remaining today</span>
-          <span>${resetIn}</span>
+          <span>${st.unlimited ? 'No daily token cap' : `${Number(st.remaining || 0).toLocaleString()} tokens remaining`}</span>
+          <span>${st.resetIn}</span>
         </div>
         <div class="usage-modal-total-row">
           <span>${(data.request_count_today || 0).toLocaleString()} requests today</span>
@@ -2838,8 +2864,9 @@
         </div>
         <div class="usage-modal-total-row">
           <span>${(data.plan_messages_today || 0).toLocaleString()} messages today</span>
-          <span>${data.plan_message_limit ? `${data.plan_message_limit} Free-plan daily limit` : `${String(data.effective_plan || 'paid').toUpperCase()} · unlimited plan messages`}</span>
+          <span>${data.plan_message_limit ? `${data.plan_message_limit} FREE message limit` : `${displayPlan} · no message-count cap`}</span>
         </div>
+        ${data.quota_shared ? '<div class="usage-modal-total-row"><span>Quota scope</span><span>Shared by all TEAM seats</span></div>' : ''}
         ${providerParts.map((part, index) => `<div class="usage-modal-total-row"><span>${index === 0 ? 'Live provider signal' : ''}</span><span>${escapeHtml(part)}</span></div>`).join('')}
         <div class="usage-modal-total-row">
           <span>Daily window</span>

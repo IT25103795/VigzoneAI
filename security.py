@@ -133,6 +133,30 @@ def validate_production_settings() -> None:
     if not os.getenv("GROQ_API_KEY", "").strip():
         errors.append("GROQ_API_KEY is required for the default chat plan")
 
+    quota_defaults = {
+        "FREE_DAILY_TOKEN_LIMIT": 50_000,
+        "PRO_DAILY_TOKEN_LIMIT": 250_000,
+        "TEAM_DAILY_TOKEN_LIMIT": 1_000_000,
+        "ADMIN_DAILY_TOKEN_LIMIT": 0,
+    }
+    quota_values: dict[str, int] = {}
+    for name, default in quota_defaults.items():
+        try:
+            quota_values[name] = int(os.getenv(name, str(default)))
+            if quota_values[name] < 0:
+                errors.append(f"{name} must be zero or a positive integer")
+        except (TypeError, ValueError):
+            errors.append(f"{name} must be an integer")
+    if all(name in quota_values for name in quota_defaults):
+        free_limit = quota_values["FREE_DAILY_TOKEN_LIMIT"]
+        pro_limit = quota_values["PRO_DAILY_TOKEN_LIMIT"]
+        team_limit = quota_values["TEAM_DAILY_TOKEN_LIMIT"]
+        if free_limit <= 0 or pro_limit <= free_limit or team_limit <= pro_limit:
+            errors.append(
+                "Daily token quotas must satisfy 0 < FREE_DAILY_TOKEN_LIMIT < "
+                "PRO_DAILY_TOKEN_LIMIT < TEAM_DAILY_TOKEN_LIMIT"
+            )
+
     paddle_token = os.getenv("PADDLE_CLIENT_TOKEN", "").strip() or os.getenv("PADDLE_VENDOR_ID", "").strip()
     legacy_pro = os.getenv("PADDLE_PRO_PRODUCT_ID", "").strip()
     legacy_team = os.getenv("PADDLE_TEAM_PRODUCT_ID", "").strip()

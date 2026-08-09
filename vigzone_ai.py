@@ -8,8 +8,8 @@ internet access — no local GPU, no local AI install, no model to pull.
 Modes:
   - TESTING mode  (APP_MODE=testing, default): unlimited messages, no token
     counting, no rate limits. For local development/testing.
-  - PRODUCTION mode (APP_MODE=production): per-user token usage is tracked
-    in SQLite, ready for billing/quota enforcement when you go worldwide.
+  - PRODUCTION mode (APP_MODE=production): role-aware token usage is tracked
+    in PostgreSQL and enforced before provider calls.
 
 Setup (one-time):
     1. Get a free API key at https://console.groq.com/keys
@@ -33,6 +33,7 @@ Production performance notes:
 import json
 import logging
 import os
+import secrets
 import time
 import re
 from typing import AsyncGenerator, Callable, Optional
@@ -41,6 +42,8 @@ import httpx
 from prompt_library import CORE_SYSTEM_PROMPT, task_prompt_modules
 from self_learning import is_degenerate_text, trim_degeneration_tail
 import stream_manager
+import billing
+import database
 from web_search import get_realtime_context, get_image_search_context
 try:
     from realworld_data import get_realworld_context as get_realworld_data_context
@@ -274,11 +277,12 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() not in ("0", "false", "no", "off", "")
 
 
-DAILY_TOKEN_LIMIT = _env_int("DAILY_TOKEN_LIMIT", 100000)
-BYOK_DAILY_TOKEN_LIMIT = _env_int("BYOK_DAILY_TOKEN_LIMIT", DAILY_TOKEN_LIMIT)
 ENFORCE_DEFAULT_DAILY_LIMIT = _env_bool("ENFORCE_DEFAULT_DAILY_LIMIT", True)
 ENFORCE_BYOK_DAILY_LIMIT = _env_bool("ENFORCE_BYOK_DAILY_LIMIT", True)
 USAGE_RESERVE_TOKENS = _env_int("USAGE_RESERVE_TOKENS", 800)
+TOKEN_RESERVATION_TTL_SECONDS = max(
+    60, min(_env_int("TOKEN_RESERVATION_TTL_SECONDS", 900), 3600)
+)
 
 # Deterministic model routing. Only clearly simple, low-risk requests use the
 # fast model. Ambiguous, context-heavy, specialist, and high-stakes requests
@@ -1605,22 +1609,34 @@ def track_token_usage(
     cached_tokens: int = 0,
     component_tokens: Optional[dict] = None,
     conversation_id: str = "",
+    quota_reservation: Optional[dict] = None,
 ) -> Optional[int]:
-    """
-    Persist token usage to SQLite. Only called in production mode.
-    The token_usage table is created by auth.init_db() — see auth.py.
-    `provider` is 'groq' for both the default deployment key and a user's
-    own activated Groq key.
-    """
+    """Persist provider usage and reconcile any pre-request quota reserve."""
     if IS_TESTING:
         return None
     try:
-        import sqlite3
         import auth as authmod
 
-        db_path = authmod.DB_PATH
         components = component_tokens or {}
-        with sqlite3.connect(db_path) as conn:
+        prompt = max(0, int(prompt_tokens))
+        completion = max(0, int(completion_tokens))
+        actual_tokens = prompt + completion
+        reservation = quota_reservation if isinstance(quota_reservation, dict) else None
+        if reservation:
+            quota = {
+                "scope": str(reservation.get("quota_scope") or "user"),
+                "subject_id": int(reservation.get("quota_subject_id") or user_id),
+                "plan": str(reservation.get("quota_plan") or "free"),
+                "daily_limit": max(0, int(reservation.get("daily_limit") or 0)),
+            }
+            usage_date = str(reservation.get("usage_date") or _today_usage_date())
+        else:
+            trusted_user = authmod.get_user_by_id(user_id)
+            quota = billing.token_quota(trusted_user or {"id": user_id, "plan": "free"})
+            usage_date = _today_usage_date()
+
+        with database.connect(authmod.DB_PATH) as conn:
+            conn.execute("BEGIN IMMEDIATE")
             cursor = conn.execute(
                 """
                 INSERT INTO token_usage (
@@ -1629,18 +1645,20 @@ def track_token_usage(
                     routed_model, route_reason, routing_mode, fallback_used,
                     retry_count, latency_ms, time_to_first_token_ms, cached_tokens,
                     system_tokens, history_tokens, summary_tokens, memory_tokens,
-                    workspace_tokens, search_tokens, user_tokens, conversation_id
+                    workspace_tokens, search_tokens, user_tokens, conversation_id,
+                    quota_scope, quota_subject_id, quota_plan, quota_limit
                 )
                 VALUES (
-                    ?, ?, ?, ?, strftime('%s','now'), ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 (
                     user_id,
-                    max(0, int(prompt_tokens)),
-                    max(0, int(completion_tokens)),
-                    max(0, int(prompt_tokens)) + max(0, int(completion_tokens)),
+                    prompt,
+                    completion,
+                    actual_tokens,
+                    int(time.time()),
                     provider[:40],
                     1 if estimated else 0,
                     model[:120],
@@ -1661,20 +1679,89 @@ def track_token_usage(
                     max(0, int(components.get("search_tokens", 0))),
                     max(0, int(components.get("user_tokens", 0))),
                     (conversation_id or "")[:120],
+                    quota["scope"],
+                    quota["subject_id"],
+                    quota["plan"],
+                    quota["daily_limit"],
                 ),
             )
-            conn.commit()
+            now_iso = _utc_iso_now()
+            conn.execute(
+                """INSERT INTO daily_token_quotas
+                   (quota_scope, quota_subject_id, usage_date, used_tokens, reserved_tokens, updated_at)
+                   VALUES (?, ?, ?, 0, 0, ?) ON CONFLICT DO NOTHING""",
+                (quota["scope"], quota["subject_id"], usage_date, now_iso),
+            )
+            reconciled = False
+            if reservation and reservation.get("reservation_id"):
+                stored = conn.execute(
+                    """SELECT reserved_tokens FROM token_quota_reservations
+                       WHERE reservation_id = ? AND status = 'pending'""",
+                    (reservation["reservation_id"],),
+                ).fetchone()
+                if stored:
+                    reserved = max(0, int(stored["reserved_tokens"]))
+                    conn.execute(
+                        """UPDATE daily_token_quotas
+                           SET used_tokens = used_tokens + ?,
+                               reserved_tokens = CASE
+                                   WHEN reserved_tokens >= ? THEN reserved_tokens - ? ELSE 0 END,
+                               updated_at = ?
+                           WHERE quota_scope = ? AND quota_subject_id = ? AND usage_date = ?""",
+                        (
+                            actual_tokens,
+                            reserved,
+                            reserved,
+                            now_iso,
+                            quota["scope"],
+                            quota["subject_id"],
+                            usage_date,
+                        ),
+                    )
+                    conn.execute(
+                        """UPDATE token_quota_reservations
+                           SET status = 'finalized', actual_tokens = ?, updated_at = ?
+                           WHERE reservation_id = ? AND status = 'pending'""",
+                        (actual_tokens, now_iso, reservation["reservation_id"]),
+                    )
+                    reconciled = True
+            if not reconciled:
+                conn.execute(
+                    """UPDATE daily_token_quotas
+                       SET used_tokens = used_tokens + ?, updated_at = ?
+                       WHERE quota_scope = ? AND quota_subject_id = ? AND usage_date = ?""",
+                    (
+                        actual_tokens,
+                        now_iso,
+                        quota["scope"],
+                        quota["subject_id"],
+                        usage_date,
+                    ),
+                )
+            if reservation is not None:
+                reservation["finalized"] = reconciled
+                reservation["actual_tokens"] = actual_tokens
             return int(cursor.lastrowid)
     except Exception as exc:
         logger.warning("token_usage write failed: %s", exc)
         return None
 
 
-def _effective_limit_config(has_own_key: bool) -> tuple[int, bool]:
-    """Return (daily_limit, enforced) for default-plan vs BYOK users."""
-    if has_own_key:
-        return BYOK_DAILY_TOKEN_LIMIT, ENFORCE_BYOK_DAILY_LIMIT
-    return DAILY_TOKEN_LIMIT, ENFORCE_DEFAULT_DAILY_LIMIT
+def _limit_enforced(has_own_key: bool) -> bool:
+    return ENFORCE_BYOK_DAILY_LIMIT if has_own_key else ENFORCE_DEFAULT_DAILY_LIMIT
+
+
+def _utc_iso_now() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _today_usage_date() -> str:
+    from datetime import datetime, timezone, timedelta
+
+    offset = timedelta(minutes=_env_int("USAGE_TZ_OFFSET_MINUTES", 330))
+    return (datetime.now(timezone.utc) + offset).date().isoformat()
 
 
 def _today_window() -> tuple[int, int, int, str]:
@@ -1695,68 +1782,128 @@ def _today_window() -> tuple[int, int, int, str]:
     return day_start, max(seconds_until_reset, 0), reset_ts, tz_label
 
 
-def get_user_daily_usage(user_id: int, has_own_key: bool) -> dict:
-    """
-    Return today's Groq usage for ONE signed-in user.
+def _trusted_quota_user(user: dict | int) -> dict:
+    if isinstance(user, dict):
+        return user
+    import auth as authmod
 
-    No local-model mode in this build. If the user has not activated
-    their own key, chats use the deployment's default GROQ_API_KEY. If they
-    have activated a key, chats use their own Groq quota. Exact provider usage
-    is stored when Groq returns it; interrupted/legacy responses use estimates.
-    """
-    limit, enforced = _effective_limit_config(has_own_key)
+    trusted = authmod.get_user_by_id(int(user))
+    return trusted or {"id": int(user), "plan": "free", "role": "user"}
+
+
+def _refresh_quota_counter(
+    conn,
+    quota: dict,
+    usage_date: str,
+    day_start: int,
+    *,
+    persist: bool = True,
+) -> tuple[object, int]:
+    """Rebuild a quota counter from durable telemetry and live reservations."""
+
+    now_ts = int(time.time())
+    now_iso = _utc_iso_now()
+    if persist:
+        conn.execute(
+            """UPDATE token_quota_reservations
+               SET status = 'expired', updated_at = ?
+               WHERE quota_scope = ? AND quota_subject_id = ? AND usage_date = ?
+                 AND status = 'pending' AND expires_at <= ?""",
+            (now_iso, quota["scope"], quota["subject_id"], usage_date, now_ts),
+        )
+    row = conn.execute(
+        """
+        SELECT COALESCE(SUM(total_tokens), 0), COUNT(*),
+               COALESCE(SUM(CASE WHEN estimated = 1 THEN 1 ELSE 0 END), 0),
+               COALESCE(SUM(prompt_tokens), 0),
+               COALESCE(SUM(completion_tokens), 0),
+               COALESCE(SUM(cached_tokens), 0),
+               COALESCE(SUM(fallback_used), 0),
+               COALESCE(AVG(latency_ms), 0),
+               COALESCE(AVG(time_to_first_token_ms), 0),
+               COALESCE(SUM(system_tokens), 0),
+               COALESCE(SUM(history_tokens), 0),
+               COALESCE(SUM(summary_tokens), 0),
+               COALESCE(SUM(memory_tokens), 0),
+               COALESCE(SUM(workspace_tokens), 0),
+               COALESCE(SUM(search_tokens), 0),
+               COALESCE(SUM(user_tokens), 0)
+        FROM token_usage
+        WHERE quota_scope = ? AND quota_subject_id = ?
+          AND provider LIKE 'groq%' AND ts >= ?
+        """,
+        (quota["scope"], quota["subject_id"], day_start),
+    ).fetchone()
+    pending_row = conn.execute(
+        """SELECT COALESCE(SUM(reserved_tokens), 0)
+           FROM token_quota_reservations
+           WHERE quota_scope = ? AND quota_subject_id = ? AND usage_date = ?
+             AND status = 'pending' AND expires_at > ?""",
+        (quota["scope"], quota["subject_id"], usage_date, now_ts),
+    ).fetchone()
+    reserved = int(pending_row[0] if pending_row else 0)
+    used = int(row[0] if row else 0)
+    if persist:
+        conn.execute(
+            """INSERT INTO daily_token_quotas
+               (quota_scope, quota_subject_id, usage_date, used_tokens, reserved_tokens, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(quota_scope, quota_subject_id, usage_date) DO UPDATE SET
+                 used_tokens = excluded.used_tokens,
+                 reserved_tokens = excluded.reserved_tokens,
+                 updated_at = excluded.updated_at""",
+            (quota["scope"], quota["subject_id"], usage_date, used, reserved, now_iso),
+        )
+    return row, reserved
+
+
+def get_user_daily_usage(user: dict | int, has_own_key: bool) -> dict:
+    """Return exact daily role-aware usage from the configured durable database."""
+
+    trusted_user = _trusted_quota_user(user)
+    user_id = int(trusted_user["id"])
+    quota = billing.token_quota(trusted_user)
+    limit = int(quota["daily_limit"])
+    enforced = _limit_enforced(has_own_key)
+    day_start, seconds_until_reset, reset_ts, tz_label = _today_window()
+    usage_date = _today_usage_date()
     try:
-        import sqlite3
         import auth as authmod
 
-        db_path = authmod.DB_PATH
-        day_start, seconds_until_reset, reset_ts, tz_label = _today_window()
-
-        with sqlite3.connect(db_path) as conn:
-            row = conn.execute(
-                """
-                SELECT COALESCE(SUM(total_tokens), 0), COUNT(*),
-                       COALESCE(SUM(CASE WHEN estimated = 1 THEN 1 ELSE 0 END), 0),
-                       COALESCE(SUM(prompt_tokens), 0),
-                       COALESCE(SUM(completion_tokens), 0),
-                       COALESCE(SUM(cached_tokens), 0),
-                       COALESCE(SUM(fallback_used), 0),
-                       COALESCE(AVG(latency_ms), 0),
-                       COALESCE(AVG(time_to_first_token_ms), 0),
-                       COALESCE(SUM(system_tokens), 0),
-                       COALESCE(SUM(history_tokens), 0),
-                       COALESCE(SUM(summary_tokens), 0),
-                       COALESCE(SUM(memory_tokens), 0),
-                       COALESCE(SUM(workspace_tokens), 0),
-                       COALESCE(SUM(search_tokens), 0),
-                       COALESCE(SUM(user_tokens), 0)
-                FROM token_usage
-                WHERE user_id = ? AND provider = 'groq' AND ts >= ?
-                """,
-                (user_id, day_start),
-            ).fetchone()
+        with database.connect(authmod.DB_PATH) as conn:
+            row, reserved = _refresh_quota_counter(
+                conn, quota, usage_date, day_start, persist=False
+            )
 
         used_today = int(row[0] if row else 0)
         request_count = int(row[1] if row else 0)
         estimated_count = int(row[2] if row else 0)
         prompt_today = int(row[3] if row else 0)
         completion_today = int(row[4] if row else 0)
-        remaining = max(limit - used_today, 0) if limit > 0 else 0
+        committed = used_today + reserved
+        remaining = max(limit - committed, 0) if limit > 0 else None
+        source_label = "Personal Groq key" if has_own_key else "Vigzone Groq key"
+        pool_label = "shared TEAM pool" if quota["shared"] else "account quota"
         return {
             "mode": "own_key" if has_own_key else "default_groq",
             "provider": "groq",
-            "plan_label": "Personal Groq key" if has_own_key else "Vigzone default Groq plan",
+            "plan_label": f"Vigzone {quota['display_name']} · {source_label}",
+            "quota_label": f"{quota['display_name']} daily {pool_label}",
+            "display_plan": quota["plan"],
             "using_own_key": bool(has_own_key),
+            "quota_scope": quota["scope"],
+            "quota_shared": bool(quota["shared"]),
+            "quota_unlimited": limit <= 0,
             "used_today": used_today,
+            "reserved_today": reserved,
+            "counted_today": committed,
             "daily_limit": limit,
             "remaining_today": remaining,
             "request_count_today": request_count,
             "estimated_request_count_today": estimated_count,
             "prompt_tokens_today": prompt_today,
             "completion_tokens_today": completion_today,
-            "average_tokens_per_request": (
-                round(used_today / request_count) if request_count else 0
-            ),
+            "average_tokens_per_request": round(used_today / request_count) if request_count else 0,
             "cached_tokens_today": int(row[5] if row else 0),
             "fallback_count_today": int(row[6] if row else 0),
             "average_latency_ms": round(float(row[7] if row else 0)),
@@ -1774,12 +1921,13 @@ def get_user_daily_usage(user_id: int, has_own_key: bool) -> dict:
             "reset_at_unix": reset_ts,
             "timezone_label": tz_label,
             "limit_enforced": bool(enforced and limit > 0),
-            "is_limited": bool(enforced and limit > 0 and used_today >= limit),
+            "is_limited": bool(enforced and limit > 0 and committed >= limit),
+            "tracking_error": False,
             "provider_rate_limit": get_provider_rate_status(user_id),
             "disclaimer": (
-                "Token counts use Groq's response usage when available; interrupted "
-                "responses are estimated. Provider rate-limit headers are the live "
-                "quota signal and may use a different rolling window."
+                "Usage is stored in Vigzone's durable database. Exact Groq response usage "
+                "is used when available; interrupted responses are estimated. Provider "
+                "rate limits are separate and may reset on a different window."
             ),
         }
     except Exception as exc:
@@ -1787,11 +1935,18 @@ def get_user_daily_usage(user_id: int, has_own_key: bool) -> dict:
         return {
             "mode": "own_key" if has_own_key else "default_groq",
             "provider": "groq",
-            "plan_label": "Personal Groq key" if has_own_key else "Vigzone default Groq plan",
+            "plan_label": f"Vigzone {quota['display_name']}",
+            "quota_label": f"{quota['display_name']} daily quota",
+            "display_plan": quota["plan"],
             "using_own_key": bool(has_own_key),
+            "quota_scope": quota["scope"],
+            "quota_shared": bool(quota["shared"]),
+            "quota_unlimited": limit <= 0,
             "used_today": 0,
+            "reserved_today": 0,
+            "counted_today": 0,
             "daily_limit": limit,
-            "remaining_today": limit,
+            "remaining_today": None if limit <= 0 else 0,
             "request_count_today": 0,
             "estimated_request_count_today": 0,
             "prompt_tokens_today": 0,
@@ -1802,53 +1957,180 @@ def get_user_daily_usage(user_id: int, has_own_key: bool) -> dict:
             "average_latency_ms": 0,
             "average_time_to_first_token_ms": 0,
             "context_breakdown_estimated": {},
-            "seconds_until_reset": 0,
-            "reset_at_unix": 0,
-            "timezone_label": "",
+            "seconds_until_reset": seconds_until_reset,
+            "reset_at_unix": reset_ts,
+            "timezone_label": tz_label,
             "limit_enforced": bool(enforced and limit > 0),
-            "is_limited": False,
+            "is_limited": bool(enforced and limit > 0),
+            "tracking_error": True,
             "provider_rate_limit": {},
-            "disclaimer": "",
+            "disclaimer": "Usage is temporarily unavailable; limited plans fail closed.",
         }
 
 
-def assert_user_can_chat(user_id: int, has_own_key: bool, estimated_request_tokens: int = 0) -> dict:
-    """Enforce Vigzone's per-user app-level daily token plan before chat."""
-    usage = get_user_daily_usage(user_id, has_own_key=has_own_key)
-    limit = int(usage.get("daily_limit") or 0)
-    enforced = bool(usage.get("limit_enforced"))
-    if IS_TESTING or not enforced or limit <= 0:
-        return usage
+def _quota_reset_message(seconds: int) -> str:
+    if not seconds:
+        return ""
+    hours = int(seconds) // 3600
+    mins = (int(seconds) % 3600) // 60
+    return f" Resets in {hours}h {mins}m." if hours else f" Resets in {mins}m."
 
-    remaining = int(usage.get("remaining_today") or 0)
-    # Reserve a small output budget so a request doesn't start when there is no
-    # realistic room left for the answer. The final tracked total may still land
-    # a little above the cap because providers only report exact tokens after the
-    # completion, but this prevents most accidental overrun.
+
+def assert_user_can_chat(user: dict | int, has_own_key: bool, estimated_request_tokens: int = 0) -> dict:
+    """Atomically reserve room in the account's role-specific daily quota."""
+
+    trusted_user = _trusted_quota_user(user)
+    quota = billing.token_quota(trusted_user)
+    limit = int(quota["daily_limit"])
+    enforced = _limit_enforced(has_own_key)
+    if IS_TESTING or not enforced or limit <= 0:
+        return {
+            "active": False,
+            "finalized": False,
+            "quota_scope": quota["scope"],
+            "quota_subject_id": quota["subject_id"],
+            "quota_plan": quota["plan"],
+            "daily_limit": limit,
+            "usage_date": _today_usage_date(),
+        }
+
     needed = max(1, int(estimated_request_tokens or 0)) + max(0, USAGE_RESERVE_TOKENS)
-    if remaining <= 0 or needed > remaining:
-        reset = usage.get("seconds_until_reset", 0)
-        if reset:
-            hours = int(reset) // 3600
-            mins = (int(reset) % 3600) // 60
-            reset_msg = f" Resets in {hours}h {mins}m." if hours else f" Resets in {mins}m."
-        else:
-            reset_msg = ""
+    day_start, seconds_until_reset, _, _ = _today_window()
+    usage_date = _today_usage_date()
+    reservation_id = secrets.token_urlsafe(24)
+    now_ts = int(time.time())
+    now_iso = _utc_iso_now()
+    try:
+        import auth as authmod
+
+        with database.connect(authmod.DB_PATH) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            _refresh_quota_counter(conn, quota, usage_date, day_start)
+            updated = conn.execute(
+                """UPDATE daily_token_quotas
+                   SET reserved_tokens = reserved_tokens + ?, updated_at = ?
+                   WHERE quota_scope = ? AND quota_subject_id = ? AND usage_date = ?
+                     AND used_tokens + reserved_tokens + ? <= ?""",
+                (
+                    needed,
+                    now_iso,
+                    quota["scope"],
+                    quota["subject_id"],
+                    usage_date,
+                    needed,
+                    limit,
+                ),
+            )
+            if int(updated.rowcount or 0) != 1:
+                raise UsageLimitError(
+                    f"Your Vigzone {quota['display_name']} daily token quota is reached."
+                    + _quota_reset_message(seconds_until_reset)
+                )
+            conn.execute(
+                """INSERT INTO token_quota_reservations
+                   (reservation_id, quota_scope, quota_subject_id, usage_date,
+                    reserved_tokens, actual_tokens, status, created_at, expires_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, 0, 'pending', ?, ?, ?)""",
+                (
+                    reservation_id,
+                    quota["scope"],
+                    quota["subject_id"],
+                    usage_date,
+                    needed,
+                    now_ts,
+                    now_ts + TOKEN_RESERVATION_TTL_SECONDS,
+                    now_iso,
+                ),
+            )
+    except UsageLimitError:
+        raise
+    except Exception as exc:
+        logger.warning("token quota reservation failed: %s", exc)
         raise UsageLimitError(
-            f"Daily Vigzone limit reached for your Groq plan.{reset_msg}",
-            usage=usage,
+            "Vigzone usage tracking is temporarily unavailable. Please try again shortly."
+        ) from exc
+
+    return {
+        "active": True,
+        "finalized": False,
+        "user_id": int(trusted_user["id"]),
+        "reservation_id": reservation_id,
+        "reserved_tokens": needed,
+        "estimated_request_tokens": max(1, int(estimated_request_tokens or 0)),
+        "quota_scope": quota["scope"],
+        "quota_subject_id": quota["subject_id"],
+        "quota_plan": quota["plan"],
+        "daily_limit": limit,
+        "usage_date": usage_date,
+    }
+
+
+def release_token_reservation(reservation: Optional[dict]) -> None:
+    """Release an unfinished provider-call reservation without reducing usage."""
+
+    if not isinstance(reservation, dict) or not reservation.get("active") or reservation.get("finalized"):
+        return
+    reservation_id = reservation.get("reservation_id")
+    if not reservation_id:
+        return
+    if reservation.get("provider_accepted") and reservation.get("user_id"):
+        usage_id = track_token_usage(
+            int(reservation["user_id"]),
+            max(1, int(reservation.get("reserved_tokens") or 1)),
+            0,
+            provider="groq_interrupted",
+            estimated=True,
+            route_reason="interrupted_response",
+            quota_reservation=reservation,
         )
-    return usage
+        if usage_id is not None and reservation.get("finalized"):
+            return
+    try:
+        import auth as authmod
+
+        with database.connect(authmod.DB_PATH) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """SELECT quota_scope, quota_subject_id, usage_date, reserved_tokens
+                   FROM token_quota_reservations
+                   WHERE reservation_id = ? AND status = 'pending'""",
+                (reservation_id,),
+            ).fetchone()
+            if row:
+                reserved = max(0, int(row["reserved_tokens"]))
+                conn.execute(
+                    """UPDATE daily_token_quotas
+                       SET reserved_tokens = CASE
+                           WHEN reserved_tokens >= ? THEN reserved_tokens - ? ELSE 0 END,
+                           updated_at = ?
+                       WHERE quota_scope = ? AND quota_subject_id = ? AND usage_date = ?""",
+                    (
+                        reserved,
+                        reserved,
+                        _utc_iso_now(),
+                        row["quota_scope"],
+                        row["quota_subject_id"],
+                        row["usage_date"],
+                    ),
+                )
+                conn.execute(
+                    """UPDATE token_quota_reservations
+                       SET status = 'released', updated_at = ?
+                       WHERE reservation_id = ? AND status = 'pending'""",
+                    (_utc_iso_now(), reservation_id),
+                )
+        reservation["finalized"] = True
+        reservation["released"] = True
+    except Exception as exc:
+        logger.warning("token quota release failed: %s", exc)
 
 
 def get_user_token_stats(user_id: int) -> dict:
     """Return lifetime token stats for a user (production mode)."""
     try:
-        import sqlite3
         import auth as authmod
 
-        db_path = authmod.DB_PATH
-        with sqlite3.connect(db_path) as conn:
+        with database.connect(authmod.DB_PATH) as conn:
             row = conn.execute(
                 """
                 SELECT COALESCE(SUM(prompt_tokens),0),
@@ -1901,6 +2183,7 @@ async def stream_chat(
     conversation_id: str = "",
     metadata_callback: Optional[Callable[[dict], None]] = None,
     allowed_models: Optional[set[str]] = None,
+    quota_reservation: Optional[dict] = None,
 ) -> AsyncGenerator[str, None]:
     """Stream a chat completion token-by-token with Groq model fallback."""
     using_override = provider_override is not None
@@ -2021,6 +2304,9 @@ async def stream_chat(
                             break
                         raise err
 
+                    if quota_reservation is not None:
+                        quota_reservation["provider_accepted"] = True
+
                     full_text = ""
                     yielded_len = 0
                     tokens_since_check = 0
@@ -2093,9 +2379,10 @@ async def stream_chat(
                             emitted_content = True
                             yield piece
 
-                    if stream_id and stream_manager.is_cancelled(stream_id):
-                        return
-                    if not full_text.strip():
+                    was_cancelled = bool(
+                        stream_id and stream_manager.is_cancelled(stream_id)
+                    )
+                    if not full_text.strip() and not was_cancelled:
                         last_error = VigzoneAIError(
                             "Groq returned an empty completion."
                         )
@@ -2140,6 +2427,7 @@ async def stream_chat(
                             cached_tokens=cached_tokens,
                             component_tokens=component_tokens,
                             conversation_id=conversation_id,
+                            quota_reservation=quota_reservation,
                         )
                     build_meta = payload.get("_vigzone_meta") or {}
                     _notify_metadata(
@@ -2213,6 +2501,7 @@ async def chat_once(
     conversation_id: str = "",
     metadata_callback: Optional[Callable[[dict], None]] = None,
     allowed_models: Optional[set[str]] = None,
+    quota_reservation: Optional[dict] = None,
 ) -> str:
     """Non-streaming convenience wrapper with routing and Groq fallback."""
     using_override = provider_override is not None
@@ -2342,6 +2631,9 @@ async def chat_once(
                     break
                 raise err
 
+            if quota_reservation is not None:
+                quota_reservation["provider_accepted"] = True
+
             try:
                 data = resp.json()
             except ValueError:
@@ -2401,6 +2693,7 @@ async def chat_once(
                     cached_tokens=cached_tokens,
                     component_tokens=component_tokens,
                     conversation_id=conversation_id,
+                    quota_reservation=quota_reservation,
                 )
             build_meta = payload.get("_vigzone_meta") or {}
             _notify_metadata(

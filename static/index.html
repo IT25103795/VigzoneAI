@@ -13,7 +13,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Sinhala:wght@400;500;600&display=swap" rel="stylesheet">
   <script>
     const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r16';
-    const UI_ASSET_REVISION = 'team-live-r1';
+    const UI_ASSET_REVISION = 'quota-live-r1';
     (function () {
       var key = 'vigzone_doodle_theme';
       var tones = {
@@ -38,7 +38,7 @@
       document.documentElement.setAttribute('data-theme', tones[saved] || 'dark');
     })();
   </script>
-  <link rel="stylesheet" href="/static/css/styles.css?v=team-live-r1">
+  <link rel="stylesheet" href="/static/css/styles.css?v=quota-live-r1">
 </head>
 <body>
 <div class="offline-status-banner" id="offlineStatusBanner" role="status" aria-live="polite">
@@ -245,7 +245,7 @@
         </button>
       </div>
       <div class="sidebar-footer-row">
-        <span class="history-label" style="padding:0;margin:0;">My usage</span>
+        <span class="history-label sidebar-usage-label" style="padding:0;margin:0;">My usage <small id="sidebarUsageRate">—</small></span>
         <button class="sidebar-teach-btn" id="usageTodayBtn" aria-label="View my usage" title="See your AI usage today">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"></line><line x1="18" y1="20" x2="18" y2="4"></line><line x1="6" y1="20" x2="6" y2="16"></line></svg>
         </button>
@@ -900,7 +900,7 @@
             <div class="pricing-price">$0<span>/mo</span></div>
             <div class="pricing-desc">Perfect for trying out Vigzone AI</div>
             <ul class="pricing-features">
-              <li>✅ 50 messages / day</li>
+              <li>✅ 50 messages · 50K AI tokens / day</li>
               <li>✅ GPT-OSS 20B production model</li>
               <li>✅ Web search</li>
               <li>✅ File Studio for documents</li>
@@ -917,7 +917,7 @@
             <div class="pricing-price">$9.99<span>/mo</span></div>
             <div class="pricing-desc">For power users and professionals</div>
             <ul class="pricing-features">
-              <li>✅ Unlimited messages</li>
+              <li>✅ 250K AI tokens / day</li>
               <li>✅ All models (GPT-OSS 120B/20B, Qwen Vision)</li>
               <li>✅ Web search + image search</li>
               <li>✅ File Studio + Website Studio</li>
@@ -934,6 +934,7 @@
             <div class="pricing-desc">For small teams and businesses</div>
             <ul class="pricing-features">
               <li>✅ Everything in Pro</li>
+              <li>✅ 1M shared AI tokens / day</li>
               <li>✅ Up to 5 team seats</li>
               <li>✅ Shared workspace</li>
               <li>✅ Usage analytics</li>
@@ -952,6 +953,6 @@
     </div>
   </div>
 
-  <script src="/static/js/app.js?v=team-live-r1"></script>
+  <script src="/static/js/app.js?v=quota-live-r1"></script>
 </body>
 </html>

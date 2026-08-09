@@ -238,6 +238,29 @@ def test_safe_production_configuration_is_accepted(monkeypatch):
     security.validate_production_settings()
 
 
+def test_production_preflight_rejects_inverted_token_quotas(monkeypatch):
+    import security
+
+    monkeypatch.setenv("APP_MODE", "production")
+    monkeypatch.setenv("ENCRYPTION_SECRET", "a-unique-production-secret-with-more-than-32-characters")
+    monkeypatch.setenv("COOKIE_SECURE", "true")
+    monkeypatch.setenv("VIRUS_SCAN_STRICT", "false")
+    monkeypatch.setenv("CORS_ORIGINS", "https://vigzone.example")
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://vigzone.example")
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_configured_for_test")
+    monkeypatch.setenv("WORKERS", "1")
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql://vigzone:database-test-password@db.example.com/vigzone?sslmode=require",
+    )
+    monkeypatch.setenv("FREE_DAILY_TOKEN_LIMIT", "50000")
+    monkeypatch.setenv("PRO_DAILY_TOKEN_LIMIT", "40000")
+    monkeypatch.setenv("TEAM_DAILY_TOKEN_LIMIT", "1000000")
+
+    with pytest.raises(RuntimeError, match="Daily token quotas must satisfy"):
+        security.validate_production_settings()
+
+
 def test_production_preflight_rejects_mixed_paddle_environments(monkeypatch):
     import security
 

@@ -82,9 +82,9 @@ def test_chat_ui_asset_revision_is_consistent():
     index = _read("static/index.html")
     service_worker = _read("static/service-worker.js")
 
-    assert index.count("team-live-r1") == 3
-    assert "const UI_ASSET_REVISION = 'team-live-r1';" in service_worker
-    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r18';" in service_worker
+    assert index.count("quota-live-r1") == 3
+    assert "const UI_ASSET_REVISION = 'quota-live-r1';" in service_worker
+    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r19';" in service_worker
     assert "/static/icons/vigzone-doodles.svg?v=doodle-r1" in service_worker
 
 
@@ -107,6 +107,23 @@ def test_live_ready_models_team_tools_and_paddle_mode_are_truthful():
     assert "Document File Studio remains available on FREE" in js
     assert "if (paddleToken.startsWith('test_')) window.Paddle.Environment.set('sandbox');" in js
     assert "Environment.set('production')" not in js
+
+
+def test_both_usage_indicators_share_the_authoritative_quota_response():
+    index = _read("static/index.html")
+    js = _read("static/js/app.js")
+
+    assert 'id="usageCycleCenter"' in index
+    assert 'id="sidebarUsageRate"' in index
+    assert js.count("fetch('/api/me/usage'") >= 2
+    assert "function usageStatsFromData(data)" in js
+    assert "sidebarUsageRate.textContent = st.unlimited ? 'Unlimited'" in js
+    assert "data.quota_shared" in js
+    assert "data.display_plan" in js
+    assert "50 messages · 50K AI tokens / day" in index
+    assert "250K AI tokens / day" in index
+    assert "1M shared AI tokens / day" in index
+    assert "Unlimited messages" not in index
 
 
 def test_curated_doodle_themes_replace_custom_wallpapers_and_binary_toggle():
