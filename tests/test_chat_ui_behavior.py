@@ -82,9 +82,9 @@ def test_chat_ui_asset_revision_is_consistent():
     index = _read("static/index.html")
     service_worker = _read("static/service-worker.js")
 
-    assert index.count("vigi-classic-mobile-r1") == 5
-    assert "const UI_ASSET_REVISION = 'vigi-classic-mobile-r1';" in service_worker
-    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r25';" in service_worker
+    assert index.count("theme-switch-perf-r1") == 4
+    assert "const UI_ASSET_REVISION = 'theme-switch-perf-r1';" in service_worker
+    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r26';" in service_worker
     assert "/static/icons/vigzone-doodles.svg?v=doodle-r1" in service_worker
 
 
@@ -132,7 +132,7 @@ def test_classic_vigi_is_role_aware_metered_and_desktop_only():
     assert 'aria-label="Show Vigi desktop companion"' in index
     assert "/static/assets/vigi/classic-vigi-v1.png?v=classic-r1" in index
     assert Path("static/assets/vigi/classic-vigi-v1.png").stat().st_size > 100_000
-    assert "/static/js/vigi.js?v=vigi-classic-mobile-r1" in index
+    assert "/static/js/vigi.js?v=theme-switch-perf-r1" in index
     assert "vigzone:account" in app_js
     assert "vigzone:usage" in app_js
     assert "vigzone:activity" in app_js
@@ -212,6 +212,26 @@ def test_curated_doodle_themes_replace_custom_wallpapers_and_binary_toggle():
     assert "toggleTheme" not in js
     assert "themeToggleBtnSidebar" not in index
     assert "body.has-chat-wallpaper" not in css
+
+
+def test_mobile_theme_switch_avoids_full_page_animated_repaints():
+    js = _read("static/js/app.js")
+    css = _read("static/css/styles.css")
+
+    theme_css = css.split("Theme switching must never animate the whole DOM", 1)[1].split(
+        "*{box-sizing:border-box;}", 1
+    )[0]
+    assert "html.theme-transition *" not in theme_css
+    assert "*::before" not in theme_css
+    assert "*::after" not in theme_css
+    assert "box-shadow" not in theme_css
+    assert "(max-width: 760px), (hover: none) and (pointer: coarse)" in js
+    assert "root.classList.toggle('theme-transition', !skipAnimation);" in js
+    assert "if (getChatTheme() === next) return;" in js
+    assert "requestIdleCallback" in js
+    assert "function syncChatThemeOption" in js
+    assert "contain:paint;" in css
+    assert ".chat-theme-layer" in css and "transition:none;" in css
 
 
 def _contrast_ratio(foreground: str, background: str) -> float:

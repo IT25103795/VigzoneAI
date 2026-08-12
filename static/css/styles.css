@@ -384,11 +384,18 @@
       --doodle-opacity:.078;
     }
 
-    html.theme-transition,
-    html.theme-transition *,
-    html.theme-transition *::before,
-    html.theme-transition *::after{
-      transition:background-color .22s ease, color .22s ease, border-color .22s ease, box-shadow .22s ease !important;
+    /* Theme switching must never animate the whole DOM. The previous universal
+       selector repainted every message, blur and doodle pseudo-element on each
+       frame. Keep a short desktop transition on a few visible surfaces only;
+       phones switch immediately in JavaScript. */
+    html.theme-transition body,
+    html.theme-transition .sidebar,
+    html.theme-transition .composer,
+    html.theme-transition .msg.user .bubble,
+    html.theme-transition .empty-shell,
+    html.theme-transition .usage-modal,
+    html.theme-transition .chat-theme-option{
+      transition:background-color .16s ease, color .16s ease, border-color .16s ease !important;
     }
     *{box-sizing:border-box;}
     html,body{height:100%;}
@@ -2940,9 +2947,10 @@ body.project-chat-active #input{padding-left:2px;}
       z-index:0 !important;
       pointer-events:none;
       isolation:isolate;
+      contain:paint;
       overflow:hidden;
       background:var(--chat-theme-overlay), var(--chat-theme-glow), var(--chat-theme-base);
-      transition:background-color .22s ease, opacity .22s ease;
+      transition:none;
     }
     .chat-theme-layer::after{
       content:'';

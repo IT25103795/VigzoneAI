@@ -267,6 +267,13 @@
     ember: { tone:'dark', browserColor:'#21100e' },
     paper: { tone:'light', browserColor:'#f5eedf' }
   });
+  const chatThemeOptions = new Map(
+    Array.from(chatThemeGrid?.querySelectorAll('[data-chat-theme-option]') || [])
+      .map((option) => [option.dataset.chatThemeOption, option])
+  );
+  let selectedChatThemeOption = null;
+  let themeTransitionTimer = null;
+  let themePreferenceVersion = 0;
   const LEGACY_APPEARANCE_KEYS = Object.freeze([
     'vigzone_chat_wallpaper_data_url',
     'vigzone_chat_wallpaper_blur',
@@ -291,28 +298,68 @@
     return 'charcoal';
   }
 
+  function scheduleThemePreference(next, browserColor){
+    const version = ++themePreferenceVersion;
+    const commit = () => {
+      if (version !== themePreferenceVersion) return;
+      try { localStorage.setItem(CHAT_THEME_KEY, next); } catch {}
+      const meta = document.getElementById('themeColorMeta');
+      if (meta) meta.setAttribute('content', browserColor);
+    };
+    if ('requestIdleCallback' in window) {
+      window.requestIdleCallback(commit, { timeout:250 });
+    } else {
+      window.setTimeout(commit, 0);
+    }
+  }
+
+  function syncChatThemeOption(next){
+    const target = chatThemeOptions.get(next) || null;
+    if (selectedChatThemeOption && selectedChatThemeOption !== target) {
+      selectedChatThemeOption.classList.remove('selected');
+      selectedChatThemeOption.setAttribute('aria-checked', 'false');
+      selectedChatThemeOption.tabIndex = -1;
+    }
+    if (target) {
+      target.classList.add('selected');
+      target.setAttribute('aria-checked', 'true');
+      target.tabIndex = 0;
+    }
+    selectedChatThemeOption = target;
+  }
+
   function applyChatTheme(themeId, persist){
     const next = CHAT_THEMES[themeId] ? themeId : 'charcoal';
     const theme = CHAT_THEMES[next];
-    document.documentElement.setAttribute('data-chat-theme', next);
-    document.documentElement.setAttribute('data-theme', theme.tone);
-    if (persist) {
-      try { localStorage.setItem(CHAT_THEME_KEY, next); } catch {}
+    const root = document.documentElement;
+    if (root.getAttribute('data-chat-theme') !== next) {
+      root.setAttribute('data-chat-theme', next);
     }
-    document.querySelectorAll('[data-chat-theme-option]').forEach((option) => {
-      const selected = option.dataset.chatThemeOption === next;
-      option.classList.toggle('selected', selected);
-      option.setAttribute('aria-checked', selected ? 'true' : 'false');
-      option.tabIndex = selected ? 0 : -1;
-    });
-    const meta = document.getElementById('themeColorMeta');
-    if (meta) meta.setAttribute('content', theme.browserColor);
+    if (root.getAttribute('data-theme') !== theme.tone) root.setAttribute('data-theme', theme.tone);
+    syncChatThemeOption(next);
+    if (persist) scheduleThemePreference(next, theme.browserColor);
+    else {
+      const meta = document.getElementById('themeColorMeta');
+      if (meta) meta.setAttribute('content', theme.browserColor);
+    }
   }
 
   function selectChatTheme(themeId){
-    document.documentElement.classList.add('theme-transition');
-    applyChatTheme(themeId, true);
-    window.setTimeout(() => document.documentElement.classList.remove('theme-transition'), 260);
+    const next = CHAT_THEMES[themeId] ? themeId : 'charcoal';
+    if (getChatTheme() === next) return;
+
+    const root = document.documentElement;
+    const skipAnimation = window.matchMedia(
+      '(max-width: 760px), (hover: none) and (pointer: coarse), (prefers-reduced-motion: reduce)'
+    ).matches;
+    if (themeTransitionTimer) window.clearTimeout(themeTransitionTimer);
+    root.classList.toggle('theme-transition', !skipAnimation);
+    applyChatTheme(next, true);
+    if (skipAnimation) return;
+    themeTransitionTimer = window.setTimeout(() => {
+      root.classList.remove('theme-transition');
+      themeTransitionTimer = null;
+    }, 180);
   }
 
   function clearLegacyAppearanceSettings(){
@@ -7765,4 +7812,3 @@ Requirements:
   // Wait for both living config and account identity, preventing a race where
   // checkout opened without a price ID or durable Vigzone user identifier.
   Promise.allSettled([liveConfigReady, accountReady]).then(initPaddleCheckout);
-
