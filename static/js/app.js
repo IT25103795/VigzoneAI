@@ -2795,6 +2795,7 @@
     latestUsageData = data || latestUsageData;
     if (!usageCycleBtn || !usageCycleFill || !usageCycleCenter) return;
     const current = data || latestUsageData;
+    document.dispatchEvent(new CustomEvent('vigzone:usage', {detail:{usage:current}}));
     usageCycleBtn.classList.remove('warn', 'danger', 'limit-hit');
 
     if (!current || current.mode === 'testing') {
@@ -3590,6 +3591,13 @@
     window._vigzoneUserIsAdmin = isAdmin;
     window._vigzoneUserId = user.id || null;
     window._vigzoneUserEmail = user.email || '';
+    document.dispatchEvent(new CustomEvent('vigzone:account', {detail:{
+      userId:user.id || null,
+      effectivePlan,
+      displayPlan,
+      isAdmin,
+      entitlements
+    }}));
 
     const planLabel = document.getElementById('sidebarPlanLabel');
     const planBadge = document.getElementById('sidebarPlanBadge');
@@ -5608,6 +5616,7 @@ A strong website should include: hero section, clear navigation, services/featur
     const stillUploading = pendingFiles.some(f => f.status === 'uploading');
     sendBtn.disabled = streaming || stillUploading;
     pauseBtn.classList.toggle('active', streaming);
+    document.dispatchEvent(new CustomEvent('vigzone:activity', {detail:{state:streaming ? 'thinking' : 'ready'}}));
     updatePauseButtonState();
   }
 

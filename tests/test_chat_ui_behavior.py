@@ -82,9 +82,9 @@ def test_chat_ui_asset_revision_is_consistent():
     index = _read("static/index.html")
     service_worker = _read("static/service-worker.js")
 
-    assert index.count("mobile-topfade-r1") == 4
-    assert "const UI_ASSET_REVISION = 'mobile-topfade-r1';" in service_worker
-    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r24';" in service_worker
+    assert index.count("vigi-classic-mobile-r1") == 5
+    assert "const UI_ASSET_REVISION = 'vigi-classic-mobile-r1';" in service_worker
+    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r25';" in service_worker
     assert "/static/icons/vigzone-doodles.svg?v=doodle-r1" in service_worker
 
 
@@ -118,6 +118,34 @@ def test_mobile_navigation_uses_a_safe_area_blur_that_fades_into_chat():
     assert "transparent 100%" in navigation
     assert "padding-top:calc(72px + env(safe-area-inset-top, 0px))" in navigation
     assert "top:calc(70px + env(safe-area-inset-top, 0px))" in css
+
+
+def test_classic_vigi_is_role_aware_metered_and_desktop_only():
+    index = _read("static/index.html")
+    js = _read("static/js/vigi.js")
+    app_js = _read("static/js/app.js")
+    css = _read("static/css/styles.css")
+    service_worker = _read("static/service-worker.js")
+
+    assert 'id="vigiCompanion"' in index
+    assert 'id="vigiSettingsToggle"' in index
+    assert 'aria-label="Show Vigi desktop companion"' in index
+    assert "/static/assets/vigi/classic-vigi-v1.png?v=classic-r1" in index
+    assert Path("static/assets/vigi/classic-vigi-v1.png").stat().st_size > 100_000
+    assert "/static/js/vigi.js?v=vigi-classic-mobile-r1" in index
+    assert "vigzone:account" in app_js
+    assert "vigzone:usage" in app_js
+    assert "vigzone:activity" in app_js
+    assert "const PLAN_PRESENTATION" in js
+    assert all(f"{plan}:" in js for plan in ("free", "pro", "team", "admin"))
+    assert "daily_limit" in js and "remaining_today" in js
+    assert "vigiSettingsToggle" in js
+    assert "matchMedia(DESKTOP_QUERY)" in js
+    assert 'data-vigi-action="projects"' in index
+    assert "workspaceSidebarBtn" in js
+    assert "@media (min-width:900px) and (hover:hover) and (pointer:fine)" in css
+    assert "/static/js/vigi.js" in service_worker
+    assert "/static/assets/vigi/classic-vigi-v1.png?v=classic-r1" in service_worker
 
 
 def test_live_ready_models_team_tools_and_paddle_mode_are_truthful():
