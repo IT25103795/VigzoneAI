@@ -5840,7 +5840,7 @@ body.project-chat-active #input{padding-left:2px;}
 .vigi-pet-button:focus-visible{outline:3px solid color-mix(in srgb,var(--vigi-role) 75%,#fff);outline-offset:5px;border-radius:42%;}
 .vigi-pet-button img{
   position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:center;
-  pointer-events:none;transform-origin:50% 86%;animation:vigiIdle 4.2s ease-in-out infinite;
+  z-index:1;pointer-events:none;transform-origin:50% 86%;animation:vigiIdle 4.2s ease-in-out infinite;
 }
 .vigi-halo{
   position:absolute;left:22px;right:16px;bottom:3px;height:37px;border-radius:50%;
@@ -5848,15 +5848,78 @@ body.project-chat-active #input{padding-left:2px;}
   animation:vigiHalo 3.1s ease-in-out infinite;pointer-events:none;
 }
 .vigi-live-dot{
-  position:absolute;right:12px;bottom:18px;width:13px;height:13px;border-radius:50%;
+  position:absolute;z-index:6;right:12px;bottom:18px;width:13px;height:13px;border-radius:50%;
   background:#55e6a5;border:3px solid var(--surface);box-shadow:0 0 13px #55e6a5;
 }
+.vigi-work-badge{
+  position:absolute;z-index:7;left:50%;top:1px;display:flex;align-items:center;gap:5px;
+  min-width:max-content;padding:5px 8px;border:1px solid color-mix(in srgb,var(--vigi-role) 60%,#fff 10%);
+  border-radius:999px;background:color-mix(in srgb,var(--surface-elevated) 91%,transparent);
+  color:var(--text);font:800 8.5px/1 'JetBrains Mono',monospace;letter-spacing:.045em;text-transform:uppercase;
+  box-shadow:0 7px 22px rgba(0,0,0,.32),0 0 13px color-mix(in srgb,var(--vigi-role) 30%,transparent);
+  backdrop-filter:blur(12px);opacity:0;transform:translate(-50%,5px) scale(.86);transition:opacity .16s ease,transform .2s ease;
+  pointer-events:none;
+}
+.vigi-work-symbol{color:var(--vigi-role);font-size:9px;text-shadow:0 0 8px var(--vigi-role);}
+.vigi-coding-rig{
+  position:absolute;z-index:4;inset:0;opacity:0;transform:translateY(9px) scale(.88);
+  transition:opacity .18s ease,transform .22s ease;pointer-events:none;
+}
+.vigi-code-screen{
+  position:absolute;left:27px;bottom:27px;width:80px;height:48px;padding:9px 9px 6px;
+  border:2px solid color-mix(in srgb,var(--vigi-role) 78%,#fff 12%);border-radius:7px 7px 4px 4px;
+  background:linear-gradient(145deg,rgba(15,17,29,.97),rgba(25,15,36,.96));
+  box-shadow:inset 0 0 20px rgba(0,0,0,.62),0 0 16px color-mix(in srgb,var(--vigi-role) 45%,transparent);
+  overflow:hidden;transform-origin:50% 100%;
+}
+.vigi-code-screen i{
+  position:relative;z-index:2;display:block;height:3px;margin-bottom:4px;border-radius:5px;
+  background:linear-gradient(90deg,var(--vigi-role),#6ee7ff);transform-origin:left center;
+  animation:vigiCodeLine 1.15s steps(4,end) infinite;
+}
+.vigi-code-screen i:nth-child(1){width:72%;}.vigi-code-screen i:nth-child(2){width:46%;animation-delay:-.36s;}
+.vigi-code-screen i:nth-child(3){width:83%;animation-delay:-.72s;}.vigi-code-screen i:nth-child(4){width:58%;animation-delay:-.18s;}
+.vigi-code-screen b{
+  position:absolute;z-index:1;left:0;right:0;top:-10px;height:12px;
+  background:linear-gradient(180deg,transparent,color-mix(in srgb,var(--vigi-role) 24%,transparent),transparent);
+  animation:vigiCodeScan 1.45s linear infinite;
+}
+.vigi-code-keyboard{
+  position:absolute;left:20px;bottom:18px;width:94px;height:16px;border:1px solid color-mix(in srgb,var(--vigi-role) 58%,#fff 8%);
+  border-radius:3px 3px 9px 9px;background:linear-gradient(180deg,#302742,#15121f);box-shadow:0 6px 13px rgba(0,0,0,.48);
+  transform:perspective(45px) rotateX(47deg);transform-origin:50% 0;overflow:hidden;
+}
+.vigi-code-keyboard i{display:block;width:80%;height:6px;margin:3px auto;background:repeating-linear-gradient(90deg,var(--vigi-role) 0 3px,transparent 3px 6px);opacity:.72;animation:vigiKeys .38s steps(2,end) infinite;}
+.vigi-code-float{
+  position:absolute;color:color-mix(in srgb,var(--vigi-role) 84%,#fff);font:800 10px/1 'JetBrains Mono',monospace;
+  text-shadow:0 0 10px var(--vigi-role);opacity:0;
+}
+.vigi-code-float-one{left:7px;bottom:72px;animation:vigiCodeFloat 1.7s ease-in-out infinite;}
+.vigi-code-float-two{right:5px;bottom:76px;animation:vigiCodeFloat 1.7s -.8s ease-in-out infinite;}
+.vigi-result-burst{
+  position:absolute;z-index:8;right:8px;top:35px;width:32px;height:32px;border-radius:50%;
+  display:grid;place-items:center;background:#56e6a6;color:#07170f;border:3px solid color-mix(in srgb,#56e6a6 40%,#fff);
+  box-shadow:0 0 22px #56e6a6;opacity:0;transform:scale(.35) rotate(-18deg);pointer-events:none;
+}
+.vigi-result-burst i::before{content:'✓';font:950 18px/1 'Inter',sans-serif;font-style:normal;}
 .vigi-pet-button .sr-only{
   position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;
   overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important;
 }
 .vigi-companion[data-state="thinking"] .vigi-pet-button img{animation:vigiThinking 1.05s ease-in-out infinite;}
 .vigi-companion[data-state="thinking"] .vigi-live-dot{background:var(--vigi-role);box-shadow:0 0 15px var(--vigi-role);animation:vigiDotPulse .8s ease-in-out infinite;}
+.vigi-companion[data-state="coding"] .vigi-pet-button img{animation:vigiCodingFocus .62s ease-in-out infinite alternate;}
+.vigi-companion[data-state="coding"] .vigi-coding-rig{opacity:1;transform:none;}
+.vigi-companion[data-state="coding"] .vigi-work-badge,
+.vigi-companion[data-state="complete"] .vigi-work-badge,
+.vigi-companion[data-state="error"] .vigi-work-badge{opacity:1;transform:translate(-50%,0) scale(1);}
+.vigi-companion[data-state="coding"] .vigi-live-dot{background:#6ee7ff;box-shadow:0 0 16px #6ee7ff;animation:vigiDotPulse .52s ease-in-out infinite;}
+.vigi-companion[data-state="complete"] .vigi-pet-button img{animation:vigiCelebrate .86s ease both;}
+.vigi-companion[data-state="complete"] .vigi-result-burst{animation:vigiResultIn .42s cubic-bezier(.2,1.65,.4,1) both;}
+.vigi-companion[data-state="error"] .vigi-pet-button img{animation:vigiError .48s ease both;filter:saturate(.62);}
+.vigi-companion[data-state="error"] .vigi-result-burst{background:#ff6676;border-color:#ffc2c9;box-shadow:0 0 20px #ff6676;animation:vigiResultIn .42s cubic-bezier(.2,1.65,.4,1) both;}
+.vigi-companion[data-state="error"] .vigi-result-burst i::before{content:'!';color:#fff;}
+.vigi-companion[data-state="error"] .vigi-live-dot{background:#ff6676;box-shadow:0 0 13px #ff6676;}
 .vigi-companion[data-state="offline"] .vigi-pet-button img{filter:grayscale(.68) brightness(.72);animation:none;}
 .vigi-companion[data-state="offline"] .vigi-live-dot{background:#7f8796;box-shadow:none;}
 .vigi-companion[data-state="warning"] .vigi-live-dot,.vigi-companion[data-state="limited"] .vigi-live-dot{background:#ff6676;box-shadow:0 0 13px #ff6676;}
@@ -5902,6 +5965,14 @@ body.project-chat-active #input{padding-left:2px;}
 @keyframes vigiIdle{0%,100%{transform:translateY(0) rotate(0)}48%{transform:translateY(-5px) rotate(.8deg)}55%{transform:translateY(-5px) rotate(.8deg)}}
 @keyframes vigiHalo{0%,100%{transform:scale(.9);opacity:.52}50%{transform:scale(1.08);opacity:.84}}
 @keyframes vigiThinking{0%,100%{transform:translateY(0) rotate(-1deg) scale(1)}50%{transform:translateY(-7px) rotate(1.4deg) scale(1.025)}}
+@keyframes vigiCodingFocus{from{transform:translateY(-3px) rotate(-.7deg) scale(.99)}to{transform:translateY(-5px) rotate(.7deg) scale(1.005)}}
+@keyframes vigiCodeLine{0%,100%{transform:scaleX(.28);opacity:.52}55%{transform:scaleX(1);opacity:1}}
+@keyframes vigiCodeScan{from{transform:translateY(0)}to{transform:translateY(58px)}}
+@keyframes vigiKeys{0%,100%{opacity:.4;transform:translateX(-1px)}50%{opacity:1;transform:translateX(1px)}}
+@keyframes vigiCodeFloat{0%{opacity:0;transform:translateY(8px) scale(.8)}32%,72%{opacity:.92}100%{opacity:0;transform:translateY(-16px) scale(1.06)}}
+@keyframes vigiCelebrate{0%{transform:translateY(0) rotate(0)}42%{transform:translateY(-12px) rotate(-4deg) scale(1.035)}72%{transform:translateY(-4px) rotate(3deg)}100%{transform:none}}
+@keyframes vigiError{0%,100%{transform:translateX(0)}25%{transform:translateX(-4px) rotate(-1.5deg)}75%{transform:translateX(4px) rotate(1.5deg)}}
+@keyframes vigiResultIn{from{opacity:0;transform:scale(.35) rotate(-18deg)}to{opacity:1;transform:scale(1) rotate(0)}}
 @keyframes vigiDotPulse{0%,100%{transform:scale(.82);opacity:.7}50%{transform:scale(1.2);opacity:1}}
 @keyframes vigiPopoverIn{from{opacity:0;transform:translateY(6px) scale(.98)}to{opacity:1;transform:none}}
 
@@ -5909,5 +5980,6 @@ body.project-chat-active #input{padding-left:2px;}
   .vigi-companion.is-ready.is-enabled{display:block;}
 }
 @media (prefers-reduced-motion:reduce){
-  .vigi-pet-button img,.vigi-halo,.vigi-live-dot,.vigi-popover{animation:none!important;}
+  .vigi-pet-button img,.vigi-halo,.vigi-live-dot,.vigi-popover,.vigi-code-screen i,
+  .vigi-code-screen b,.vigi-code-keyboard i,.vigi-code-float,.vigi-result-burst{animation:none!important;}
 }

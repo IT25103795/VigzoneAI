@@ -82,9 +82,9 @@ def test_chat_ui_asset_revision_is_consistent():
     index = _read("static/index.html")
     service_worker = _read("static/service-worker.js")
 
-    assert index.count("theme-switch-perf-r1") == 4
-    assert "const UI_ASSET_REVISION = 'theme-switch-perf-r1';" in service_worker
-    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r26';" in service_worker
+    assert index.count("vigi-coding-r1") == 5
+    assert "const UI_ASSET_REVISION = 'vigi-coding-r1';" in service_worker
+    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r27';" in service_worker
     assert "/static/icons/vigzone-doodles.svg?v=doodle-r1" in service_worker
 
 
@@ -132,7 +132,7 @@ def test_classic_vigi_is_role_aware_metered_and_desktop_only():
     assert 'aria-label="Show Vigi desktop companion"' in index
     assert "/static/assets/vigi/classic-vigi-v1.png?v=classic-r1" in index
     assert Path("static/assets/vigi/classic-vigi-v1.png").stat().st_size > 100_000
-    assert "/static/js/vigi.js?v=theme-switch-perf-r1" in index
+    assert "/static/js/vigi.js?v=vigi-coding-r1" in index
     assert "vigzone:account" in app_js
     assert "vigzone:usage" in app_js
     assert "vigzone:activity" in app_js
@@ -146,6 +146,32 @@ def test_classic_vigi_is_role_aware_metered_and_desktop_only():
     assert "@media (min-width:900px) and (hover:hover) and (pointer:fine)" in css
     assert "/static/js/vigi.js" in service_worker
     assert "/static/assets/vigi/classic-vigi-v1.png?v=classic-r1" in service_worker
+
+
+def test_vigi_coding_mode_tracks_real_code_and_project_operations():
+    index = _read("static/index.html")
+    app_js = _read("static/js/app.js")
+    projects_js = _read("static/js/projects.js")
+    vigi_js = _read("static/js/vigi.js")
+    css = _read("static/css/styles.css")
+
+    assert 'id="vigiWorkBadge"' in index
+    assert 'class="vigi-coding-rig"' in index
+    assert 'class="vigi-code-screen"' in index
+    assert "function isHeavyCodingRequest" in app_js
+    assert "emitVigiActivity('coding', {source:'chat', phase:'generating'})" in app_js
+    assert "emitVigiActivity('coding', {source:'project', phase:'reading', projectId})" in app_js
+    assert "emitProjectActivity('coding', {phase:'reading'" in projects_js
+    assert "phase: action === 'edit' ? 'editing' : 'analyzing'" in projects_js
+    assert "emitProjectActivity('coding', {phase:'writing'" in projects_js
+    assert "emitProjectActivity('complete', {phase:'applied'" in projects_js
+    assert "['thinking', 'coding', 'complete', 'error']" in vigi_js
+    assert "function codingStatusCopy" in vigi_js
+    assert "function completionStatusCopy" in vigi_js
+    assert '[data-state="coding"] .vigi-coding-rig' in css
+    assert "@keyframes vigiCodeLine" in css
+    assert "@keyframes vigiCelebrate" in css
+    assert "prefers-reduced-motion:reduce" in css
 
 
 def test_live_ready_models_team_tools_and_paddle_mode_are_truthful():

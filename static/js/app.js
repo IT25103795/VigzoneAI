@@ -436,6 +436,12 @@
   let streaming = false;
   let currentStreamId = null;
   let isPaused = false;
+
+  function emitVigiActivity(state, detail = {}){
+    document.dispatchEvent(new CustomEvent('vigzone:activity', {
+      detail: {state, ...detail}
+    }));
+  }
   // Set while a streaming reply is in flight so pause/resume can control the
   // paced on-screen reveal without losing text already received from Groq.
   let activeStreamRenderer = null;
@@ -815,6 +821,18 @@
       ? text + ' ' + priorAssistantText
       : text;
     return COMPLEX_WEBSITE_RE.test(probe) || COMPLEX_CODE_RE.test(probe) || COMPLEX_LONGFORM_RE.test(probe);
+  }
+
+  const HEAVY_CODE_ACTION_RE = /\b(build|code|create|debug|develop|edit|finish|fix|implement|migrate|optimi[sz]e|refactor|repair|rewrite|update)\b/i;
+  const CODE_FILE_RE = /\.(?:c|cc|cpp|cs|css|go|h|hpp|html?|java|jsx|kt|php|py|rb|rs|scss|sh|sql|svelte|swift|tsx?|vue|zip)$/i;
+
+  function isHeavyCodingRequest(text, priorAssistantText, files = []){
+    const probe = CONTINUATION_RE.test(text || '') && priorAssistantText
+      ? `${text} ${priorAssistantText}`
+      : String(text || '');
+    const hasCodeAttachment = files.some(file => CODE_FILE_RE.test(String(file?.name || '')));
+    return hasCodeAttachment || COMPLEX_CODE_RE.test(probe) ||
+      (COMPLEX_WEBSITE_RE.test(probe) && HEAVY_CODE_ACTION_RE.test(probe));
   }
 
   // ---------- "Thinking" glitch tag shown beside the avatar ----------
@@ -5246,7 +5264,9 @@ A strong website should include: hero section, clear navigation, services/featur
     const assistantBubble = renderMessage('assistant', '', { typing: true, index: assistantIndex });
     streaming = true;
     updateSendButtonState();
+    emitVigiActivity('coding', {source:'project', phase:'reading', projectId});
     startUsageCycleLiveUpdates();
+    let vigiOutcome = null;
 
     try {
       const history = messages.slice(0, -1).slice(-12).map(message => ({
@@ -5276,14 +5296,25 @@ A strong website should include: hero section, clear navigation, services/featur
         projectResult: result,
       });
       saveConversation();
+      vigiOutcome = {
+        state: 'complete',
+        detail: {
+          source: 'project',
+          phase: result.changes?.length ? 'reviewed' : 'analyzed',
+          projectId,
+          fileCount: Array.isArray(result.changes) ? result.changes.length : 0
+        }
+      };
     } catch (error) {
       assistantBubble.classList.add('error-bubble');
       assistantBubble.innerHTML = `⚠ ${escapeHtml(error.message || 'Project assistance failed.')}`;
       syncAssistantOutputPresentation(assistantBubble, true);
       window.VigzoneProjects?.handleChatError?.(error, projectId);
+      vigiOutcome = {state:'error', detail:{source:'project', phase:'review', projectId}};
     } finally {
       streaming = false;
       updateSendButtonState();
+      if (vigiOutcome) emitVigiActivity(vigiOutcome.state, vigiOutcome.detail);
       stopUsageCycleLiveUpdates();
       refreshUsageCycle?.();
     }
@@ -5400,10 +5431,16 @@ A strong website should include: hero section, clear navigation, services/featur
     const avatarEl = assistantBubble.parentElement.querySelector('.avatar');
     const priorAssistantText = messages.length >= 2 ? (messages[messages.length - 2].displayText || messages[messages.length - 2].content) : '';
     const requestIsComplex = isComplexRequest(combinedText, typeof priorAssistantText === 'string' ? priorAssistantText : '');
+    const requestIsCoding = isHeavyCodingRequest(
+      combinedText,
+      typeof priorAssistantText === 'string' ? priorAssistantText : '',
+      docs
+    );
     avatarEl.classList.add(requestIsComplex ? 'thinking-glitch' : 'pulsing');
     const thinkingTagEl = requestIsComplex ? showThinkingTag(avatarEl) : null;
     streaming = true;
     updateSendButtonState();
+    if (requestIsCoding) emitVigiActivity('coding', {source:'chat', phase:'generating'});
     startUsageCycleLiveUpdates();
 
     const pacedReply = createPacedAssistantRenderer(assistantBubble);
@@ -5411,6 +5448,7 @@ A strong website should include: hero section, clear navigation, services/featur
 
     let fullReply = '';
     let responseMeta = {};
+    let vigiOutcome = null;
 
     try {
       const res = await fetch('/api/chat', {
@@ -5470,6 +5508,12 @@ A strong website should include: hero section, clear navigation, services/featur
       assistantBubble.appendChild(buildMessageActions(() => fullReply, () => responseMeta));
       messages.push({ role: 'assistant', content: fullReply, displayText: fullReply, responseMeta });
       saveConversation();
+      if (requestIsCoding) {
+        vigiOutcome = {
+          state:'complete',
+          detail:{source:'chat', phase:'generated', codeBlocks:Math.floor((fullReply.match(/```/g) || []).length / 2)}
+        };
+      }
 
     } catch (err) {
       pacedReply.cancel();
@@ -5489,6 +5533,7 @@ A strong website should include: hero section, clear navigation, services/featur
         assistantBubble.innerHTML = `⚠ ${escapeHtml(err.message || 'Something went wrong.')}`;
         syncAssistantOutputPresentation(assistantBubble, true);
       }
+      if (requestIsCoding) vigiOutcome = {state:'error', detail:{source:'chat', phase:'generation'}};
     } finally {
       clearAvatarThinkingState(avatarEl, thinkingTagEl);
       streaming = false;
@@ -5496,6 +5541,7 @@ A strong website should include: hero section, clear navigation, services/featur
       isPaused = false;
       activeStreamRenderer = null;
       updateSendButtonState();
+      if (vigiOutcome) emitVigiActivity(vigiOutcome.state, vigiOutcome.detail);
       stopUsageCycleLiveUpdates();
     }
   }
@@ -5663,7 +5709,7 @@ A strong website should include: hero section, clear navigation, services/featur
     const stillUploading = pendingFiles.some(f => f.status === 'uploading');
     sendBtn.disabled = streaming || stillUploading;
     pauseBtn.classList.toggle('active', streaming);
-    document.dispatchEvent(new CustomEvent('vigzone:activity', {detail:{state:streaming ? 'thinking' : 'ready'}}));
+    emitVigiActivity(streaming ? 'thinking' : 'ready');
     updatePauseButtonState();
   }
 

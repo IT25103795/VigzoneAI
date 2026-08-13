@@ -63,6 +63,12 @@
     else window.alert(message);
   }
 
+  function emitProjectActivity(stateName, detail) {
+    document.dispatchEvent(new CustomEvent('vigzone:activity', {
+      detail: Object.assign({state: stateName, source: 'project'}, detail || {})
+    }));
+  }
+
   function selectionStorageKey(projectId) {
     const scope = typeof accountStorageScope !== 'undefined' ? accountStorageScope : 'guest';
     return 'vigzone_project_files:' + encodeURIComponent(scope) + ':' + Number(projectId || 0);
@@ -653,10 +659,16 @@
     if (!state.files.length) {
       throw projectError('Connect or re-authorize the local folder from Files & settings before asking Vigzone to work on it.', 'FOLDER_REQUIRED');
     }
+    emitProjectActivity('coding', {phase:'reading', projectId:projectId});
     const files = await collectAiFiles();
     if (!files.length) throw projectError('Select at least one readable project file in Files & settings.', 'FILES_REQUIRED');
     const instruction = String(options?.instruction || '').slice(0, 12000);
     const action = projectActionForInstruction(instruction);
+    emitProjectActivity('coding', {
+      phase: action === 'edit' ? 'editing' : 'analyzing',
+      projectId: projectId,
+      fileCount: files.length
+    });
     const history = Array.isArray(options?.history) ? options.history.slice(-12).map(function (message) {
       return {
         role: message.role === 'assistant' ? 'assistant' : 'user',
@@ -716,6 +728,7 @@
     const selected = selectedIndexes.map(function (index) { return result.changes[index]; }).filter(Boolean);
     if (!selected.length) return notify('Select at least one proposed file change.');
     if (!window.confirm('Write ' + selected.length + ' reviewed change(s) to your local project folder?')) return;
+    emitProjectActivity('coding', {phase:'writing', projectId:projectId, fileCount:selected.length});
     try {
       for (const change of selected) {
         const path = safeRelativePath(change.path);
@@ -735,8 +748,10 @@
       }
       await rescanFolder();
       notify('Reviewed changes were saved to your local project folder.');
+      emitProjectActivity('complete', {phase:'applied', projectId:projectId, fileCount:selected.length});
     } catch (error) {
       notify(error.message || 'Could not apply the proposed changes.');
+      emitProjectActivity('error', {phase:'writing', projectId:projectId});
     }
   }
 

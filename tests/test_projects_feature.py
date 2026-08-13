@@ -251,5 +251,5 @@ def test_projects_ui_uses_explicit_folder_permission_and_reviewed_writes():
     assert "name === '.env'" in script
     assert "node_modules" in script
     assert "Do not claim to run commands or tests" in Path("app.py").read_text(encoding="utf-8")
-    assert "/static/js/projects.js?v=vigi-classic-mobile-r1" in index
+    assert "/static/js/projects.js?v=vigi-coding-r1" in index
     assert "/static/js/projects.js?v=${UI_ASSET_REVISION}" in service_worker

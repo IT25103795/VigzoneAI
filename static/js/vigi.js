@@ -19,6 +19,8 @@
   const planActionLabel = document.getElementById('vigiPlanActionLabel');
   const settingsToggle = document.getElementById('vigiSettingsToggle');
   const settingsToggleLabel = document.getElementById('vigiSettingsToggleLabel');
+  const workBadge = document.getElementById('vigiWorkBadge');
+  const workLabel = document.getElementById('vigiWorkLabel');
   if (!companion || !petButton || !popover) return;
 
   const DESKTOP_QUERY = '(min-width:900px) and (hover:hover) and (pointer:fine)';
@@ -59,6 +61,8 @@
   let entitlements = {};
   let usage = null;
   let activity = 'ready';
+  let activityDetail = {};
+  let terminalStateTimer = 0;
   let suppressNextClick = false;
 
   function scopedKey(base) {
@@ -196,7 +200,42 @@
     if (!navigator.onLine) return 'offline';
     if (usage?.tracking_error) return 'warning';
     if (usage?.is_limited) return 'limited';
-    return activity === 'thinking' ? 'thinking' : 'ready';
+    return ['thinking', 'coding', 'complete', 'error'].includes(activity) ? activity : 'ready';
+  }
+
+  function codingStatusCopy() {
+    const count = Math.max(0, Number(activityDetail.fileCount || 0));
+    const fileCopy = count ? ` ${count} file${count === 1 ? '' : 's'}` : '';
+    return {
+      reading: `Vigi is reading the selected project files and mapping the code…`,
+      analyzing: `Vigi is tracing logic across${fileCopy || ' the project'}…`,
+      editing: `Vigi is planning focused edits across${fileCopy || ' the project'}…`,
+      generating: 'Vigi is building and checking the code response…',
+      writing: `Vigi is writing${fileCopy || ' reviewed changes'} to the approved project folder…`
+    }[activityDetail.phase] || 'Vigi is focused on the code…';
+  }
+
+  function completionStatusCopy() {
+    const count = Math.max(0, Number(activityDetail.fileCount || 0));
+    if (activityDetail.phase === 'applied') {
+      return `Vigi saved ${count || 'the'} reviewed file change${count === 1 ? '' : 's'} successfully.`;
+    }
+    if (activityDetail.phase === 'reviewed' && count) {
+      return `Vigi finished the project review. ${count} proposed file change${count === 1 ? '' : 's'} ${count === 1 ? 'is' : 'are'} ready for your approval.`;
+    }
+    if (activityDetail.phase === 'analyzed') return 'Vigi finished analyzing the project. No file edits were proposed.';
+    return 'Vigi finished the coding task. The result is ready to review.';
+  }
+
+  function syncWorkBadge(state) {
+    if (!workBadge || !workLabel) return;
+    const labels = {
+      coding: activityDetail.phase === 'writing' ? 'Writing files' : 'Coding',
+      complete: 'Code ready',
+      error: 'Coding stopped'
+    };
+    workLabel.textContent = labels[state] || '';
+    workBadge.setAttribute('aria-hidden', labels[state] ? 'false' : 'true');
   }
 
   function renderStatus() {
@@ -208,10 +247,18 @@
       warning: 'Vigi cannot verify usage right now. Limited plans stay protected.',
       limited: 'Your daily Vigzone quota is used. Vigi will be ready after the reset.',
       thinking: 'Vigi is working on your request…',
+      coding: codingStatusCopy(),
+      complete: completionStatusCopy(),
+      error: 'Vigi could not finish that coding operation. Your existing project files remain protected.',
       ready: presentation.ready
     }[state];
+    syncWorkBadge(state);
     statusCopy.textContent = copy;
-    petState.textContent = state === 'thinking' ? 'Vigi is thinking' : `Vigi is ${state}`;
+    petState.textContent = state === 'thinking'
+      ? 'Vigi is thinking'
+      : state === 'coding'
+        ? `Vigi is coding: ${activityDetail.phase || 'working'}`
+        : `Vigi is ${state}`;
     petButton.setAttribute('aria-label', `${presentation.label} Vigi · ${copy}`);
   }
 
@@ -295,8 +342,20 @@
     renderStatus();
   });
   document.addEventListener('vigzone:activity', event => {
-    activity = event.detail?.state === 'thinking' ? 'thinking' : 'ready';
+    window.clearTimeout(terminalStateTimer);
+    const nextState = String(event.detail?.state || 'ready');
+    activity = ['thinking', 'coding', 'complete', 'error'].includes(nextState) ? nextState : 'ready';
+    activityDetail = event.detail || {};
     renderStatus();
+    if (activity === 'complete' || activity === 'error') {
+      const terminalState = activity;
+      terminalStateTimer = window.setTimeout(() => {
+        if (activity !== terminalState) return;
+        activity = 'ready';
+        activityDetail = {};
+        renderStatus();
+      }, activity === 'complete' ? 4400 : 5200);
+    }
   });
 
   settingsToggle?.addEventListener('click', () => setEnabled(!enabled));
