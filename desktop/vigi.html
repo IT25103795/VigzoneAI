@@ -12,28 +12,22 @@
     <section class="speech-panel" id="speechPanel" aria-label="Ask Vigi" aria-hidden="true">
       <header>
         <div>
-          <span class="eyebrow">Vigi quick chat</span>
+          <span class="eyebrow">Vigi</span>
           <strong id="chatContext">Last opened Vigzone chat</strong>
         </div>
         <button class="icon-button" id="collapseButton" type="button" aria-label="Collapse Vigi">×</button>
       </header>
 
-      <p class="welcome-copy" id="welcomeCopy">Ask anything from Vigi. Your message will continue in the last opened chat.</p>
+      <p class="welcome-copy" id="welcomeCopy">Ask anything. It continues in your last Vigzone chat.</p>
 
       <form id="quickForm">
         <label class="sr-only" for="quickPrompt">Message Vigi</label>
-        <textarea id="quickPrompt" maxlength="4000" rows="3" placeholder="Ask anything from Vigi…"></textarea>
+        <textarea id="quickPrompt" maxlength="4000" rows="2" placeholder="Ask anything from Vigi…"></textarea>
         <div class="quick-row">
           <span id="promptCount">0 / 4000</span>
           <button class="ask-button" id="askButton" type="submit"><span>✦</span> Ask Vigi</button>
         </div>
       </form>
-
-      <div class="suggestions" aria-label="Quick prompt ideas">
-        <button type="button" data-prompt="Continue the last task and tell me the most useful next step.">Continue task</button>
-        <button type="button" data-prompt="Review the latest code context and point out the highest-risk issue.">Review code</button>
-        <button type="button" data-prompt="Summarize where we stopped in this conversation.">Where did we stop?</button>
-      </div>
 
       <section class="reply-preview" id="replyPreview" aria-live="polite" hidden>
         <div class="reply-head"><span class="reply-dot"></span><strong>Vigi replied</strong></div>
@@ -48,7 +42,7 @@
 
     <section class="pet-stage">
       <div class="drag-handle" title="Drag Vigi" aria-hidden="true"><span></span><span></span><span></span></div>
-      <button class="pet-button" id="petButton" type="button" aria-expanded="false" aria-controls="speechPanel" title="Click to ask · right-click for options">
+      <button class="pet-button" id="petButton" type="button" aria-expanded="false" aria-controls="speechPanel" title="Click to ask · drag to move · right-click for options">
         <span class="pet-glow" aria-hidden="true"></span>
         <img src="../static/assets/vigi/classic-vigi-v1.png" alt="Vigi desktop companion" draggable="false">
         <span class="activity-orbit" aria-hidden="true"><i></i><i></i><i></i></span>

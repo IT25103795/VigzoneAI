@@ -3770,6 +3770,7 @@ body.project-chat-active #input{padding-left:2px;}
         pointer-events:auto;
         transition:transform .16s ease,color .16s ease,border-color .16s ease,background .16s ease;
       }
+      .quick-update-btn[hidden]{display:none !important;}
       .quick-update-btn:hover{
         transform:translateY(-1px);
         color:var(--text);
@@ -4487,6 +4488,7 @@ body.project-chat-active #input{padding-left:2px;}
       gap:11px;
     }
     .desktop-update-card.ready{border-color:color-mix(in srgb,#52e3a4 42%,var(--border));}
+    .desktop-update-card.current{border-color:color-mix(in srgb,#52e3a4 48%,var(--border));}
     .desktop-update-card.error{border-color:color-mix(in srgb,#ff6676 42%,var(--border));}
     .desktop-update-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}
     .desktop-update-title{color:var(--text);font-size:14px;font-weight:850;}
@@ -4504,6 +4506,12 @@ body.project-chat-active #input{padding-left:2px;}
       text-transform:uppercase;
     }
     .desktop-update-card.ready .desktop-update-status{color:#52e3a4;border-color:color-mix(in srgb,#52e3a4 38%,var(--border));}
+    .desktop-update-card.current .desktop-update-status{
+      color:#52e3a4;
+      border-color:color-mix(in srgb,#52e3a4 48%,var(--border));
+      background:color-mix(in srgb,#52e3a4 12%,var(--surface));
+      box-shadow:0 0 18px -10px rgba(82,227,164,.9);
+    }
     .desktop-release-notes{
       max-height:150px;
       overflow:auto;

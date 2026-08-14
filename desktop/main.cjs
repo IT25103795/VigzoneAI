@@ -137,6 +137,26 @@ function setPetExpanded(next, preserveAnchor = true) {
   sendToPet('vigi:expanded', { expanded: petExpanded });
 }
 
+function movePetBy(rawDelta) {
+  if (!petWindow || petWindow.isDestroyed()) return false;
+  const clampDelta = value => Math.max(-160, Math.min(160, Math.round(Number(value) || 0)));
+  const deltaX = clampDelta(rawDelta?.x);
+  const deltaY = clampDelta(rawDelta?.y);
+  if (!deltaX && !deltaY) return true;
+  const bounds = petWindow.getBounds();
+  const desiredX = bounds.x + deltaX;
+  const desiredY = bounds.y + deltaY;
+  const display = screen.getDisplayNearestPoint({
+    x: desiredX + Math.floor(bounds.width / 2),
+    y: desiredY + Math.floor(bounds.height / 2)
+  });
+  const area = display.workArea;
+  const x = Math.max(area.x, Math.min(desiredX, area.x + area.width - bounds.width));
+  const y = Math.max(area.y, Math.min(desiredY, area.y + area.height - bounds.height));
+  petWindow.setPosition(x, y, false);
+  return true;
+}
+
 function showPet({ expand = false, announceMinimized = false } = {}) {
   if (!preferences.petEnabled || !petWindow || petWindow.isDestroyed()) return;
   if (expand) setPetExpanded(true);
@@ -389,6 +409,7 @@ function registerIpc() {
     hidePet();
     return true;
   });
+  ipcMain.handle('vigi:move', (event, delta) => trustedPetSender(event) && movePetBy(delta));
   ipcMain.handle('vigi:set-expanded', (event, expanded) => {
     if (!trustedPetSender(event)) return false;
     setPetExpanded(!!expanded);

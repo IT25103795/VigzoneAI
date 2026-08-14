@@ -14,7 +14,7 @@ def test_desktop_package_is_pinned_and_buildable():
     forge = _read("forge.config.cjs")
 
     assert package["main"] == "desktop/main.cjs"
-    assert package["version"] == "1.0.1"
+    assert package["version"] == "1.0.2"
     assert package["scripts"]["desktop:dev"].endswith("--app-url=http://127.0.0.1:8000/chat")
     assert package["scripts"]["desktop:make"] == "electron-forge make --platform=win32 --arch=x64"
     assert package["dependencies"]["electron-squirrel-startup"] == "1.0.1"
@@ -59,6 +59,7 @@ def test_desktop_host_keeps_vigi_alive_and_secures_remote_content():
     assert "notifyUpdate: update => ipcRenderer.invoke('desktop:notify-update'" in main_preload
     assert "contextBridge.exposeInMainWorld('vigiDesktop'" in pet_preload
     assert "ask: message => ipcRenderer.invoke('vigi:ask'" in pet_preload
+    assert "moveBy: delta => ipcRenderer.invoke('vigi:move'" in pet_preload
     assert "send: ipcRenderer.send" not in pet_preload
     assert "openUpdate: () => ipcRenderer.invoke('vigi:open-update')" in pet_preload
     assert "onUpdateAvailable" in pet_preload
@@ -75,8 +76,10 @@ def test_desktop_pet_quick_chat_uses_the_real_active_conversation():
     assert "Ask anything from Vigi" in html
     assert 'id="replyPreview"' in html
     assert "Open full conversation" in html
-    assert 'data-prompt="Continue the last task' in html
     assert "api.ask(message)" in renderer
+    assert "api.moveBy(movement)" in renderer
+    assert "petButton.addEventListener('pointermove'" in renderer
+    assert "suppressPetClick" in renderer
     assert "api.openVigzone()" in renderer
     assert "api.onMainMinimized" in renderer
     assert "api.onUpdateAvailable" in renderer

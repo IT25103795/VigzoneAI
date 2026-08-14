@@ -15,6 +15,10 @@ contextBridge.exposeInMainWorld('vigiDesktop', Object.freeze({
   openVigzone: () => ipcRenderer.invoke('vigi:open'),
   openUpdate: () => ipcRenderer.invoke('vigi:open-update'),
   closePet: () => ipcRenderer.invoke('vigi:close'),
+  moveBy: delta => ipcRenderer.invoke('vigi:move', {
+    x: Number(delta?.x) || 0,
+    y: Number(delta?.y) || 0
+  }),
   setExpanded: expanded => ipcRenderer.invoke('vigi:set-expanded', !!expanded),
   onMainMinimized: callback => subscribe('vigi:main-minimized', callback),
   onMainRestored: callback => subscribe('vigi:main-restored', callback),

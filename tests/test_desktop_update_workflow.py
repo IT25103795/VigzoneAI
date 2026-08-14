@@ -85,6 +85,13 @@ def test_update_ui_uses_real_release_data_and_manual_trusted_downloads():
     assert "notifyUpdate?.(" in app_js
     assert "VigzoneDesktopUpdates" in app_js
     assert "githubusercontent.com" in app_js
+    assert "isMobileDevice" in app_js
+    assert "canDownloadWindows" in app_js
+    assert "state.isDesktop ? state.hasUpdate : state.canDownloadWindows" in app_js
+    assert "desktop-update-card ${cardStateClass}" in app_js
+    assert "No download needed" in app_js
+    assert "Web platform · Features update automatically" in app_js
+    assert "Render/web build:" not in app_js
     assert "/api/desktop/releases/latest" in service_worker
     assert "desktop:notify-update" in main
     assert "trustedMainSender" in main

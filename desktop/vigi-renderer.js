@@ -15,11 +15,15 @@ const status = document.getElementById('statusCopy');
 const preview = document.getElementById('replyPreview');
 const replyText = document.getElementById('replyText');
 const openConversation = document.getElementById('openConversationButton');
-const suggestions = document.querySelector('.suggestions');
 
 let expanded = false;
 let busy = false;
 let updateAvailable = false;
+let petDrag = null;
+let suppressPetClick = false;
+let pendingMoveX = 0;
+let pendingMoveY = 0;
+let moveFrame = 0;
 
 function setState(state) {
   root.dataset.state = state;
@@ -84,7 +88,68 @@ async function askVigi() {
   }
 }
 
-petButton.addEventListener('click', () => setExpanded(!expanded));
+function schedulePetMove(deltaX, deltaY) {
+  pendingMoveX += deltaX;
+  pendingMoveY += deltaY;
+  if (moveFrame) return;
+  moveFrame = window.requestAnimationFrame(() => {
+    const movement = { x: pendingMoveX, y: pendingMoveY };
+    pendingMoveX = 0;
+    pendingMoveY = 0;
+    moveFrame = 0;
+    if (movement.x || movement.y) api.moveBy(movement).catch(() => undefined);
+  });
+}
+
+petButton.addEventListener('pointerdown', event => {
+  if (event.button !== 0) return;
+  petDrag = {
+    pointerId: event.pointerId,
+    startX: event.screenX,
+    startY: event.screenY,
+    lastX: event.screenX,
+    lastY: event.screenY,
+    moved: false
+  };
+  try { petButton.setPointerCapture(event.pointerId); } catch (_) {}
+});
+
+petButton.addEventListener('pointermove', event => {
+  if (!petDrag || petDrag.pointerId !== event.pointerId) return;
+  const totalX = event.screenX - petDrag.startX;
+  const totalY = event.screenY - petDrag.startY;
+  if (!petDrag.moved && Math.hypot(totalX, totalY) < 5) return;
+  petDrag.moved = true;
+  root.classList.add('dragging');
+  const deltaX = event.screenX - petDrag.lastX;
+  const deltaY = event.screenY - petDrag.lastY;
+  petDrag.lastX = event.screenX;
+  petDrag.lastY = event.screenY;
+  if (deltaX || deltaY) schedulePetMove(deltaX, deltaY);
+  event.preventDefault();
+});
+
+function finishPetDrag(event) {
+  if (!petDrag || petDrag.pointerId !== event.pointerId) return;
+  if (petDrag.moved) {
+    suppressPetClick = true;
+    window.setTimeout(() => { suppressPetClick = false; }, 0);
+  }
+  try { petButton.releasePointerCapture(event.pointerId); } catch (_) {}
+  root.classList.remove('dragging');
+  petDrag = null;
+}
+
+petButton.addEventListener('pointerup', finishPetDrag);
+petButton.addEventListener('pointercancel', finishPetDrag);
+petButton.addEventListener('click', event => {
+  if (suppressPetClick) {
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
+  setExpanded(!expanded);
+});
 collapseButton.addEventListener('click', () => setExpanded(false));
 openConversation.addEventListener('click', () => updateAvailable ? api.openUpdate() : api.openVigzone());
 form.addEventListener('submit', event => { event.preventDefault(); askVigi(); });
@@ -94,13 +159,6 @@ prompt.addEventListener('keydown', event => {
     event.preventDefault();
     askVigi();
   }
-});
-suggestions.addEventListener('click', event => {
-  const button = event.target.closest('[data-prompt]');
-  if (!button) return;
-  prompt.value = button.dataset.prompt || '';
-  count.textContent = `${prompt.value.length} / 4000`;
-  prompt.focus();
 });
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape' && expanded) setExpanded(false);

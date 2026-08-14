@@ -7221,6 +7221,33 @@ A strong website should include: hero section, clear navigation, services/featur
   let desktopUpdateState = null;
   let desktopUpdateCheckPromise = null;
 
+  function updateClientPlatform(){
+    const userAgent = String(navigator.userAgent || '');
+    const platform = String(navigator.userAgentData?.platform || navigator.platform || '');
+    const isDesktop = !!window.vigzoneDesktopShell?.isDesktop;
+    const isMobileDevice = navigator.userAgentData?.mobile === true ||
+      /Android|iPhone|iPad|iPod|IEMobile|Opera Mini|Mobile/i.test(userAgent);
+    const isWindows = /Windows/i.test(platform) || /Windows/i.test(userAgent);
+    return {
+      isDesktop,
+      isMobileDevice,
+      isWindows,
+      canDownloadWindows: isDesktop || (isWindows && !isMobileDevice)
+    };
+  }
+
+  function syncUpdateEntryPoints(){
+    const platform = updateClientPlatform();
+    if (quickUpdateBtn) quickUpdateBtn.hidden = !platform.canDownloadWindows;
+    if (versionOpenBtn) {
+      versionOpenBtn.textContent = platform.canDownloadWindows
+        ? 'Check desktop updates'
+        : 'About Vigzone updates';
+    }
+  }
+
+  syncUpdateEntryPoints();
+
   function suiteAuthHeaders(json=true){
     return {
       ...(json ? {'Content-Type':'application/json'} : {})
@@ -7538,12 +7565,18 @@ Requirements:
 
   function syncQuickUpdateButton(state){
     if (!quickUpdateBtn) return;
+    const platform = updateClientPlatform();
+    quickUpdateBtn.hidden = !platform.canDownloadWindows;
     quickUpdateBtn.classList.toggle('checking', !!state?.checking);
     quickUpdateBtn.classList.toggle('has-update', !!state?.hasUpdate);
     const version = state?.release?.version;
-    quickUpdateBtn.title = state?.hasUpdate && version
-      ? `Download Vigzone Desktop v${version}`
-      : 'Check desktop updates';
+    quickUpdateBtn.title = state?.checking
+      ? 'Checking desktop updates'
+      : state?.hasUpdate && version
+        ? `Download Vigzone Desktop v${version}`
+        : state?.isDesktop
+          ? 'Vigzone Desktop is up to date'
+          : 'Get Vigzone Desktop for Windows';
     quickUpdateBtn.setAttribute('aria-label', quickUpdateBtn.title);
   }
 
@@ -7579,7 +7612,7 @@ Requirements:
         desktopUpdateState = {
           ...payload,
           installedVersion,
-          isDesktop: !!window.vigzoneDesktopShell?.isDesktop,
+          ...updateClientPlatform(),
           hasUpdate,
           error: ''
         };
@@ -7589,7 +7622,7 @@ Requirements:
       } catch (error) {
         desktopUpdateState = {
           installedVersion: await installedDesktopVersion(),
-          isDesktop: !!window.vigzoneDesktopShell?.isDesktop,
+          ...updateClientPlatform(),
           hasUpdate:false,
           release:null,
           error:error?.message || 'Could not check desktop updates.'
@@ -7637,6 +7670,11 @@ Requirements:
   }
 
   function desktopUpdateCard(state){
+    if (!state.isDesktop && !state.canDownloadWindows) {
+      return `<section class="desktop-update-card platform-note">
+        <div class="desktop-update-head"><div><div class="desktop-update-title">Vigzone Desktop for Windows</div><div class="desktop-update-subtitle">Desktop releases and installers are available only on a Windows PC. Your Vigzone web app updates automatically.</div></div><span class="desktop-update-status">Windows only</span></div>
+      </section>`;
+    }
     if (state.error) {
       return `<section class="desktop-update-card error">
         <div class="desktop-update-head"><div><div class="desktop-update-title">Update check unavailable</div><div class="desktop-update-subtitle">${escapeHtml(state.error)}</div></div><span class="desktop-update-status">Try again</span></div>
@@ -7658,20 +7696,25 @@ Requirements:
       ? `Installed: v${escapeHtml(installed || 'unknown')} · Latest: v${escapeHtml(release.version || 'unknown')}`
       : `Latest Windows desktop release: v${escapeHtml(release.version || 'unknown')}`;
     const actionUrl = trustedReleaseUrl(release.download_url || release.release_url);
+    const showDownload = !!actionUrl && (state.isDesktop ? state.hasUpdate : state.canDownloadWindows);
     const actionLabel = release.download_url
-      ? (state.hasUpdate ? `Download v${escapeHtml(release.version)}` : 'Download for Windows')
+      ? (state.hasUpdate ? `Download v${escapeHtml(release.version)}` : 'Get Vigzone for Windows')
       : 'View GitHub release';
     const size = formatDesktopDownloadSize(release.download_size);
     const notes = String(release.notes || '').trim() || 'This release does not include update notes.';
-    return `<section class="desktop-update-card ${state.hasUpdate ? 'ready' : ''}">
+    const cardStateClass = state.isDesktop && !state.hasUpdate ? 'current' : (state.hasUpdate ? 'ready' : '');
+    const meta = showDownload
+      ? [release.download_name, size, state.stale ? 'cached status' : 'checked now']
+      : [state.isDesktop ? 'No download needed' : '', state.stale ? 'cached status' : 'checked now'];
+    return `<section class="desktop-update-card ${cardStateClass}">
       <div class="desktop-update-head">
         <div><div class="desktop-update-title">${escapeHtml(release.name || `Vigzone Desktop v${release.version}`)}</div><div class="desktop-update-subtitle">${subtitle}${release.prerelease ? ' · Beta release' : ''}</div></div>
         <span class="desktop-update-status">${escapeHtml(status)}</span>
       </div>
       <div class="desktop-release-notes">${escapeHtml(notes)}</div>
       <div class="desktop-update-actions">
-        ${actionUrl ? `<button class="deep-action-btn desktop-download-btn" data-update-download="${escapeHtml(actionUrl)}" type="button">↓ ${actionLabel}</button>` : ''}
-        <span class="desktop-update-meta">${escapeHtml([release.download_name, size, state.stale ? 'cached status' : 'checked now'].filter(Boolean).join(' · '))}</span>
+        ${showDownload ? `<button class="deep-action-btn desktop-download-btn" data-update-download="${escapeHtml(actionUrl)}" type="button">↓ ${actionLabel}</button>` : ''}
+        <span class="desktop-update-meta">${escapeHtml(meta.filter(Boolean).join(' · '))}</span>
       </div>
     </section>`;
   }
@@ -7692,8 +7735,8 @@ Requirements:
           <div class="suite-card">
             <div class="suite-card-icon">⚡</div>
             <div class="suite-card-main">
-              <div class="suite-card-title">${escapeHtml(data.name || 'Vigzone AI')}</div>
-              <div class="suite-card-desc">Render/web build: <strong>v${escapeHtml(data.version || 'unknown')}</strong> · Web features update automatically after deployment.</div>
+              <div class="suite-card-title">${escapeHtml(data.app_name || 'Vigzone AI')} Web</div>
+              <div class="suite-card-desc">Web platform · Features update automatically after each deployment.</div>
             </div>
           </div>
           ${desktopUpdateCard(updateState)}
