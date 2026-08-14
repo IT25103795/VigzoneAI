@@ -19,6 +19,7 @@ const suggestions = document.querySelector('.suggestions');
 
 let expanded = false;
 let busy = false;
+let updateAvailable = false;
 
 function setState(state) {
   root.dataset.state = state;
@@ -68,6 +69,8 @@ async function askVigi() {
     count.textContent = '0 / 4000';
     context.textContent = result.conversationTitle || context.textContent;
     replyText.textContent = plainPreview(result.preview) || 'The full reply is ready in Vigzone.';
+    updateAvailable = false;
+    openConversation.textContent = 'Open full conversation →';
     preview.hidden = false;
     status.textContent = '';
     setState('success');
@@ -83,7 +86,7 @@ async function askVigi() {
 
 petButton.addEventListener('click', () => setExpanded(!expanded));
 collapseButton.addEventListener('click', () => setExpanded(false));
-openConversation.addEventListener('click', () => api.openVigzone());
+openConversation.addEventListener('click', () => updateAvailable ? api.openUpdate() : api.openVigzone());
 form.addEventListener('submit', event => { event.preventDefault(); askVigi(); });
 prompt.addEventListener('input', () => { count.textContent = `${prompt.value.length} / 4000`; });
 prompt.addEventListener('keydown', event => {
@@ -111,6 +114,20 @@ api.onMainRestored(() => {
   if (!busy && preview.hidden) setExpanded(false);
 });
 api.onStatus(applyStatus);
+api.onUpdateAvailable(payload => {
+  const version = String(payload?.version || '').trim();
+  updateAvailable = true;
+  context.textContent = 'Vigzone update';
+  welcome.textContent = version
+    ? `Vigzone Desktop v${version} is ready.`
+    : 'A new Vigzone Desktop release is ready.';
+  replyText.textContent = 'Review the release notes and download the official Windows installer from Vigzone.';
+  openConversation.textContent = 'Open update in Vigzone →';
+  preview.hidden = false;
+  status.textContent = '';
+  setState('success');
+  setExpanded(true);
+});
 api.onExpanded(payload => setExpanded(!!payload?.expanded, false));
 
 api.getStatus().then(applyStatus).catch(() => {

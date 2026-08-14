@@ -12,6 +12,7 @@ const DEFAULT_APP_URL = 'https://vigzoneai.onrender.com/chat';
 const PET_COLLAPSED = Object.freeze({ width: 190, height: 226 });
 const PET_EXPANDED = Object.freeze({ width: 380, height: 520 });
 const GOOGLE_OAUTH_HOSTS = new Set(['accounts.google.com', 'accounts.googleusercontent.com']);
+const GITHUB_RELEASE_HOSTS = new Set(['github.com', 'objects.githubusercontent.com']);
 
 let mainWindow = null;
 let petWindow = null;
@@ -166,6 +167,34 @@ function openMainWindow() {
   sendToPet('vigi:main-restored');
 }
 
+function openUpdateCenter() {
+  openMainWindow();
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const open = () => mainWindow?.webContents.executeJavaScript(
+    `window.VigzoneDesktopUpdates?.open?.()`,
+    true
+  ).catch(() => undefined);
+  if (mainWindow.webContents.isLoadingMainFrame()) mainWindow.webContents.once('did-finish-load', open);
+  else open();
+}
+
+function sanitizedUpdateNotice(value) {
+  if (!value || typeof value !== 'object') return null;
+  const version = String(value.version || '').trim();
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) return null;
+  let downloadUrl = '';
+  try {
+    const candidate = new URL(String(value.downloadUrl || ''));
+    const trustedHost = GITHUB_RELEASE_HOSTS.has(candidate.hostname) || candidate.hostname.endsWith('.githubusercontent.com');
+    if (candidate.protocol === 'https:' && trustedHost) downloadUrl = candidate.href;
+  } catch (_) {}
+  return {
+    version,
+    name: String(value.name || `Vigzone Desktop v${version}`).replace(/[\r\n\0]/g, ' ').trim().slice(0, 180),
+    downloadUrl
+  };
+}
+
 async function companionState() {
   if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isLoadingMainFrame()) {
     return { ready: false, authenticated: false, busy: false, title: 'Vigzone is loading…' };
@@ -296,6 +325,7 @@ function rebuildTrayMenu() {
   const login = app.getLoginItemSettings();
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Open Vigzone', click: openMainWindow },
+    { label: `Check for updates · v${app.getVersion()}`, click: openUpdateCenter },
     { label: preferences.petEnabled ? 'Hide Vigi' : 'Show Vigi', click: preferences.petEnabled ? hidePet : restorePet },
     { label: 'Ask Vigi', enabled: preferences.petEnabled, click: () => { showPet({ expand: true }); petWindow?.focus(); } },
     { type: 'separator' },
@@ -324,7 +354,20 @@ function trustedPetSender(event) {
   return !!petWindow && !petWindow.isDestroyed() && event.sender.id === petWindow.webContents.id;
 }
 
+function trustedMainSender(event) {
+  return !!mainWindow && !mainWindow.isDestroyed() && event.sender.id === mainWindow.webContents.id;
+}
+
 function registerIpc() {
+  ipcMain.handle('desktop:get-version', event => trustedMainSender(event) ? app.getVersion() : '');
+  ipcMain.handle('desktop:notify-update', (event, payload) => {
+    if (!trustedMainSender(event)) return false;
+    const update = sanitizedUpdateNotice(payload);
+    if (!update) return false;
+    sendToPet('vigi:update-available', update);
+    showPet({ expand: true });
+    return true;
+  });
   ipcMain.handle('vigi:get-status', event => trustedPetSender(event)
     ? companionState()
     : { ready: false, error: 'Untrusted desktop request.' });
@@ -334,6 +377,11 @@ function registerIpc() {
   ipcMain.handle('vigi:open', event => {
     if (!trustedPetSender(event)) return false;
     openMainWindow();
+    return true;
+  });
+  ipcMain.handle('vigi:open-update', event => {
+    if (!trustedPetSender(event)) return false;
+    openUpdateCenter();
     return true;
   });
   ipcMain.handle('vigi:close', event => {

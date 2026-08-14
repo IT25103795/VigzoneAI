@@ -82,9 +82,9 @@ def test_chat_ui_asset_revision_is_consistent():
     index = _read("static/index.html")
     service_worker = _read("static/service-worker.js")
 
-    assert index.count("vigi-desktop-r1") == 5
-    assert "const UI_ASSET_REVISION = 'vigi-desktop-r1';" in service_worker
-    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r28';" in service_worker
+    assert index.count("vigi-desktop-r2") == 5
+    assert "const UI_ASSET_REVISION = 'vigi-desktop-r2';" in service_worker
+    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r29';" in service_worker
     assert "/static/icons/vigzone-doodles.svg?v=doodle-r1" in service_worker
 
 
@@ -132,7 +132,7 @@ def test_classic_vigi_is_role_aware_metered_and_desktop_only():
     assert 'aria-label="Show Vigi desktop companion"' in index
     assert "/static/assets/vigi/classic-vigi-v1.png?v=classic-r1" in index
     assert Path("static/assets/vigi/classic-vigi-v1.png").stat().st_size > 100_000
-    assert "/static/js/vigi.js?v=vigi-desktop-r1" in index
+    assert "/static/js/vigi.js?v=vigi-desktop-r2" in index
     assert "vigzone:account" in app_js
     assert "vigzone:usage" in app_js
     assert "vigzone:activity" in app_js

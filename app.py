@@ -84,6 +84,7 @@ from security import (
 import auth as authmod
 import billing
 import database
+import desktop_updates
 import mailer
 import secrets as _secrets
 import httpx
@@ -690,6 +691,20 @@ async def available_models_endpoint():
         "models": MODEL_CATALOG,
         "default": FAST_MODEL,
     })
+
+
+@app.get("/api/desktop/releases/latest", tags=["Product"])
+async def latest_desktop_release():
+    """Return sanitized metadata for the configured GitHub desktop release."""
+    try:
+        payload = await desktop_updates.latest_desktop_release()
+    except desktop_updates.DesktopReleaseLookupError as exc:
+        return JSONResponse(
+            {"ok": False, "detail": str(exc), "release": None},
+            status_code=502,
+            headers={"Cache-Control": "no-store"},
+        )
+    return JSONResponse(payload, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/brain/cloud", tags=["Brain"])

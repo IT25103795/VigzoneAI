@@ -14,6 +14,7 @@ def test_desktop_package_is_pinned_and_buildable():
     forge = _read("forge.config.cjs")
 
     assert package["main"] == "desktop/main.cjs"
+    assert package["version"] == "1.0.1"
     assert package["scripts"]["desktop:dev"].endswith("--app-url=http://127.0.0.1:8000/chat")
     assert package["scripts"]["desktop:make"] == "electron-forge make --platform=win32 --arch=x64"
     assert package["dependencies"]["electron-squirrel-startup"] == "1.0.1"
@@ -54,9 +55,13 @@ def test_desktop_host_keeps_vigi_alive_and_secures_remote_content():
     assert "app.setLoginItemSettings" in main
     assert "contextBridge.exposeInMainWorld('vigzoneDesktopShell'" in main_preload
     assert "ipcRenderer.send" not in main_preload
+    assert "getAppVersion: () => ipcRenderer.invoke('desktop:get-version')" in main_preload
+    assert "notifyUpdate: update => ipcRenderer.invoke('desktop:notify-update'" in main_preload
     assert "contextBridge.exposeInMainWorld('vigiDesktop'" in pet_preload
     assert "ask: message => ipcRenderer.invoke('vigi:ask'" in pet_preload
     assert "send: ipcRenderer.send" not in pet_preload
+    assert "openUpdate: () => ipcRenderer.invoke('vigi:open-update')" in pet_preload
+    assert "onUpdateAvailable" in pet_preload
 
 
 def test_desktop_pet_quick_chat_uses_the_real_active_conversation():
@@ -74,6 +79,8 @@ def test_desktop_pet_quick_chat_uses_the_real_active_conversation():
     assert "api.ask(message)" in renderer
     assert "api.openVigzone()" in renderer
     assert "api.onMainMinimized" in renderer
+    assert "api.onUpdateAvailable" in renderer
+    assert "api.openUpdate()" in renderer
     assert "window.vigzoneDesktopShell?.isDesktop" in app_js
     assert "VigzoneDesktopCompanion" in app_js
     assert "await sendMessage(message, {source:'desktop-vigi'})" in app_js
@@ -93,3 +100,5 @@ def test_desktop_documentation_explains_runtime_and_distribution():
     assert "npm run desktop:make" in documentation
     assert "code-signing certificate" in documentation
     assert "last opened conversation" in documentation
+    assert "VIGZONE_DESKTOP_RELEASE_REPO" in documentation
+    assert "never silently installs" in documentation

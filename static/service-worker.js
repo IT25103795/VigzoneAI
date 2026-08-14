@@ -1,6 +1,6 @@
 /* Vigzone AI offline service worker */
-const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r28';
-const UI_ASSET_REVISION = 'vigi-desktop-r1';
+const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r29';
+const UI_ASSET_REVISION = 'vigi-desktop-r2';
 const SHELL_CACHE = `vigzone-shell-${VIGZONE_SW_VERSION}`;
 const RUNTIME_CACHE = `vigzone-runtime-${VIGZONE_SW_VERSION}`;
 
@@ -126,6 +126,14 @@ self.addEventListener('fetch', (event) => {
 
   if (url.pathname === '/api/public/config' || url.pathname === '/api/app/version') {
     event.respondWith(networkFirst(request, null).catch(() => caches.match(request).then(cached => cached || offlineJson('Offline mode: using saved app settings.'))));
+    return;
+  }
+
+  if (url.pathname === '/api/desktop/releases/latest') {
+    event.respondWith(
+      fetch(request, {cache: 'no-store'})
+        .catch(() => offlineJson('Desktop update checks need an internet connection.'))
+    );
     return;
   }
 

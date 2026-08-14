@@ -1542,6 +1542,7 @@
   const quickExportBtn = $('#quickExportBtn');
   const quickSettingsBtn = $('#quickSettingsBtn');
   const quickAdminBtn = $('#quickAdminBtn');
+  const quickUpdateBtn = $('#quickUpdateBtn');
 
   function closeQuickLauncher(){
     sidebarQuickLauncher?.classList.remove('open');
@@ -1586,6 +1587,10 @@
   quickUsageBtn?.addEventListener('click', () => quickClick($('#usageTodayBtn')));
   quickSettingsBtn?.addEventListener('click', () => quickClick($('#settingsBtn')));
   quickAdminBtn?.addEventListener('click', () => quickClick($('#adminPanelBtn')));
+  quickUpdateBtn?.addEventListener('click', () => {
+    closeQuickLauncher();
+    openVersionModal({manual:true});
+  });
 
   quickExportBtn?.addEventListener('click', (e) => {
     e.preventDefault();
@@ -7210,6 +7215,11 @@ A strong website should include: hero section, clear navigation, services/featur
   const versionModalOverlay = $('#versionModalOverlay');
   const versionModalCloseBtn = $('#versionModalCloseBtn');
   const versionModalBody = $('#versionModalBody');
+  const LEGACY_DESKTOP_VERSION = '1.0.0';
+  const DESKTOP_UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
+  const DESKTOP_UPDATE_NOTICE_KEY = 'vigzone_desktop_update_notified';
+  let desktopUpdateState = null;
+  let desktopUpdateCheckPromise = null;
 
   function suiteAuthHeaders(json=true){
     return {
@@ -7480,25 +7490,241 @@ Requirements:
     input.focus();
   }
 
-  async function openVersionModal(){
+  function parseDesktopVersion(value){
+    const match = String(value || '').trim().match(/(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/);
+    if (!match) return null;
+    return {
+      numbers: [Number(match[1]), Number(match[2]), Number(match[3])],
+      prerelease: match[4] ? match[4].split('.') : []
+    };
+  }
+
+  function compareDesktopVersions(left, right){
+    const a = parseDesktopVersion(left);
+    const b = parseDesktopVersion(right);
+    if (!a || !b) return 0;
+    for (let index = 0; index < 3; index += 1) {
+      if (a.numbers[index] !== b.numbers[index]) return a.numbers[index] > b.numbers[index] ? 1 : -1;
+    }
+    if (!a.prerelease.length && b.prerelease.length) return 1;
+    if (a.prerelease.length && !b.prerelease.length) return -1;
+    const count = Math.max(a.prerelease.length, b.prerelease.length);
+    for (let index = 0; index < count; index += 1) {
+      const av = a.prerelease[index];
+      const bv = b.prerelease[index];
+      if (av === bv) continue;
+      if (av === undefined) return -1;
+      if (bv === undefined) return 1;
+      const an = /^\d+$/.test(av) ? Number(av) : null;
+      const bn = /^\d+$/.test(bv) ? Number(bv) : null;
+      if (an !== null && bn !== null) return an > bn ? 1 : -1;
+      if (an !== null) return -1;
+      if (bn !== null) return 1;
+      return av.localeCompare(bv) > 0 ? 1 : -1;
+    }
+    return 0;
+  }
+
+  async function installedDesktopVersion(){
+    const bridge = window.vigzoneDesktopShell;
+    if (!bridge?.isDesktop) return null;
+    try {
+      const version = await bridge.getAppVersion?.();
+      return parseDesktopVersion(version) ? String(version) : LEGACY_DESKTOP_VERSION;
+    } catch {
+      return LEGACY_DESKTOP_VERSION;
+    }
+  }
+
+  function syncQuickUpdateButton(state){
+    if (!quickUpdateBtn) return;
+    quickUpdateBtn.classList.toggle('checking', !!state?.checking);
+    quickUpdateBtn.classList.toggle('has-update', !!state?.hasUpdate);
+    const version = state?.release?.version;
+    quickUpdateBtn.title = state?.hasUpdate && version
+      ? `Download Vigzone Desktop v${version}`
+      : 'Check desktop updates';
+    quickUpdateBtn.setAttribute('aria-label', quickUpdateBtn.title);
+  }
+
+  async function notifyDesktopUpdate(state){
+    if (!state?.hasUpdate || !state.release?.version) return;
+    const version = state.release.version;
+    if (localStorage.getItem(DESKTOP_UPDATE_NOTICE_KEY) === version) return;
+    localStorage.setItem(DESKTOP_UPDATE_NOTICE_KEY, version);
+    suiteToast(`Vigzone Desktop v${version} is ready to download.`);
+    try {
+      await window.vigzoneDesktopShell?.notifyUpdate?.({
+        version,
+        name: state.release.name || `Vigzone Desktop v${version}`,
+        downloadUrl: state.release.download_url || state.release.release_url || ''
+      });
+    } catch {}
+  }
+
+  async function checkDesktopRelease({notify=false}={}){
+    if (desktopUpdateCheckPromise) return desktopUpdateCheckPromise;
+    syncQuickUpdateButton({checking:true, hasUpdate:desktopUpdateState?.hasUpdate});
+    const task = (async () => {
+      try {
+        const response = await fetch('/api/desktop/releases/latest', {cache:'no-store'});
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.ok) throw new Error(payload.detail || 'Could not check GitHub releases.');
+        const installedVersion = await installedDesktopVersion();
+        const release = payload.release || null;
+        const hasUpdate = !!(
+          installedVersion && release?.version &&
+          compareDesktopVersions(release.version, installedVersion) > 0
+        );
+        desktopUpdateState = {
+          ...payload,
+          installedVersion,
+          isDesktop: !!window.vigzoneDesktopShell?.isDesktop,
+          hasUpdate,
+          error: ''
+        };
+        syncQuickUpdateButton(desktopUpdateState);
+        if (notify) await notifyDesktopUpdate(desktopUpdateState);
+        return desktopUpdateState;
+      } catch (error) {
+        desktopUpdateState = {
+          installedVersion: await installedDesktopVersion(),
+          isDesktop: !!window.vigzoneDesktopShell?.isDesktop,
+          hasUpdate:false,
+          release:null,
+          error:error?.message || 'Could not check desktop updates.'
+        };
+        syncQuickUpdateButton(desktopUpdateState);
+        return desktopUpdateState;
+      }
+    })();
+    desktopUpdateCheckPromise = task;
+    try {
+      return await task;
+    } finally {
+      if (desktopUpdateCheckPromise === task) desktopUpdateCheckPromise = null;
+    }
+  }
+
+  function formatDesktopDownloadSize(bytes){
+    const value = Number(bytes || 0);
+    if (!Number.isFinite(value) || value <= 0) return '';
+    return value >= 1024 * 1024
+      ? `${(value / (1024 * 1024)).toFixed(1)} MB`
+      : `${Math.max(1, Math.round(value / 1024))} KB`;
+  }
+
+  function trustedReleaseUrl(rawUrl){
+    try {
+      const url = new URL(String(rawUrl || ''));
+      const trustedHost = url.hostname === 'github.com' || url.hostname.endsWith('.githubusercontent.com');
+      return url.protocol === 'https:' && trustedHost ? url.href : '';
+    } catch {
+      return '';
+    }
+  }
+
+  function openReleaseDownload(rawUrl){
+    const url = trustedReleaseUrl(rawUrl);
+    if (!url) return suiteToast('The official update download link is unavailable.');
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.target = '_blank';
+    anchor.rel = 'noopener noreferrer';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  }
+
+  function desktopUpdateCard(state){
+    if (state.error) {
+      return `<section class="desktop-update-card error">
+        <div class="desktop-update-head"><div><div class="desktop-update-title">Update check unavailable</div><div class="desktop-update-subtitle">${escapeHtml(state.error)}</div></div><span class="desktop-update-status">Try again</span></div>
+        <div class="desktop-update-actions"><button class="deep-action-btn" data-update-retry type="button">Check again</button></div>
+      </section>`;
+    }
+    if (!state.release) {
+      return `<section class="desktop-update-card">
+        <div class="desktop-update-head"><div><div class="desktop-update-title">No published Windows release found</div><div class="desktop-update-subtitle">The ${escapeHtml(state.channel || 'stable')} channel does not have a downloadable GitHub release yet.</div></div><span class="desktop-update-status">No release</span></div>
+      </section>`;
+    }
+
+    const release = state.release;
+    const installed = state.installedVersion;
+    const status = state.isDesktop
+      ? (state.hasUpdate ? 'Update ready' : 'Up to date')
+      : 'Windows download';
+    const subtitle = state.isDesktop
+      ? `Installed: v${escapeHtml(installed || 'unknown')} · Latest: v${escapeHtml(release.version || 'unknown')}`
+      : `Latest Windows desktop release: v${escapeHtml(release.version || 'unknown')}`;
+    const actionUrl = trustedReleaseUrl(release.download_url || release.release_url);
+    const actionLabel = release.download_url
+      ? (state.hasUpdate ? `Download v${escapeHtml(release.version)}` : 'Download for Windows')
+      : 'View GitHub release';
+    const size = formatDesktopDownloadSize(release.download_size);
+    const notes = String(release.notes || '').trim() || 'This release does not include update notes.';
+    return `<section class="desktop-update-card ${state.hasUpdate ? 'ready' : ''}">
+      <div class="desktop-update-head">
+        <div><div class="desktop-update-title">${escapeHtml(release.name || `Vigzone Desktop v${release.version}`)}</div><div class="desktop-update-subtitle">${subtitle}${release.prerelease ? ' · Beta release' : ''}</div></div>
+        <span class="desktop-update-status">${escapeHtml(status)}</span>
+      </div>
+      <div class="desktop-release-notes">${escapeHtml(notes)}</div>
+      <div class="desktop-update-actions">
+        ${actionUrl ? `<button class="deep-action-btn desktop-download-btn" data-update-download="${escapeHtml(actionUrl)}" type="button">↓ ${actionLabel}</button>` : ''}
+        <span class="desktop-update-meta">${escapeHtml([release.download_name, size, state.stale ? 'cached status' : 'checked now'].filter(Boolean).join(' · '))}</span>
+      </div>
+    </section>`;
+  }
+
+  async function openVersionModal({manual=false}={}){
     versionModalOverlay?.classList.add('visible');
     if (!versionModalBody) return;
-    versionModalBody.innerHTML = '<div class="usage-modal-loading">Loading version…</div>';
+    versionModalBody.innerHTML = '<div class="usage-modal-loading">Checking GitHub releases…</div>';
     try {
-      const res = await fetch('/api/app/version');
-      const data = await res.json();
+      const versionRequest = fetch('/api/app/version', {cache:'no-store'}).then(async response => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error('Could not load the Vigzone web version.');
+        return payload;
+      });
+      const [data, updateState] = await Promise.all([versionRequest, checkDesktopRelease({notify:false})]);
       versionModalBody.innerHTML = `
-        <div class="suite-card">
-          <div class="suite-card-icon">⚡</div>
-          <div class="suite-card-main">
-            <div class="suite-card-title">${escapeHtml(data.name || 'Vigzone AI')}</div>
-            <div class="suite-card-desc">Current version: <strong>${escapeHtml(data.version || 'unknown')}</strong></div>
-            <div class="suite-pill-row">${(data.features || []).map(f => `<span class="brain-pill">${escapeHtml(f)}</span>`).join('')}</div>
+        <div class="desktop-update-stack">
+          <div class="suite-card">
+            <div class="suite-card-icon">⚡</div>
+            <div class="suite-card-main">
+              <div class="suite-card-title">${escapeHtml(data.name || 'Vigzone AI')}</div>
+              <div class="suite-card-desc">Render/web build: <strong>v${escapeHtml(data.version || 'unknown')}</strong> · Web features update automatically after deployment.</div>
+            </div>
           </div>
+          ${desktopUpdateCard(updateState)}
+          <div class="suite-note">Desktop updates are downloaded only after you choose the official GitHub link. Vigzone never silently installs an unsigned release.</div>
         </div>`;
-    } catch {
-      versionModalBody.innerHTML = '<div class="brain-empty">Could not load version info.</div>';
+      versionModalBody.querySelector('[data-update-download]')?.addEventListener('click', event => {
+        openReleaseDownload(event.currentTarget.dataset.updateDownload);
+      });
+      versionModalBody.querySelector('[data-update-retry]')?.addEventListener('click', () => openVersionModal({manual:true}));
+      if (manual && updateState.hasUpdate) await notifyDesktopUpdate(updateState);
+    } catch (error) {
+      versionModalBody.innerHTML = `<div class="brain-empty">${escapeHtml(error?.message || 'Could not load version info.')}</div>`;
     }
+  }
+
+  if (!window.VigzoneDesktopUpdates) {
+    Object.defineProperty(window, 'VigzoneDesktopUpdates', {
+      value: Object.freeze({
+        open: () => openVersionModal({manual:true}),
+        check: () => checkDesktopRelease({notify:true})
+      }),
+      configurable:false,
+      enumerable:false,
+      writable:false
+    });
+  }
+
+  function startDesktopUpdateChecks(){
+    if (!window.vigzoneDesktopShell?.isDesktop) return;
+    window.setTimeout(() => checkDesktopRelease({notify:true}), 10000);
+    window.setInterval(() => checkDesktopRelease({notify:true}), DESKTOP_UPDATE_INTERVAL_MS);
   }
 
   async function shareCurrentChat(){
@@ -7551,7 +7777,7 @@ Requirements:
     websiteStudioExportBtn?.addEventListener('click', exportLatestWebsiteZip);
 
     brainCloudSyncBtn?.addEventListener('click', () => syncBrainCloud(false));
-    versionOpenBtn?.addEventListener('click', openVersionModal);
+    versionOpenBtn?.addEventListener('click', () => openVersionModal({manual:true}));
     versionModalCloseBtn?.addEventListener('click', () => versionModalOverlay?.classList.remove('visible'));
     versionModalOverlay?.addEventListener('click', e => { if (e.target === versionModalOverlay) versionModalOverlay.classList.remove('visible'); });
     $('#shareChatBtn')?.addEventListener('click', shareCurrentChat);
@@ -7791,6 +8017,7 @@ Requirements:
   loadBrainCloudOnStart();
   checkHealth();
   const accountReady = loadAccount();
+  Promise.resolve(accountReady).catch(() => undefined).finally(startDesktopUpdateChecks);
   autoResize();
   usageCycleRefreshTimer = setInterval(refreshUsageCycle, 60000);
 
