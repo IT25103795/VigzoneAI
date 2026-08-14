@@ -4,9 +4,7 @@
   "description": "Vigzone AI chat assistant",
   "start_url": "/chat",
   "scope": "/",
-  "display": "fullscreen",
-  "display_override": ["fullscreen", "standalone"],
-  "orientation": "any",
+  "display": "standalone",
   "background_color": "#0b0f1a",
   "theme_color": "#ff6f4d",
   "icons": [

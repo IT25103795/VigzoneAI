@@ -1,4 +1,3 @@
-import json
 import re
 from pathlib import Path
 
@@ -83,9 +82,9 @@ def test_chat_ui_asset_revision_is_consistent():
     index = _read("static/index.html")
     service_worker = _read("static/service-worker.js")
 
-    assert index.count("mobile-fullscreen-r1") == 4
-    assert "const UI_ASSET_REVISION = 'mobile-fullscreen-r1';" in service_worker
-    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r31';" in service_worker
+    assert index.count("vigi-desktop-r3") == 5
+    assert "const UI_ASSET_REVISION = 'vigi-desktop-r3';" in service_worker
+    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r30';" in service_worker
     assert "/static/icons/vigzone-doodles.svg?v=doodle-r1" in service_worker
 
 
@@ -111,7 +110,7 @@ def test_mobile_navigation_uses_a_safe_area_blur_that_fades_into_chat():
         "Remove Vigzone logo from assistant response bubbles", 1
     )[0]
     assert "min-height:calc(56px + env(safe-area-inset-top, 0px))" in navigation
-    assert "padding:calc(8px + env(safe-area-inset-top, 0px)) calc(10px + env(safe-area-inset-right, 0px)) 4px calc(10px + env(safe-area-inset-left, 0px))" in navigation
+    assert "padding:calc(8px + env(safe-area-inset-top, 0px)) 10px 4px" in navigation
     assert ".main-col > header::before" in navigation
     assert "height:calc(84px + env(safe-area-inset-top, 0px))" in navigation
     assert "backdrop-filter:blur(24px) saturate(1.14)" in navigation
@@ -119,30 +118,6 @@ def test_mobile_navigation_uses_a_safe_area_blur_that_fades_into_chat():
     assert "transparent 100%" in navigation
     assert "padding-top:calc(72px + env(safe-area-inset-top, 0px))" in navigation
     assert "top:calc(70px + env(safe-area-inset-top, 0px))" in css
-
-
-def test_mobile_fullscreen_is_edge_to_edge_and_available_from_navigation():
-    manifest = json.loads(_read("static/manifest.json"))
-    index = _read("static/index.html")
-    js = _read("static/js/app.js")
-    css = _read("static/css/styles.css")
-
-    assert manifest["display"] == "fullscreen"
-    assert manifest["display_override"][:2] == ["fullscreen", "standalone"]
-    assert manifest["orientation"] == "any"
-    assert 'viewport-fit=cover' in index
-    assert 'name="mobile-web-app-capable" content="yes"' in index
-    assert 'name="apple-mobile-web-app-capable" content="yes"' in index
-    assert 'name="apple-mobile-web-app-status-bar-style" content="black-translucent"' in index
-    assert 'id="mobileFullscreenBtn"' in index
-    assert 'id="mobileFullscreenBtn"' in index and 'data-requires-feature' not in index.split('id="mobileFullscreenBtn"', 1)[1].split('>', 1)[0]
-    assert "root.requestFullscreen({ navigationUI:'hide' })" in js
-    assert "document.webkitExitFullscreen" in js
-    assert "document.addEventListener('fullscreenchange'" in js
-    assert "window.syncVigzoneViewportHeight?.()" in js
-    assert "env(safe-area-inset-left, 0px)" in css
-    assert "env(safe-area-inset-right, 0px)" in css
-    assert ".mobile-fullscreen-btn:not([hidden])" in css
 
 
 def test_classic_vigi_is_role_aware_metered_and_desktop_only():

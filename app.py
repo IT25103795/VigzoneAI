@@ -396,48 +396,6 @@ def require_current_user(
 
 # ── Production safety helpers ────────────────────────────────────────────────
 _CHAT_RATE_LIMIT_PER_MINUTE = int(os.getenv("CHAT_RATE_LIMIT_PER_MINUTE", "20"))
-_SHARED_AI_UNAVAILABLE_MESSAGE = (
-    "Vigzone's AI service is temporarily unavailable. Please try again shortly."
-)
-_SHARED_AI_BUSY_MESSAGE = (
-    "Vigzone is handling a lot of requests right now. Please wait a moment and try again."
-)
-
-
-def _public_ai_error_message(error: object, *, using_personal_key: bool) -> str:
-    """Keep shared-provider configuration details out of end-user responses.
-
-    The complete exception is still logged by the caller. Users who explicitly
-    connected a personal key keep the actionable provider message because they
-    can fix that setting themselves; everyone else receives Vigzone-only copy.
-    """
-
-    message = str(error or "").strip()
-    if using_personal_key:
-        return message or "Your personal AI connection is unavailable. Please check it and try again."
-
-    normalized = message.lower()
-    if any(
-        marker in normalized
-        for marker in ("rate limit", "rate-limit", "too many requests", "tokens per minute", "tokens per day")
-    ):
-        return _SHARED_AI_BUSY_MESSAGE
-    if any(marker in normalized for marker in ("request is larger", "request too large", "too many tokens")):
-        return "This message is too large to process. Shorten it or start a new chat and try again."
-
-    provider_detail_markers = (
-        "groq",
-        "api key",
-        "api_key",
-        ".env",
-        "deployment variable",
-        "api credential",
-        "organization id",
-        "project id",
-    )
-    if not message or any(marker in normalized for marker in provider_detail_markers):
-        return _SHARED_AI_UNAVAILABLE_MESSAGE
-    return message
 
 
 def _enforce_rate_limit(
@@ -2286,7 +2244,7 @@ async def api_project_assist(
     )
     if provider_override is None and not await is_configured():
         release_token_reservation(quota_reservation)
-        raise HTTPException(status_code=503, detail=_SHARED_AI_UNAVAILABLE_MESSAGE)
+        raise HTTPException(status_code=503, detail=f"{APP_NAME} AI is not configured.")
 
     response_meta: dict = {}
     try:
@@ -2313,13 +2271,7 @@ async def api_project_assist(
         )
     except VigzoneAIError as exc:
         logger.error("Project assistant failed: %s", exc)
-        raise HTTPException(
-            status_code=502,
-            detail=_public_ai_error_message(
-                exc,
-                using_personal_key=provider_override is not None,
-            ),
-        ) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     finally:
         release_token_reservation(quota_reservation)
 
@@ -3520,7 +3472,10 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
         release_token_reservation(quota_reservation)
         raise HTTPException(
             status_code=503,
-            detail=_SHARED_AI_UNAVAILABLE_MESSAGE,
+            detail=(
+                f"{APP_NAME} isn't configured — set GROQ_API_KEY in .env "
+                f"or in your deployment Variables (get a free key at {GROQ_KEYS_URL})."
+            ),
         )
 
     last_user_query = ""
@@ -3598,11 +3553,7 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
 
             except VigzoneAIError as e:
                 logger.error("Chat stream failed: %s", e)
-                public_error = _public_ai_error_message(
-                    e,
-                    using_personal_key=provider_override is not None,
-                )
-                yield f"data: {json.dumps({'error': public_error}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
             except Exception:
                 # Safety net: any *unexpected* exception (e.g. a malformed
                 # streaming API chunk) used to propagate out of this generator
@@ -3653,7 +3604,10 @@ async def chat_sync(request: Request, chat_request: ChatRequest, user: dict = De
         release_token_reservation(quota_reservation)
         raise HTTPException(
             status_code=503,
-            detail=_SHARED_AI_UNAVAILABLE_MESSAGE,
+            detail=(
+                f"{APP_NAME} isn't configured — set GROQ_API_KEY in .env "
+                f"or in your deployment Variables (get a free key at {GROQ_KEYS_URL})."
+            ),
         )
     last_user_query = ""
     for m in reversed(messages):
@@ -3695,13 +3649,7 @@ async def chat_sync(request: Request, chat_request: ChatRequest, user: dict = De
         )
     except VigzoneAIError as e:
         logger.error("Chat failed: %s", e)
-        raise HTTPException(
-            status_code=502,
-            detail=_public_ai_error_message(
-                e,
-                using_personal_key=provider_override is not None,
-            ),
-        )
+        raise HTTPException(status_code=502, detail=str(e))
     finally:
         release_token_reservation(quota_reservation)
 

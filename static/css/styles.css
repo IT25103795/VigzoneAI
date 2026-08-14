@@ -4078,7 +4078,7 @@ body.project-chat-active #input{padding-left:2px;}
         left:0 !important;
         right:0 !important;
         min-height:calc(56px + env(safe-area-inset-top, 0px)) !important;
-        padding:calc(8px + env(safe-area-inset-top, 0px)) calc(10px + env(safe-area-inset-right, 0px)) 4px calc(10px + env(safe-area-inset-left, 0px)) !important;
+        padding:calc(8px + env(safe-area-inset-top, 0px)) 10px 4px !important;
         border:0 !important;
         background:transparent !important;
         box-shadow:none !important;
@@ -6077,46 +6077,4 @@ body.project-chat-active #input{padding-left:2px;}
 @media (prefers-reduced-motion:reduce){
   .vigi-pet-button img,.vigi-halo,.vigi-live-dot,.vigi-popover,.vigi-code-screen i,
   .vigi-code-screen b,.vigi-code-keyboard i,.vigi-code-float,.vigi-result-burst{animation:none!important;}
-}
-
-/* ---------- Edge-to-edge mobile fullscreen ----------
-   Installed PWAs prefer manifest fullscreen. Browser tabs expose the same
-   immersive mode through a user-gesture button in the top navigation. */
-.mobile-fullscreen-btn{display:none!important;}
-.mobile-fullscreen-btn svg{width:18px;height:18px;display:block;}
-.mobile-fullscreen-btn .fullscreen-exit-icon{display:none;}
-html.is-native-fullscreen .mobile-fullscreen-btn .fullscreen-enter-icon{display:none;}
-html.is-native-fullscreen .mobile-fullscreen-btn .fullscreen-exit-icon{display:block;}
-
-@media (max-width:760px), (hover:none) and (pointer:coarse){
-  .mobile-fullscreen-btn:not([hidden]){
-    display:flex!important;
-    width:44px!important;
-    height:44px!important;
-    min-width:44px!important;
-    padding:0!important;
-    align-items:center!important;
-    justify-content:center!important;
-    border-radius:16px!important;
-    touch-action:manipulation;
-  }
-  .sidebar-inner{
-    padding-top:calc(16px + env(safe-area-inset-top, 0px))!important;
-    padding-bottom:calc(16px + env(safe-area-inset-bottom, 0px))!important;
-    padding-left:calc(12px + env(safe-area-inset-left, 0px))!important;
-  }
-  .composer-wrap{
-    padding-right:calc(10px + env(safe-area-inset-right, 0px))!important;
-    padding-bottom:calc(10px + env(safe-area-inset-bottom, 0px))!important;
-    padding-left:calc(10px + env(safe-area-inset-left, 0px))!important;
-  }
-  #chatInner,
-  .chat-inner{
-    padding-right:calc(14px + env(safe-area-inset-right, 0px))!important;
-    padding-left:calc(14px + env(safe-area-inset-left, 0px))!important;
-  }
-}
-
-@media (max-width:380px){
-  #modelPickerBadge{display:none;}
 }

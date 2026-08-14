@@ -464,44 +464,6 @@ def test_stream_controls_are_owner_bound_and_pause_is_async():
         stream_manager.unregister_stream(stream_id)
 
 
-def test_shared_chat_errors_hide_provider_configuration_from_free_users():
-    import app
-
-    internal_errors = (
-        "Groq rejected this API key. Check GROQ_API_KEY in .env.",
-        "Could not reach Groq. Check the deployment Variables.",
-        "The configured Groq model is unavailable for this organization ID.",
-    )
-    for internal_error in internal_errors:
-        public_error = app._public_ai_error_message(
-            internal_error,
-            using_personal_key=False,
-        )
-        assert public_error == app._SHARED_AI_UNAVAILABLE_MESSAGE
-        assert "groq" not in public_error.lower()
-        assert "api key" not in public_error.lower()
-        assert ".env" not in public_error.lower()
-
-    assert app._public_ai_error_message(
-        "Groq rate limit reached for tokens per minute.",
-        using_personal_key=False,
-    ) == app._SHARED_AI_BUSY_MESSAGE
-
-    source = Path("app.py").read_text(encoding="utf-8")
-    assert source.count("detail=_SHARED_AI_UNAVAILABLE_MESSAGE") >= 3
-    assert source.count("using_personal_key=provider_override is not None") >= 3
-
-
-def test_personal_key_errors_remain_actionable_for_the_key_owner():
-    import app
-
-    actionable = "Your personal Groq API key was rejected. Update it in Settings."
-    assert app._public_ai_error_message(
-        actionable,
-        using_personal_key=True,
-    ) == actionable
-
-
 def test_website_studio_forbids_deceptive_integrations():
     from website_builder import WebsiteRequest, WebsiteSystemPrompt
 
