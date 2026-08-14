@@ -5546,6 +5546,81 @@ A strong website should include: hero section, clear navigation, services/featur
     }
   }
 
+  // ---------- Native desktop Vigi bridge ----------
+  // Electron keeps this page loaded while the main window is minimized. The
+  // companion invokes this narrow bridge so quick prompts use the real active
+  // conversation, model, quota, project context, and authenticated session.
+  function desktopConversationTitle(){
+    const conversation = currentConversation();
+    return String(
+      conversation?.projectThreadTitle ||
+      conversation?.title ||
+      conversation?.projectName ||
+      'New conversation'
+    ).slice(0, 120);
+  }
+
+  function desktopReplyPreview(value){
+    return String(value || '')
+      .replace(/```[\s\S]*?```/g, ' [code included] ')
+      .replace(/[`*_>#~-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 360);
+  }
+
+  if (window.vigzoneDesktopShell?.isDesktop) {
+    const desktopCompanion = Object.freeze({
+      getState(){
+        return {
+          ready: true,
+          authenticated: !!window._vigzoneUserId,
+          busy: !!streaming,
+          conversationId: store.activeId || null,
+          title: desktopConversationTitle(),
+          plan: window._vigzoneUserIsAdmin ? 'admin' : (window._vigzoneUserPlan || 'free')
+        };
+      },
+
+      async ask(rawMessage){
+        const message = String(rawMessage || '').replace(/\0/g, '').trim().slice(0, 4000);
+        if (!message) return {ok:false, error:'Type a message for Vigi first.'};
+        if (!window._vigzoneUserId) return {ok:false, error:'Open Vigzone and sign in once before using Vigi quick chat.'};
+        if (streaming) return {ok:false, error:'Vigzone is already working on another reply. Wait for it to finish.'};
+        if (imageMode) return {ok:false, error:'Image mode is active. Open Vigzone to finish or turn off that image task first.'};
+        if (pendingFiles.length) return {ok:false, error:'You have staged attachments in Vigzone. Open the app to send or remove them first.'};
+        if (quotedMessage) return {ok:false, error:'A quoted reply is staged in Vigzone. Open the app to finish that message first.'};
+
+        const messageCountBefore = messages.length;
+        await sendMessage(message, {source:'desktop-vigi'});
+        const appended = messages.slice(messageCountBefore);
+        const assistant = appended.slice().reverse().find(item => item?.role === 'assistant');
+        if (!assistant) {
+          return {ok:false, error:'Vigi could not finish that message. Open Vigzone to review the chat status.'};
+        }
+        const reply = assistant.displayText || assistant.content || '';
+        return {
+          ok: true,
+          preview: desktopReplyPreview(reply) || 'The full reply is ready in Vigzone.',
+          conversationId: store.activeId || null,
+          conversationTitle: desktopConversationTitle()
+        };
+      },
+
+      focusConversation(){
+        input?.focus({preventScroll:false});
+        input?.scrollIntoView({behavior:'smooth', block:'center'});
+        return {conversationId:store.activeId || null, title:desktopConversationTitle()};
+      }
+    });
+    Object.defineProperty(window, 'VigzoneDesktopCompanion', {
+      value: desktopCompanion,
+      configurable: false,
+      enumerable: false,
+      writable: false
+    });
+  }
+
   // ---------- Image generation & editing ----------
 
   function updateImageModeHint(){

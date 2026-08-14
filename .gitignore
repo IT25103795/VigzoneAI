@@ -29,6 +29,11 @@ uploads/
 # Logs
 *.log
 
+# Electron desktop dependencies and build outputs
+node_modules/
+out/
+.webpack/
+
 # Local Vigzone Projects QA artifacts
 test-projects/
 
