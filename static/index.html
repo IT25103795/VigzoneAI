@@ -4,16 +4,20 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#090a0f" id="themeColorMeta" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Vigzone AI" />
   <title>Vigzone AI</title>
   <link rel="icon" href="/static/icons/favicon.svg?v=pwa-icon-real-v2" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/static/icons/vigzone-icon.svg?v=pwa-icon-real-v2" />
-  <link rel="manifest" href="/manifest.json?v=live-config" />
+  <link rel="manifest" href="/manifest.json?v=mobile-fullscreen-r1" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Sinhala:wght@400;500;600&display=swap" rel="stylesheet">
   <script>
-    const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r30';
-    const UI_ASSET_REVISION = 'vigi-desktop-r3';
+    const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r31';
+    const UI_ASSET_REVISION = 'mobile-fullscreen-r1';
     (function () {
       var key = 'vigzone_doodle_theme';
       var tones = {
@@ -94,7 +98,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/static/css/styles.css?v=vigi-desktop-r3">
+  <link rel="stylesheet" href="/static/css/styles.css?v=mobile-fullscreen-r1">
 </head>
 <body>
 <div class="offline-status-banner" id="offlineStatusBanner" role="status" aria-live="polite">
@@ -758,6 +762,10 @@
         <span id="voiceToggleIcon">🔊</span>
         <span id="voiceToggleLabel">Voice Off</span>
       </button>
+      <button class="icon-btn mobile-fullscreen-btn" id="mobileFullscreenBtn" type="button" aria-label="Enter full screen" aria-pressed="false" title="Enter full screen" hidden>
+        <svg class="fullscreen-enter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"></path></svg>
+        <svg class="fullscreen-exit-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h5V3M21 8h-5V3M3 16h5v5M21 16h-5v5"></path></svg>
+      </button>
       <div class="usage-cycle-wrap" id="usageCycleWrap">
         <button class="icon-btn usage-cycle-btn" id="usageCycleBtn" aria-label="Usage today" title="Usage today" type="button">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1090,7 +1098,7 @@
     </button>
   </aside>
 
-  <script src="/static/js/app.js?v=vigi-desktop-r3"></script>
+  <script src="/static/js/app.js?v=mobile-fullscreen-r1"></script>
   <script src="/static/js/vigi.js?v=vigi-desktop-r3"></script>
   <script src="/static/js/projects.js?v=vigi-desktop-r3"></script>
 </body>

@@ -57,6 +57,7 @@
   const sidebar = $('#sidebar');
   const sidebarOverlay = $('#sidebarOverlay');
   const sidebarToggleBtn = $('#sidebarToggleBtn');
+  const mobileFullscreenBtn = $('#mobileFullscreenBtn');
   const historyList = $('#historyList');
   const signOutBtn = $('#signOutBtn');
   const exportAccountBtn = $('#exportAccountBtn');
@@ -2118,6 +2119,60 @@
 
   sidebarToggleBtn.addEventListener('click', () => setSidebarCollapsed(!sidebar.classList.contains('collapsed')));
   sidebarOverlay.addEventListener('click', () => setSidebarCollapsed(true));
+
+  // ---------- Mobile edge-to-edge fullscreen ----------
+  function currentFullscreenElement(){
+    return document.fullscreenElement || document.webkitFullscreenElement || null;
+  }
+
+  function supportsMobileFullscreen(){
+    const root = document.documentElement;
+    const supported = Boolean(root.requestFullscreen || root.webkitRequestFullscreen);
+    const mobileLike = window.matchMedia('(max-width: 760px), (hover: none) and (pointer: coarse)').matches;
+    return supported && mobileLike;
+  }
+
+  function syncMobileFullscreenControl(){
+    if (!mobileFullscreenBtn) return;
+    const supported = supportsMobileFullscreen();
+    const active = Boolean(currentFullscreenElement());
+    mobileFullscreenBtn.hidden = !supported;
+    mobileFullscreenBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    mobileFullscreenBtn.setAttribute('aria-label', active ? 'Exit full screen' : 'Enter full screen');
+    mobileFullscreenBtn.title = active ? 'Exit full screen' : 'Enter full screen';
+    document.documentElement.classList.toggle('is-native-fullscreen', active);
+    window.requestAnimationFrame(() => window.syncVigzoneViewportHeight?.());
+  }
+
+  async function toggleMobileFullscreen(){
+    const root = document.documentElement;
+    try {
+      if (currentFullscreenElement()) {
+        const exit = document.exitFullscreen || document.webkitExitFullscreen;
+        if (exit) await Promise.resolve(exit.call(document));
+      } else if (root.requestFullscreen) {
+        try {
+          await root.requestFullscreen({ navigationUI:'hide' });
+        } catch (error) {
+          if (!(error instanceof TypeError)) throw error;
+          await root.requestFullscreen();
+        }
+      } else if (root.webkitRequestFullscreen) {
+        await Promise.resolve(root.webkitRequestFullscreen());
+      }
+    } catch (error) {
+      console.warn('Mobile full screen request was not accepted:', error?.name || 'unknown');
+      suiteToast('Full screen needs a direct tap and browser permission.');
+    } finally {
+      syncMobileFullscreenControl();
+    }
+  }
+
+  mobileFullscreenBtn?.addEventListener('click', toggleMobileFullscreen);
+  document.addEventListener('fullscreenchange', syncMobileFullscreenControl);
+  document.addEventListener('webkitfullscreenchange', syncMobileFullscreenControl);
+  window.addEventListener('resize', syncMobileFullscreenControl, {passive:true});
+  syncMobileFullscreenControl();
 
   // ---------- Learning Center / private memories ----------
   let learningState = { enabled: true, memories: [] };

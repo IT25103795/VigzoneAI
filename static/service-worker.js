@@ -1,6 +1,6 @@
 /* Vigzone AI offline service worker */
-const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r30';
-const UI_ASSET_REVISION = 'vigi-desktop-r3';
+const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r31';
+const UI_ASSET_REVISION = 'mobile-fullscreen-r1';
 const SHELL_CACHE = `vigzone-shell-${VIGZONE_SW_VERSION}`;
 const RUNTIME_CACHE = `vigzone-runtime-${VIGZONE_SW_VERSION}`;
 
