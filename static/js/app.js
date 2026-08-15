@@ -2109,8 +2109,6 @@
     sidebar.classList.toggle('collapsed', collapsed);
     sidebarOverlay.classList.toggle('visible', isMobile() && expanded);
     document.body.classList.toggle('sidebar-expanded', expanded);
-    document.querySelector('.main-col > header .brand')
-      ?.setAttribute('aria-hidden', expanded ? 'true' : 'false');
     sidebarToggleBtn?.setAttribute('aria-expanded', expanded ? 'true' : 'false');
     if (expanded) closeQuickLauncher?.();
     if (!isMobile()) localStorage.setItem(SIDEBAR_KEY, collapsed ? '1' : '0');
@@ -3655,8 +3653,10 @@
   function applyAccountPlan(user = {}) {
     const entitlements = user.entitlements || {};
     const isAdmin = !!user.is_admin;
-    const effectivePlan = entitlements.effective_plan || (isAdmin ? 'team' : (user.plan || 'free'));
-    const displayPlan = entitlements.display_plan || (isAdmin ? 'admin' : effectivePlan);
+    const allowedPlans = new Set(['free', 'pro', 'team']);
+    const requestedPlan = String(entitlements.effective_plan || user.plan || 'free').trim().toLowerCase();
+    const effectivePlan = isAdmin ? 'team' : (allowedPlans.has(requestedPlan) ? requestedPlan : 'free');
+    const displayPlan = isAdmin ? 'admin' : effectivePlan;
     window._vigzoneUserPlan = effectivePlan;
     window._vigzoneUserIsAdmin = isAdmin;
     window._vigzoneUserId = user.id || null;
@@ -3673,15 +3673,12 @@
     const planBadge = document.getElementById('sidebarPlanBadge');
     const upgradeBtn = document.getElementById('upgradePlanBtn');
     const upgradeRow = document.getElementById('upgradePlanRow');
-    const headerBadge = document.getElementById('headerPlanBadge');
-    const paidBadge = displayPlan === 'admin' ? 'ADMIN' : (effectivePlan === 'free' ? '' : effectivePlan.toUpperCase());
+    const roleBadge = document.getElementById('sidebarRoleBadge');
 
-    if (headerBadge) {
-      headerBadge.className = 'header-plan-badge';
-      if (displayPlan === 'admin') headerBadge.classList.add('plan-admin');
-      if (effectivePlan === 'team' && displayPlan !== 'admin') headerBadge.classList.add('plan-team');
-      headerBadge.textContent = paidBadge;
-      headerBadge.hidden = !paidBadge;
+    if (roleBadge) {
+      roleBadge.className = `sidebar-role-badge plan-${displayPlan}`;
+      roleBadge.textContent = displayPlan.toUpperCase();
+      roleBadge.setAttribute('aria-label', `${displayPlan.toUpperCase()} account`);
     }
     if (planBadge) {
       planBadge.className = 'sidebar-plan-badge';

@@ -440,9 +440,10 @@
       display:flex;align-items:center;justify-content:space-between;
       padding:2px 6px 16px;
     }
-    .sidebar .brand{gap:8px;}
+    .sidebar .brand{gap:9px;min-width:0;}
     .sidebar .brand-mark{width:26px;height:26px;font-size:13px;border-radius:8px;}
     .sidebar .brand-name{font-size:15px;}
+    .sidebar-brand-copy{display:flex;flex-direction:column;min-width:0;}
     .new-chat-btn{
       display:flex;align-items:center;gap:8px;
       width:100%;
@@ -794,16 +795,16 @@
       font-family:'Sora',sans-serif;font-weight:700;font-size:17px;letter-spacing:-0.01em;
     }
     .brand-title-row{display:flex;align-items:center;gap:7px;min-width:0;}
-    .header-plan-badge{
+    .sidebar-role-badge{
       display:inline-flex;align-items:center;justify-content:center;
-      padding:2px 6px;border-radius:999px;font-size:8px;font-weight:850;
+      padding:2px 7px;border-radius:999px;font-size:8px;font-weight:850;
       line-height:1.25;letter-spacing:.08em;color:#fff;
-      background:linear-gradient(135deg,#a855f7,#7c3aed);
-      box-shadow:0 0 10px rgba(139,92,246,.45);
+      flex:0 0 auto;
     }
-    .header-plan-badge[hidden]{display:none!important;}
-    .header-plan-badge.plan-team{background:linear-gradient(135deg,#f59e0b,#d97706);box-shadow:0 0 10px rgba(245,158,11,.45);}
-    .header-plan-badge.plan-admin{background:linear-gradient(135deg,#ec4899,#db2777);box-shadow:0 0 10px rgba(236,72,153,.45);}
+    .sidebar-role-badge.plan-free{background:linear-gradient(135deg,#64748b,#475569);box-shadow:0 0 9px rgba(100,116,139,.34);}
+    .sidebar-role-badge.plan-pro{background:linear-gradient(135deg,#ff6b4a,#f43f5e);box-shadow:0 0 10px rgba(255,107,74,.42);}
+    .sidebar-role-badge.plan-team{background:linear-gradient(135deg,#a855f7,#7c3aed);box-shadow:0 0 10px rgba(139,92,246,.45);}
+    .sidebar-role-badge.plan-admin{background:linear-gradient(135deg,#ec4899,#db2777);box-shadow:0 0 10px rgba(236,72,153,.45);}
     .brand-sub{
       font-size:11px;color:var(--text-muted);font-weight:500;letter-spacing:.02em;
       display:flex;align-items:center;gap:5px;margin-top:1px;
@@ -3963,8 +3964,7 @@ body.project-chat-active #input{padding-left:2px;}
 
     .main-col > header .sidebar-toggle-btn,
     .main-col > header .icon-btn,
-    .main-col > header #newChatBtn,
-    .main-col > header .brand{
+    .main-col > header #newChatBtn{
       background:color-mix(in srgb, var(--surface) 68%, transparent) !important;
       border:1px solid color-mix(in srgb, var(--border) 72%, var(--accent) 18%) !important;
       color:var(--text-muted) !important;
@@ -3985,36 +3985,6 @@ body.project-chat-active #input{padding-left:2px;}
       width:18px !important;
       height:18px !important;
     }
-    .main-col > header .brand{
-      display:flex !important;
-      align-items:center !important;
-      gap:10px !important;
-      min-height:44px !important;
-      padding:7px 13px 7px 8px !important;
-      border-radius:18px !important;
-      max-width:min(300px, 46vw) !important;
-    }
-    body.sidebar-expanded .main-col > header .brand{
-      display:none !important;
-    }
-    .main-col > header .brand-mark{
-      width:34px !important;
-      height:34px !important;
-      border-radius:12px !important;
-      background:color-mix(in srgb, #0b0f1a 74%, var(--accent) 12%) !important;
-      box-shadow:0 0 0 1px color-mix(in srgb, var(--brand-ring) 70%, var(--accent) 20%), 0 8px 22px -12px var(--brand-shadow) !important;
-    }
-    .main-col > header .brand-name{
-      font-size:16px !important;
-      line-height:1.05 !important;
-      color:var(--text) !important;
-      white-space:nowrap !important;
-    }
-    .main-col > header .brand-sub{
-      font-size:11px !important;
-      color:color-mix(in srgb, var(--text-muted) 88%, var(--text) 12%) !important;
-      white-space:nowrap !important;
-    }
     .main-col > header #newChatBtn{
       min-height:44px !important;
       height:44px !important;
@@ -4026,8 +3996,7 @@ body.project-chat-active #input{padding-left:2px;}
     }
     .main-col > header .sidebar-toggle-btn:hover,
     .main-col > header .icon-btn:hover,
-    .main-col > header #newChatBtn:hover,
-    .main-col > header .brand:hover{
+    .main-col > header #newChatBtn:hover{
       color:var(--text) !important;
       border-color:var(--accent) !important;
       background:color-mix(in srgb, var(--surface-2) 72%, var(--accent-dim)) !important;
@@ -4056,8 +4025,7 @@ body.project-chat-active #input{padding-left:2px;}
 
     [data-theme="light"] .main-col > header .sidebar-toggle-btn,
     [data-theme="light"] .main-col > header .icon-btn,
-    [data-theme="light"] .main-col > header #newChatBtn,
-    [data-theme="light"] .main-col > header .brand{
+    [data-theme="light"] .main-col > header #newChatBtn{
       background:rgba(255,255,255,.72) !important;
       border-color:rgba(213,219,232,.82) !important;
       box-shadow:
@@ -4066,8 +4034,7 @@ body.project-chat-active #input{padding-left:2px;}
     }
     [data-theme="light"] .main-col > header .sidebar-toggle-btn:hover,
     [data-theme="light"] .main-col > header .icon-btn:hover,
-    [data-theme="light"] .main-col > header #newChatBtn:hover,
-    [data-theme="light"] .main-col > header .brand:hover{
+    [data-theme="light"] .main-col > header #newChatBtn:hover{
       background:rgba(255,255,255,.86) !important;
       border-color:color-mix(in srgb, var(--accent) 45%, var(--border)) !important;
     }
@@ -4110,16 +4077,6 @@ body.project-chat-active #input{padding-left:2px;}
         position:relative !important;
         z-index:1 !important;
       }
-      .main-col > header .brand{
-        max-width:calc(100vw - 210px) !important;
-        padding-right:10px !important;
-      }
-      .main-col > header .brand-name{
-        font-size:14px !important;
-      }
-      .main-col > header .brand-sub{
-        font-size:10px !important;
-      }
       .main-col > header #newChatBtn{
         width:44px !important;
         min-width:44px !important;
@@ -4137,20 +4094,6 @@ body.project-chat-active #input{padding-left:2px;}
         padding-top:calc(72px + env(safe-area-inset-top, 0px)) !important;
       }
     }
-    @media (max-width:520px){
-      .main-col > header .brand{
-        max-width:calc(100vw - 170px) !important;
-      }
-      .main-col > header .brand > div:last-child{
-        display:none !important;
-      }
-      .main-col > header .brand{
-        padding:5px !important;
-        min-height:44px !important;
-      }
-    }
-
-
     /* ---------- Remove Vigzone logo from assistant response bubbles ---------- */
     .msg.assistant .avatar{
       display:none !important;

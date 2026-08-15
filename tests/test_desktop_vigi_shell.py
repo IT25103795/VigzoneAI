@@ -14,7 +14,7 @@ def test_desktop_package_is_pinned_and_buildable():
     forge = _read("forge.config.cjs")
 
     assert package["main"] == "desktop/main.cjs"
-    assert package["version"] == "1.0.2"
+    assert package["version"] == "1.0.3"
     assert package["scripts"]["desktop:dev"].endswith("--app-url=http://127.0.0.1:8000/chat")
     assert package["scripts"]["desktop:make"] == "electron-forge make --platform=win32 --arch=x64"
     assert package["dependencies"]["electron-squirrel-startup"] == "1.0.1"
@@ -38,9 +38,9 @@ def test_desktop_host_keeps_vigi_alive_and_secures_remote_content():
     assert "alwaysOnTop: true" in main
     assert "skipTaskbar: true" in main
     assert "backgroundThrottling: false" in main
-    assert main.count("nodeIntegration: false") == 2
-    assert main.count("contextIsolation: true") == 2
-    assert main.count("sandbox: true") == 2
+    assert main.count("nodeIntegration: false") == 3
+    assert main.count("contextIsolation: true") == 3
+    assert main.count("sandbox: true") == 3
     assert "app.enableSandbox()" in main
     assert "setPermissionRequestHandler" in main
     assert "trustedPetSender" in main
@@ -63,6 +63,30 @@ def test_desktop_host_keeps_vigi_alive_and_secures_remote_content():
     assert "send: ipcRenderer.send" not in pet_preload
     assert "openUpdate: () => ipcRenderer.invoke('vigi:open-update')" in pet_preload
     assert "onUpdateAvailable" in pet_preload
+
+
+def test_desktop_fresh_start_uses_a_secure_polished_splash():
+    main = _read("desktop/main.cjs")
+    html = _read("desktop/splash.html")
+    css = _read("desktop/splash.css")
+
+    assert "createSplashWindow()" in main
+    assert "createSplashWindow();\n    createMainWindow();" in main
+    assert "SPLASH_MIN_VISIBLE_MS = 2300" in main
+    assert "SPLASH_FAILSAFE_MS = 15000" in main
+    assert "scheduleStartupReveal" in main
+    assert "splash-leaving" in main
+    assert "if (!startupComplete) return" in main
+    assert "if (startupComplete) showPet()" in main
+    assert "Content-Security-Policy" in html
+    assert "default-src 'none'" in html
+    assert "vigzone-icon-256.png" in html
+    assert '<span class="word-name">igzone</span><span class="word-ai"> AI</span>' in html
+    assert "Preparing your workspace" in html
+    assert "@keyframes markIntro" in css
+    assert "@keyframes wordReveal" in css
+    assert "@keyframes progressSweep" in css
+    assert "prefers-reduced-motion:reduce" in css
 
 
 def test_desktop_pet_quick_chat_uses_the_real_active_conversation():

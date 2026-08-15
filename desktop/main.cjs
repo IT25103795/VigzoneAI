@@ -11,14 +11,22 @@ app.enableSandbox();
 const DEFAULT_APP_URL = 'https://vigzoneai.onrender.com/chat';
 const PET_COLLAPSED = Object.freeze({ width: 190, height: 226 });
 const PET_EXPANDED = Object.freeze({ width: 380, height: 520 });
+const SPLASH_MIN_VISIBLE_MS = 2300;
+const SPLASH_FAILSAFE_MS = 15000;
 const GOOGLE_OAUTH_HOSTS = new Set(['accounts.google.com', 'accounts.googleusercontent.com']);
 const GITHUB_RELEASE_HOSTS = new Set(['github.com', 'objects.githubusercontent.com']);
 
 let mainWindow = null;
 let petWindow = null;
+let splashWindow = null;
 let tray = null;
 let quitting = false;
 let petExpanded = false;
+let petWindowReady = false;
+let startupComplete = false;
+let splashStartedAt = 0;
+let startupRevealTimer = null;
+let startupFailsafeTimer = null;
 let preferences = { petEnabled: true };
 
 function requestedAppUrl() {
@@ -110,6 +118,77 @@ function iconPath(size = 256) {
   return path.join(__dirname, '..', 'static', 'icons', `vigzone-icon-${size}.png`);
 }
 
+function createSplashWindow() {
+  splashStartedAt = Date.now();
+  splashWindow = new BrowserWindow({
+    width: 540,
+    height: 330,
+    show: false,
+    frame: false,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: true,
+    center: true,
+    backgroundColor: '#0d0812',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      webSecurity: true
+    }
+  });
+
+  splashWindow.loadFile(path.join(__dirname, 'splash.html'));
+  splashWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  splashWindow.webContents.on('will-navigate', event => event.preventDefault());
+  splashWindow.once('ready-to-show', () => {
+    if (startupComplete) {
+      splashWindow?.destroy();
+      return;
+    }
+    splashWindow?.show();
+  });
+  splashWindow.on('closed', () => { splashWindow = null; });
+}
+
+function dismissSplashWindow() {
+  const currentSplash = splashWindow;
+  if (!currentSplash || currentSplash.isDestroyed()) return;
+  currentSplash.webContents.executeJavaScript(
+    `document.documentElement.classList.add('splash-leaving')`,
+    true
+  ).catch(() => undefined);
+  setTimeout(() => {
+    if (!currentSplash.isDestroyed()) currentSplash.destroy();
+  }, 360);
+}
+
+function revealStartup() {
+  if (startupComplete) return;
+  startupComplete = true;
+  if (startupRevealTimer) clearTimeout(startupRevealTimer);
+  if (startupFailsafeTimer) clearTimeout(startupFailsafeTimer);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show();
+    mainWindow.focus();
+  }
+  dismissSplashWindow();
+  setTimeout(() => {
+    if (petWindowReady) showPet();
+  }, 380);
+}
+
+function scheduleStartupReveal() {
+  if (startupComplete || startupRevealTimer) return;
+  const elapsed = Date.now() - splashStartedAt;
+  const remaining = Math.max(0, SPLASH_MIN_VISIBLE_MS - elapsed);
+  startupRevealTimer = setTimeout(revealStartup, remaining);
+}
+
 function positionPet(expanded = petExpanded, preserveAnchor = false) {
   if (!petWindow || petWindow.isDestroyed()) return;
   const size = expanded ? PET_EXPANDED : PET_COLLAPSED;
@@ -159,6 +238,7 @@ function movePetBy(rawDelta) {
 
 function showPet({ expand = false, announceMinimized = false } = {}) {
   if (!preferences.petEnabled || !petWindow || petWindow.isDestroyed()) return;
+  if (!startupComplete) return;
   if (expand) setPetExpanded(true);
   petWindow.showInactive();
   petWindow.setAlwaysOnTop(true, 'floating');
@@ -181,6 +261,10 @@ function restorePet() {
 
 function openMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (!startupComplete) {
+    scheduleStartupReveal();
+    return;
+  }
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
@@ -273,11 +357,13 @@ function createMainWindow() {
 
   configureRemoteWebContents(mainWindow.webContents);
   mainWindow.loadURL(appUrl);
-  mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.once('ready-to-show', scheduleStartupReveal);
   mainWindow.webContents.on('did-finish-load', async () => {
+    scheduleStartupReveal();
     sendToPet('vigi:status', await companionState());
   });
   mainWindow.webContents.on('did-fail-load', (_event, _code, description) => {
+    scheduleStartupReveal();
     sendToPet('vigi:status', { ready: false, error: description || 'Vigzone could not load.' });
   });
   mainWindow.on('minimize', () => showPet({ expand: true, announceMinimized: true }));
@@ -335,8 +421,9 @@ function createPetWindow() {
   });
   petWindow.on('closed', () => { petWindow = null; });
   petWindow.once('ready-to-show', () => {
+    petWindowReady = true;
     positionPet(false);
-    showPet();
+    if (startupComplete) showPet();
   });
 }
 
@@ -426,9 +513,11 @@ if (!singleInstance) {
     loadPreferences();
     configurePermissions();
     registerIpc();
+    createSplashWindow();
     createMainWindow();
     createPetWindow();
     createTray();
+    startupFailsafeTimer = setTimeout(revealStartup, SPLASH_FAILSAFE_MS);
   });
 }
 

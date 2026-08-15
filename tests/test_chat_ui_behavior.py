@@ -82,10 +82,35 @@ def test_chat_ui_asset_revision_is_consistent():
     index = _read("static/index.html")
     service_worker = _read("static/service-worker.js")
 
-    assert index.count("vigi-desktop-r3") == 5
-    assert "const UI_ASSET_REVISION = 'vigi-desktop-r3';" in service_worker
-    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r30';" in service_worker
+    assert index.count("vigi-desktop-r4") == 5
+    assert "const UI_ASSET_REVISION = 'vigi-desktop-r4';" in service_worker
+    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r31';" in service_worker
     assert "/static/icons/vigzone-doodles.svg?v=doodle-r1" in service_worker
+
+
+def test_brand_lives_in_sidebar_and_always_shows_the_authoritative_role():
+    index = _read("static/index.html")
+    js = _read("static/js/app.js")
+    css = _read("static/css/styles.css")
+
+    sidebar_brand = index.split('<div class="sidebar-top">', 1)[1].split(
+        '<button class="new-chat-btn"', 1
+    )[0]
+    chat_header = index.split('<div class="header-left">', 1)[1].split(
+        '<div class="actions">', 1
+    )[0]
+
+    assert 'id="sidebarRoleBadge">FREE</span>' in sidebar_brand
+    assert 'id="statusDot"' in sidebar_brand
+    assert 'id="statusText"' in sidebar_brand
+    assert 'class="brand"' not in chat_header
+    assert 'id="headerPlanBadge"' not in index
+    assert "const allowedPlans = new Set(['free', 'pro', 'team']);" in js
+    assert "const displayPlan = isAdmin ? 'admin' : effectivePlan;" in js
+    assert "roleBadge.className = `sidebar-role-badge plan-${displayPlan}`;" in js
+    assert "roleBadge.textContent = displayPlan.toUpperCase();" in js
+    for role in ("free", "pro", "team", "admin"):
+        assert f".sidebar-role-badge.plan-{role}" in css
 
 
 def test_first_mobile_launch_tracks_the_visible_viewport_before_css_paints():
@@ -132,7 +157,7 @@ def test_classic_vigi_is_role_aware_metered_and_desktop_only():
     assert 'aria-label="Show Vigi desktop companion"' in index
     assert "/static/assets/vigi/classic-vigi-v1.png?v=classic-r1" in index
     assert Path("static/assets/vigi/classic-vigi-v1.png").stat().st_size > 100_000
-    assert "/static/js/vigi.js?v=vigi-desktop-r3" in index
+    assert "/static/js/vigi.js?v=vigi-desktop-r4" in index
     assert "vigzone:account" in app_js
     assert "vigzone:usage" in app_js
     assert "vigzone:activity" in app_js

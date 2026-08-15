@@ -12,8 +12,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Sinhala:wght@400;500;600&display=swap" rel="stylesheet">
   <script>
-    const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r30';
-    const UI_ASSET_REVISION = 'vigi-desktop-r3';
+    const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r31';
+    const UI_ASSET_REVISION = 'vigi-desktop-r4';
     (function () {
       var key = 'vigzone_doodle_theme';
       var tones = {
@@ -94,7 +94,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/static/css/styles.css?v=vigi-desktop-r3">
+  <link rel="stylesheet" href="/static/css/styles.css?v=vigi-desktop-r4">
 </head>
 <body>
 <div class="offline-status-banner" id="offlineStatusBanner" role="status" aria-live="polite">
@@ -198,7 +198,13 @@
     <div class="sidebar-top">
       <div class="brand">
         <div class="brand-mark"><img src="/static/icons/vigzone-icon.svg?v=logo1-simple" alt="" width="30" height="30" /></div>
-        <div class="brand-name">Vigzone AI</div>
+        <div class="sidebar-brand-copy">
+          <div class="brand-title-row">
+            <div class="brand-name">Vigzone AI</div>
+            <span class="sidebar-role-badge plan-free" id="sidebarRoleBadge">FREE</span>
+          </div>
+          <div class="brand-sub"><span class="dot online" id="statusDot"></span><span id="statusText">Online</span></div>
+        </div>
       </div>
     </div>
     <button class="new-chat-btn" id="newChatBtnSidebar">
@@ -723,13 +729,6 @@
       <button class="sidebar-toggle-btn" id="sidebarToggleBtn" aria-label="Toggle chat history" title="Toggle chat history">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
       </button>
-      <div class="brand">
-        <div class="brand-mark"><img src="/static/icons/vigzone-icon.svg?v=logo1-simple" alt="" width="30" height="30" /></div>
-        <div>
-          <div class="brand-title-row"><div class="brand-name">Vigzone AI</div><span class="header-plan-badge" id="headerPlanBadge" hidden></span></div>
-          <div class="brand-sub"><span class="dot online" id="statusDot"></span><span id="statusText">Online</span></div>
-        </div>
-      </div>
     </div>
     <div class="actions">
       <div class="model-picker-wrap" id="modelPickerWrap">
@@ -1090,8 +1089,8 @@
     </button>
   </aside>
 
-  <script src="/static/js/app.js?v=vigi-desktop-r3"></script>
-  <script src="/static/js/vigi.js?v=vigi-desktop-r3"></script>
-  <script src="/static/js/projects.js?v=vigi-desktop-r3"></script>
+  <script src="/static/js/app.js?v=vigi-desktop-r4"></script>
+  <script src="/static/js/vigi.js?v=vigi-desktop-r4"></script>
+  <script src="/static/js/projects.js?v=vigi-desktop-r4"></script>
 </body>
 </html>
