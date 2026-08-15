@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="branding/vigzone-logo.svg" alt="Vigzone AI logo" width="144">
+</p>
+
 # Vigzone AI 5.0
 
 Vigzone AI is a private, multi-user AI workspace built with FastAPI and a responsive browser client. Chat, vision, and transcription use Groq. Image generation uses OpenAI when configured and otherwise uses a clearly labelled Pollinations fallback.
