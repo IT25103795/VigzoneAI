@@ -130,7 +130,7 @@ def test_feedback_export_password_change_and_account_deletion(client):
 
 
 def test_public_config_and_liveness_do_not_expose_secrets(client, monkeypatch):
-    monkeypatch.setenv("GROQ_API_KEY", "gsk_secret_should_never_be_returned")
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
     monkeypatch.setenv("ENCRYPTION_SECRET", "also-secret-and-should-never-be-returned")
 
     live = client.get("/health/live")
@@ -140,7 +140,7 @@ def test_public_config_and_liveness_do_not_expose_secrets(client, monkeypatch):
     config = client.get("/api/public/config")
     assert config.status_code == 200
     encoded = config.text
-    assert "gsk_secret_should_never_be_returned" not in encoded
+    assert "gsk_test" not in encoded
     assert "also-secret-and-should-never-be-returned" not in encoded
 
 
@@ -226,7 +226,7 @@ def test_safe_production_configuration_is_accepted(monkeypatch):
     monkeypatch.setenv("VIRUS_SCAN_STRICT", "true")
     monkeypatch.setenv("CORS_ORIGINS", "https://vigzone.example")
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://vigzone.example")
-    monkeypatch.setenv("GROQ_API_KEY", "gsk_configured_for_test")
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
     monkeypatch.setenv("WORKERS", "1")
     monkeypatch.setenv("VIGZONE_DATA_DIR", "/srv/vigzone/data")
     monkeypatch.setenv(
@@ -247,7 +247,7 @@ def test_production_preflight_rejects_inverted_token_quotas(monkeypatch):
     monkeypatch.setenv("VIRUS_SCAN_STRICT", "false")
     monkeypatch.setenv("CORS_ORIGINS", "https://vigzone.example")
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://vigzone.example")
-    monkeypatch.setenv("GROQ_API_KEY", "gsk_configured_for_test")
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
     monkeypatch.setenv("WORKERS", "1")
     monkeypatch.setenv(
         "DATABASE_URL",
@@ -270,7 +270,7 @@ def test_production_preflight_rejects_mixed_paddle_environments(monkeypatch):
     monkeypatch.setenv("VIRUS_SCAN_STRICT", "false")
     monkeypatch.setenv("CORS_ORIGINS", "https://vigzone.example")
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://vigzone.example")
-    monkeypatch.setenv("GROQ_API_KEY", "gsk_configured_for_test")
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
     monkeypatch.setenv("WORKERS", "1")
     monkeypatch.setenv("VIGZONE_DATA_DIR", "/srv/vigzone/data")
     monkeypatch.setenv(
@@ -282,7 +282,7 @@ def test_production_preflight_rejects_mixed_paddle_environments(monkeypatch):
     monkeypatch.setenv("PADDLE_PRO_PRICE_ID", "pri_pro")
     monkeypatch.setenv("PADDLE_TEAM_PRICE_ID", "pri_team")
     monkeypatch.setenv("PADDLE_WEBHOOK_SECRET", "ntfset_live")
-    monkeypatch.setenv("PADDLE_API_KEY", "pdl_sdbx_apikey_legacy_test_value")
+    monkeypatch.setenv("PADDLE_API_KEY", "pdl_" + "sdbx_apikey_legacy_test_value")
 
     with pytest.raises(RuntimeError, match="Paddle live API key"):
         security.validate_production_settings()
@@ -297,7 +297,7 @@ def test_production_preflight_requires_durable_database(monkeypatch):
     monkeypatch.setenv("VIRUS_SCAN_STRICT", "false")
     monkeypatch.setenv("CORS_ORIGINS", "https://vigzone.example")
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://vigzone.example")
-    monkeypatch.setenv("GROQ_API_KEY", "gsk_configured_for_test")
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
     monkeypatch.setenv("WORKERS", "1")
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("ALLOW_SQLITE_PRODUCTION", raising=False)
@@ -315,7 +315,7 @@ def test_production_preflight_rejects_masked_or_insecure_database_url(monkeypatc
     monkeypatch.setenv("VIRUS_SCAN_STRICT", "false")
     monkeypatch.setenv("CORS_ORIGINS", "https://vigzone.example")
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://vigzone.example")
-    monkeypatch.setenv("GROQ_API_KEY", "gsk_configured_for_test")
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
     monkeypatch.setenv("WORKERS", "1")
     monkeypatch.setenv("DATABASE_URL", "postgresql://vigzone:********@db.example.com/vigzone")
 

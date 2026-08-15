@@ -20,11 +20,25 @@ htmlcov/
 .idea/
 .vscode/
 *.iml
+.claude/
+
+# Local/internal documentation and release artwork
+*.local.md
+notes/
+release-assets/
+/ACCURACY_FEATURES.md
+/BACK4APP_*.md
+/README_DEEP_FEATURES_V3.md
+/README_GROQ_*.md
+/WEBSITE_CREATION_GUIDE.md
 
 # Data files (contain user data)
 data/*
 !data/.gitkeep
 uploads/
+*.db
+*.sqlite
+*.sqlite3
 
 # Logs
 *.log

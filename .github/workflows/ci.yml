@@ -22,6 +22,6 @@ jobs:
       - run: pytest tests/
         env:
           APP_MODE: testing
-          GROQ_API_KEY: gsk_ci_dummy_key_for_testing_purposes
-          ENCRYPTION_SECRET: v7N9kQ2xP4mR8wL1zT5yU0iO3aS6dF9g
+          GROQ_API_KEY: gsk_test
+          ENCRYPTION_SECRET: ci-only-encryption-secret-not-for-production-use
 

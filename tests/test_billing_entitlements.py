@@ -155,7 +155,7 @@ def test_webhook_rejects_bad_signatures_and_activates_exact_price(client, auth_d
     import app
 
     user = auth_db.create_user_with_password("api-buyer@example.com", PASSWORD, "API Buyer")
-    secret = "pdl_ntfset_test_secret"
+    secret = "unit-test-webhook-signing-secret"
     monkeypatch.setattr(app, "PADDLE_WEBHOOK_SECRET", secret)
     monkeypatch.setattr(app, "PADDLE_PRO_PRICE_ID", "pri_pro")
     monkeypatch.setattr(app, "PADDLE_TEAM_PRICE_ID", "pri_team")
@@ -189,7 +189,7 @@ def test_unrecognized_paid_item_fails_loudly_instead_of_granting_pro(client, aut
     import app
 
     user = auth_db.create_user_with_password("wrong-price@example.com", PASSWORD, "Wrong Price")
-    secret = "pdl_ntfset_test_secret"
+    secret = "unit-test-webhook-signing-secret"
     monkeypatch.setattr(app, "PADDLE_WEBHOOK_SECRET", secret)
     monkeypatch.setattr(app, "PADDLE_PRO_PRICE_ID", "pri_pro")
     monkeypatch.setattr(app, "PADDLE_TEAM_PRICE_ID", "pri_team")
