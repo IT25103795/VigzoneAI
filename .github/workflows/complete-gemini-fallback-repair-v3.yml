@@ -1,0 +1,73 @@
+name: complete-gemini-fallback-repair-v3
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - .github/workflows/complete-gemini-fallback-repair-v3.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Apply corrected repair
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path('.github/workflows/complete-gemini-fallback-repair-v2.yml').read_text(encoding='utf-8')
+          start_marker = "          python - <<'PY'\n"
+          end_marker = "\n          PY\n"
+          start = workflow.index(start_marker) + len(start_marker)
+          end = workflow.index(end_marker, start)
+          script = textwrap.dedent(workflow[start:end])
+          old = r"raise err\s*$"
+          new = r"raise err[ \t]*$"
+          if old not in script:
+              raise SystemExit('v2 repair regex marker not found')
+          script = script.replace(old, new, 1)
+          exec(compile(script, '<guarded-gemini-repair>', 'exec'), {'__name__': '__main__'})
+          PY
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Compile
+        run: python -m compileall -q .
+      - name: Focused tests
+        run: pytest -q tests/test_gemini_fallback.py tests/test_model_and_streams.py
+        env:
+          APP_MODE: testing
+          GROQ_API_KEY: gsk_test
+          ENCRYPTION_SECRET: ci-only-encryption-secret-not-for-production-use
+      - name: Full suite
+        run: pytest tests/
+        env:
+          APP_MODE: testing
+          GROQ_API_KEY: gsk_test
+          ENCRYPTION_SECRET: ci-only-encryption-secret-not-for-production-use
+      - name: Lint
+        run: ruff check vigzone_ai.py tests/test_gemini_fallback.py
+      - name: Commit repaired implementation
+        shell: bash
+        run: |
+          git config user.name "Vigzone Repair Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git rm .github/workflows/complete-gemini-fallback-repair.yml \
+                 .github/workflows/complete-gemini-fallback-repair-v2.yml \
+                 .github/workflows/complete-gemini-fallback-repair-v3.yml
+          git add -A
+          git status --short
+          git commit -m "fix: repair Gemini fallback and deploy safety"
+          git push origin master
