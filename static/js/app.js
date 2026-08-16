@@ -7973,6 +7973,11 @@ Requirements:
 
     document.querySelectorAll('.model-dropdown-item').forEach(item => {
       item.addEventListener('click', () => {
+        if (item.classList.contains('plan-locked')) {
+          wrap?.classList.remove('open');
+          openPricingModal();
+          return;
+        }
         const m = item.dataset.model;
         if (m) {
           updateUi(m);
@@ -7997,12 +8002,29 @@ Requirements:
       if (!modelId) return;
       const isPremium = PREMIUM_MODELS.includes(modelId);
       if (isPremium && !isPaid) {
-        // Hide premium models from free users
-        item.style.display = 'none';
+        // Show premium models as locked for free users
+        item.style.display = 'flex';
+        item.style.opacity = '0.7';
         item.classList.add('plan-locked');
+        
+        let header = item.querySelector('.model-item-header');
+        if (header && !header.querySelector('.lock-icon')) {
+            const lockIcon = document.createElement('span');
+            lockIcon.className = 'lock-icon';
+            lockIcon.innerHTML = ' 🔒 PRO';
+            lockIcon.style.marginLeft = 'auto';
+            lockIcon.style.fontSize = '11px';
+            lockIcon.style.color = '#f59e0b';
+            lockIcon.style.fontWeight = '700';
+            header.appendChild(lockIcon);
+        }
       } else {
         item.style.display = '';
+        item.style.opacity = '1';
         item.classList.remove('plan-locked');
+        
+        const lockIcon = item.querySelector('.lock-icon');
+        if (lockIcon) lockIcon.remove();
       }
     });
     // If current model is premium and user is on free plan, switch to free model
@@ -8195,6 +8217,11 @@ Requirements:
           suiteToast?.(`🎉 ${targetPlan.toUpperCase()} is active — all included features are unlocked.`);
           setTimeout(() => window.location.reload(), 700);
           return;
+        }
+        if (attempt === 8 || attempt === 12) {
+          try {
+            await fetch('/api/billing/paddle/restore', { method: 'POST', credentials: 'same-origin' });
+          } catch {}
         }
       } catch {}
     }

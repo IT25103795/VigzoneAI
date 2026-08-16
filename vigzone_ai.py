@@ -294,6 +294,11 @@ GEMINI_FALLBACK_KEY = os.getenv("GOOGLE_API_KEY", "").strip()
 GEMINI_FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.0-flash")
 
 
+# Gemini free-tier fallback - activates when Groq is rate-limited.
+GEMINI_FALLBACK_KEY = os.getenv("GOOGLE_API_KEY", "").strip()
+GEMINI_FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.0-flash")
+
+
 # Constants for the "bring your own Groq key" feature — these are used
 # whenever a user has activated their own personal Groq key, REGARDLESS of
 # what AI_PROVIDER the deployment defaults to for everyone else.
@@ -1598,6 +1603,83 @@ def _model_candidates(
 def _should_try_fallback(status_code: int) -> bool:
     """Only fallback for model/rate/server problems, never invalid keys."""
     return status_code in {404, 408, 409, 413, 429, 500, 502, 503, 504}
+
+
+
+async def _gemini_fallback_stream(
+    messages: list[dict],
+    system_prompt: str = "",
+) -> AsyncGenerator[str, None]:
+    """Stream from Gemini 2.0 Flash when all Groq models are rate-limited."""
+    if not GEMINI_FALLBACK_KEY:
+        raise VigzoneAIError("Gemini fallback unavailable (no GOOGLE_API_KEY).")
+
+    gemini_contents = []
+    for msg in messages:
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        if role == "system":
+            continue
+        if isinstance(content, list):
+            parts = [{"text": p.get("text", "")} for p in content if p.get("type") == "text"]
+            if not parts:
+                parts = [{"text": "[image]"}]
+        else:
+            parts = [{"text": str(content)}]
+        gemini_role = "model" if role == "assistant" else "user"
+        gemini_contents.append({"role": gemini_role, "parts": parts})
+
+    sys_parts = []
+    if system_prompt:
+        sys_parts.append({"text": system_prompt})
+    for msg in messages:
+        if msg.get("role") == "system":
+            text = msg.get("content", "")
+            if isinstance(text, str) and text.strip():
+                sys_parts.append({"text": text})
+
+    payload: dict = {
+        "contents": gemini_contents,
+        "generationConfig": {"temperature": 0.7, "maxOutputTokens": 2048},
+    }
+    if sys_parts:
+        payload["systemInstruction"] = {"parts": sys_parts}
+
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        + GEMINI_FALLBACK_MODEL
+        + ":streamGenerateContent?alt=sse&key=" + GEMINI_FALLBACK_KEY
+    )
+    client = _get_client()
+    try:
+        async with client.stream(
+            "POST", url, json=payload,
+            headers={"Content-Type": "application/json"},
+        ) as resp:
+            if resp.status_code != 200:
+                await resp.aread()
+                raise VigzoneAIError(
+                    "Gemini fallback failed (HTTP " + str(resp.status_code) + ")."
+                )
+            async for line in resp.aiter_lines():
+                if not line or not line.startswith("data: "):
+                    continue
+                data = line[6:]
+                if data.strip() == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                for cand in chunk.get("candidates") or []:
+                    for part in (cand.get("content") or {}).get("parts") or []:
+                        text = part.get("text", "")
+                        if text:
+                            yield text
+    except httpx.RequestError as exc:
+        raise VigzoneAIError(
+            "Gemini fallback network error: " + type(exc).__name__
+        ) from exc
 
 
 
@@ -3221,5 +3303,20 @@ async def chat_once(
             return reply
 
     if last_error:
+        # Gemini fallback - activates when ALL Groq models hit rate limit.
+        # GOOGLE_API_KEY is already in .env, completely separate quota.
+        if (
+            GEMINI_FALLBACK_KEY
+            and not using_override
+            and not contains_image
+            and getattr(last_error, "code", "") == "provider_rate_limit"
+        ):
+            logger.warning(
+                "All Groq candidates rate-limited. Falling back to Gemini %s.",
+                GEMINI_FALLBACK_MODEL,
+            )
+            async for chunk in _gemini_fallback_stream(messages, system_prompt=SYSTEM_PROMPT):
+                yield chunk
+            return
         raise last_error
     raise VigzoneAIError("Groq returned no response.")

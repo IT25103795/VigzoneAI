@@ -1,0 +1,175 @@
+commit 7078e0145e0b0bf20553cb2dc76fd1efceefebd7
+Author: De Silva K. H. B. N. - IT25103795 <it25103795@my.sliit.lk>
+Date:   Sun Aug 16 20:37:13 2026 +0530
+
+    fix: completely remove Groq cooldown banner and send-button block
+
+diff --git a/static/js/app.js b/static/js/app.js
+index c0fc84f..20cd889 100644
+--- a/static/js/app.js
++++ b/static/js/app.js
+@@ -436,6 +436,7 @@
+   let streaming = false;
+   let currentStreamId = null;
+   let isPaused = false;
++  // Cooldown system removed — no blocking on rate limit
+   let providerCooldownUntil = 0;
+   let providerCooldownTimer = null;
+   let providerCooldownReadyTimer = null;
+@@ -4703,121 +4704,23 @@
+     return bubble;
+   }
+ 
+-  function providerCooldownSecondsRemaining(){
+-    return Math.max(0, Math.ceil((providerCooldownUntil - Date.now()) / 1000));
+-  }
++  function providerCooldownSecondsRemaining(){ return 0; }
+ 
+-  function formatProviderCooldown(seconds){
+-    const safeSeconds = Math.max(0, Math.ceil(Number(seconds) || 0));
+-    const minutes = Math.floor(safeSeconds / 60);
+-    const remainder = safeSeconds % 60;
+-    return minutes ? `${minutes}m ${remainder}s` : `${remainder}s`;
+-  }
++  function formatProviderCooldown(){ return ''; }
+ 
+-  function parseProviderRetrySeconds(message){
+-    const match = String(message || '').match(
+-      /try again in (?:about )?(?:(\d+(?:\.\d+)?)m)?\s*(\d+(?:\.\d+)?)s/i
+-    );
+-    if (!match) return 0;
+-    return Math.ceil((Number(match[1]) || 0) * 60 + (Number(match[2]) || 0));
+-  }
++  function parseProviderRetrySeconds(){ return 0; }
+ 
+-  function streamErrorFromPayload(payload){
+-    const error = new Error(payload?.error || 'Something went wrong.');
+-    error.code = payload?.error_code || '';
+-    const retryAfter = Number(payload?.retry_after_seconds);
+-    error.retryAfterSeconds = Number.isFinite(retryAfter) && retryAfter > 0
+-      ? Math.ceil(retryAfter)
+-      : parseProviderRetrySeconds(error.message);
+-    return error;
+-  }
+-
+-  function isProviderRateLimitError(error){
+-    return error?.code === 'provider_rate_limit' || /Groq's real .*limit is reached/i.test(error?.message || '');
+-  }
+-
+-  function syncProviderCooldownSendControl(remaining = providerCooldownSecondsRemaining()){
++  function syncProviderCooldownSendControl(){
+     const stillUploading = pendingFiles.some(file => file.status === 'uploading');
+-    const coolingDown = remaining > 0;
+-    sendBtn.disabled = streaming || stillUploading || coolingDown;
+-    const label = coolingDown ? `Groq ready in ${formatProviderCooldown(remaining)}` : 'Send message';
+-    sendBtn.setAttribute('aria-label', label);
+-    sendBtn.title = label;
+-  }
+-
+-  function removeEarlierProviderErrors(keepBubble){
+-    chatInner.querySelectorAll('.bubble.error-bubble').forEach(existing => {
+-      if (existing === keepBubble) return;
+-      if (isProviderRateLimitError({message: existing.textContent || ''})) {
+-        existing.closest('.msg')?.remove();
+-      }
+-    });
++    sendBtn.disabled = streaming || stillUploading;
++    sendBtn.setAttribute('aria-label', 'Send message');
++    sendBtn.title = 'Send message';
+   }
+ 
+-  function showProviderCooldown(bubble, error){
+-    const retrySeconds = Math.max(
+-      0,
+-      Math.ceil(Number(error?.retryAfterSeconds) || parseProviderRetrySeconds(error?.message))
+-    );
+-    if (!isProviderRateLimitError(error) || retrySeconds <= 0) return false;
++  function removeEarlierProviderErrors(){}
+ 
+-    if (providerCooldownTimer) window.clearInterval(providerCooldownTimer);
+-    if (providerCooldownReadyTimer) window.clearTimeout(providerCooldownReadyTimer);
+-    removeEarlierProviderErrors(bubble);
+-
+-    providerCooldownUntil = Date.now() + retrySeconds * 1000;
+-    providerCooldownBubble = bubble;
+-    bubble.classList.add('error-bubble', 'provider-cooldown-bubble');
+-    bubble.classList.remove('provider-cooldown-ready');
+-    bubble.innerHTML = `
+-      <div class="provider-cooldown-card" role="status" aria-live="polite">
+-        <div class="provider-cooldown-heading">
+-          <span class="provider-cooldown-icon" aria-hidden="true">!</span>
+-          <strong>Groq cooldown</strong>
+-          <span class="provider-cooldown-countdown"></span>
+-        </div>
+-        <p class="provider-cooldown-message"></p>
+-        <div class="provider-cooldown-track" aria-hidden="true"><span></span></div>
+-        <small>Vigzone's usage circle is separate from Groq's live provider quota.</small>
+-      </div>`;
+-    syncAssistantOutputPresentation(bubble, true);
+-
+-    const countdown = bubble.querySelector('.provider-cooldown-countdown');
+-    const message = bubble.querySelector('.provider-cooldown-message');
+-    const progress = bubble.querySelector('.provider-cooldown-track span');
+-
+-    const update = () => {
+-      const remaining = providerCooldownSecondsRemaining();
+-      if (!bubble.isConnected && providerCooldownBubble === bubble) providerCooldownBubble = null;
+-      if (remaining > 0) {
+-        countdown.textContent = `Ready in ${formatProviderCooldown(remaining)}`;
+-        message.textContent = 'Please wait for this live timer before sending the message again.';
+-        progress.style.width = `${Math.max(0, Math.min(100, ((providerCooldownUntil - Date.now()) / (retrySeconds * 1000)) * 100))}%`;
+-        syncProviderCooldownSendControl(remaining);
+-        return;
+-      }
+-
+-      window.clearInterval(providerCooldownTimer);
+-      providerCooldownTimer = null;
+-      providerCooldownUntil = 0;
+-      countdown.textContent = 'Ready now';
+-      message.textContent = 'The cooldown has ended. You can send your message again.';
+-      progress.style.width = '0%';
+-      bubble.classList.remove('error-bubble');
+-      bubble.classList.add('provider-cooldown-ready');
+-      syncProviderCooldownSendControl(0);
+-      providerCooldownReadyTimer = window.setTimeout(() => {
+-        if (providerCooldownBubble === bubble) providerCooldownBubble = null;
+-        bubble.closest('.msg')?.remove();
+-        providerCooldownReadyTimer = null;
+-      }, 4500);
+-    };
+-
+-    update();
+-    providerCooldownTimer = window.setInterval(update, 250);
+-    scrollLatestIfFollowing();
+-    return true;
+-  }
++  // showProviderCooldown: no-op — cooldown UI removed
++  function showProviderCooldown(){ return false; }
+ 
+   function showAssistantError(bubble, error, fallback = 'Something went wrong.'){
+     if (showProviderCooldown(bubble, error)) return true;
+@@ -5523,13 +5426,6 @@ A strong website should include: hero section, clear navigation, services/featur
+       return sendImageGenRequest(text);
+     }
+ 
+-    const cooldownRemaining = providerCooldownSecondsRemaining();
+-    if (!offlineNow && cooldownRemaining > 0) {
+-      syncProviderCooldownSendControl(cooldownRemaining);
+-      providerCooldownBubble?.scrollIntoView?.({behavior:'smooth', block:'center'});
+-      suiteToast?.(`Groq will be ready in ${formatProviderCooldown(cooldownRemaining)}.`);
+-      return;
+-    }
+ 
+     const readyFiles = pendingFiles.filter(f => f.status === 'ready');
+     const stillUploading = pendingFiles.some(f => f.status === 'uploading');
+@@ -7173,9 +7069,7 @@ A strong website should include: hero section, clear navigation, services/featur
+       const coolingDown = showAssistantError(assistantBubble, err);
+       if (!liveVoiceActive) return;
+       setLiveVoiceState(null, coolingDown ? 'Groq is cooling down' : "Couldn't get a reply — listening again");
+-      const listenDelay = coolingDown
+-        ? (providerCooldownSecondsRemaining() + 1) * 1000
+-        : 1200;
++      const listenDelay = 1200;
+       setTimeout(() => { if (liveVoiceActive) liveListenLoop(); }, listenDelay);
+     }
+   }
