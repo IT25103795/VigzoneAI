@@ -172,7 +172,12 @@ def init_db() -> None:
                 quota_scope       TEXT NOT NULL DEFAULT 'user',
                 quota_subject_id  INTEGER,
                 quota_plan        TEXT NOT NULL DEFAULT 'free',
-                quota_limit       INTEGER NOT NULL DEFAULT 0
+                quota_limit       INTEGER NOT NULL DEFAULT 0,
+                zoner_version     TEXT,
+                prompt_version    TEXT,
+                retrieval_version TEXT,
+                tool_policy_version TEXT,
+                eval_suite_version TEXT
             )
             """
         )
@@ -424,6 +429,11 @@ def init_db() -> None:
             "quota_subject_id": "INTEGER",
             "quota_plan": "TEXT NOT NULL DEFAULT 'free'",
             "quota_limit": "INTEGER NOT NULL DEFAULT 0",
+            "zoner_version": "TEXT",
+            "prompt_version": "TEXT",
+            "retrieval_version": "TEXT",
+            "tool_policy_version": "TEXT",
+            "eval_suite_version": "TEXT",
         }
         for column, definition in usage_migrations.items():
             if column not in existing_usage_cols:

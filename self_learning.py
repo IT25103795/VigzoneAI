@@ -95,6 +95,8 @@ def is_degenerate_text(text: str, max_repeat: int = 6, tail_chars: int = 2500) -
     lowered = text.lower()
     if any(marker in lowered for marker in _DEGENERATION_MARKERS):
         return True
+    if re.search(r"[^\S\r\n]{80,}", text):
+        return True
     tail = text.rstrip()[-tail_chars:]
     normalized = _normalize_ws(tail)
     for needle, limit in (

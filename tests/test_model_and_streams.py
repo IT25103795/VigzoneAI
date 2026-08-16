@@ -439,6 +439,28 @@ def test_non_streaming_payload_overflow_retries_once_without_leaking_provider_de
     assert "larger than" in friendly
 
 
+def test_groq_quota_wait_is_rounded_for_users():
+    import json
+
+    import vigzone_ai
+
+    body = json.dumps(
+        {
+            "error": {
+                "message": (
+                    "tokens per day limit reached; please try again in "
+                    "33m37.439999999s"
+                )
+            }
+        }
+    )
+    friendly = vigzone_ai._friendly_groq_error(429, body)
+
+    assert "daily free-tier limit" in friendly
+    assert "33m38s" in friendly
+    assert "439999999" not in friendly
+
+
 def test_stream_controls_are_owner_bound_and_pause_is_async():
     import stream_manager
 

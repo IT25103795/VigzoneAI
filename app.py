@@ -58,6 +58,8 @@ from vigzone_ai import (
     estimate_budgeted_request_tokens,
     is_configured,
     stream_chat,
+    local_response_metadata,
+    verified_product_response,
     validate_groq_api_key,
 )
 from image_generation import generate_image, edit_image, ImageGenError
@@ -86,6 +88,7 @@ import billing
 import database
 import desktop_updates
 import mailer
+from zoner import ZONER_PROFILE, zoner_manifest
 import secrets as _secrets
 import httpx
 
@@ -214,6 +217,7 @@ class ModelInfoResponse(BaseModel):
     backend: str
     status: str
     mode: str
+    zoner: dict[str, Any]
 
 
 class SignupRequest(BaseModel):
@@ -326,6 +330,70 @@ class FeedbackCreateRequest(BaseModel):
     message_text: Optional[str] = Field(default="", max_length=6000)
     assistant_text: Optional[str] = Field(default="", max_length=12000)
     context: dict = Field(default_factory=dict)
+
+
+_FEEDBACK_CONTEXT_FIELDS = {
+    "mode",
+    "usage_id",
+    "model",
+    "routed_model",
+    "route_reason",
+    "routing_mode",
+    "fallback_used",
+    "retry_count",
+    "prompt_tokens",
+    "completion_tokens",
+    "total_tokens",
+    "cached_tokens",
+    "latency_ms",
+    "time_to_first_token_ms",
+}
+_FEEDBACK_ZONER_FIELDS = {
+    "name",
+    "release",
+    "version",
+    "prompt_bundle_version",
+    "retrieval_policy_version",
+    "tool_policy_version",
+    "evaluation_suite_version",
+}
+
+
+def _sanitize_feedback_context(context: Any) -> dict[str, Any]:
+    """Keep useful response telemetry without persisting arbitrary client data."""
+
+    if not isinstance(context, dict):
+        return {}
+
+    safe: dict[str, Any] = {}
+    for key in _FEEDBACK_CONTEXT_FIELDS:
+        value = context.get(key)
+        if isinstance(value, str):
+            safe[key] = value[:240]
+        elif isinstance(value, (int, float, bool)):
+            safe[key] = value
+
+    zoner = context.get("zoner")
+    if isinstance(zoner, dict):
+        safe_zoner = {
+            key: str(zoner[key])[:120]
+            for key in _FEEDBACK_ZONER_FIELDS
+            if zoner.get(key) is not None
+        }
+        if safe_zoner:
+            safe["zoner"] = safe_zoner
+
+    modules = context.get("prompt_modules")
+    if isinstance(modules, list):
+        safe_modules = [
+            module[:120]
+            for module in modules[:20]
+            if isinstance(module, str) and module.strip()
+        ]
+        if safe_modules:
+            safe["prompt_modules"] = safe_modules
+
+    return safe
 
 
 class ShareChatRequest(BaseModel):
@@ -622,6 +690,7 @@ async def app_version():
         "version": APP_VERSION,
         "name": APP_BUILD_NAME,
         "app_name": APP_NAME,
+        "zoner": zoner_manifest(),
         "features": [
             "Private versioned Brain sync",
             "Per-user chat history",
@@ -650,6 +719,7 @@ async def public_config():
         "short_name": APP_SHORT_NAME,
         "build_name": APP_BUILD_NAME,
         "version": APP_VERSION,
+        "zoner": zoner_manifest(),
         "groq_keys_url": GROQ_KEYS_URL,
         "groq_docs_url": GROQ_DOCS_URL,
         "google_drive_api_key": GOOGLE_DRIVE_API_KEY,
@@ -670,7 +740,7 @@ async def public_config():
         "available_models": MODEL_CATALOG,
         "default_model": FAST_MODEL,
         "labels": {
-            "assistant": APP_NAME,
+            "assistant": ZONER_PROFILE.name,
             "settings_signed_in": f"Signed in to {APP_NAME}",
             "share_badge": f"{APP_NAME} shared chat",
             "api_default": "Groq (default)",
@@ -691,6 +761,12 @@ async def available_models_endpoint():
         "models": MODEL_CATALOG,
         "default": FAST_MODEL,
     })
+
+
+@app.get("/api/zoner/info", tags=["AI"])
+async def zoner_info_endpoint():
+    """Return the truthful public manifest for the active Zoner runtime."""
+    return JSONResponse(zoner_manifest())
 
 
 @app.get("/api/desktop/releases/latest", tags=["Product"])
@@ -740,7 +816,7 @@ async def save_feedback(req: FeedbackCreateRequest, user: dict = Depends(require
         "reason": req.reason or "",
         "message_text": req.message_text or "",
         "assistant_text": req.assistant_text or "",
-        "context": req.context or {},
+        "context": _sanitize_feedback_context(req.context),
     }
     try:
         feedback_id = authmod.save_feedback_record(user["id"], item)
@@ -1009,6 +1085,7 @@ async def get_model_info():
         backend=_backend_label(),
         status="ready" if await is_configured() else "groq_not_configured",
         mode="testing" if IS_TESTING else "production",
+        zoner=zoner_manifest(),
     )
 
 
@@ -1017,6 +1094,7 @@ async def get_stats():
     return JSONResponse({
         "name": "Vigzone AI",
         "version": APP_VERSION,
+        "zoner": ZONER_PROFILE.runtime_metadata(),
         "mode": "testing" if IS_TESTING else "production",
         "description": "A real conversational AI assistant — powered by Groq",
         "endpoints": {
@@ -1348,9 +1426,11 @@ def _build_datetime_answer(text: str, client_timezone: Optional[str] = None) -> 
     return f"📅 Today is **{info['day']}, {info['date']}**."
 
 
-async def _stream_direct_answer(stream_id: str, text: str):
+async def _stream_direct_answer(stream_id: str, text: str, metadata: Optional[dict] = None):
     yield f'data: {json.dumps({"stream_id": stream_id})}\n\n'
     yield f'data: {json.dumps({"content": text})}\n\n'
+    if metadata:
+        yield f'data: {json.dumps({"meta": metadata}, ensure_ascii=False)}\n\n'
     yield "data: [DONE]\n\n"
 
 
@@ -3457,6 +3537,54 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
         for message in chat_request.messages
     ])
 
+    verified = verified_product_response(messages)
+    if verified is not None:
+        direct_answer, direct_meta = verified
+        stream_id = create_stream_id()
+        register_stream(stream_id, user["id"])
+
+        async def verified_event_stream():
+            try:
+                async for item in _stream_direct_answer(stream_id, direct_answer, direct_meta):
+                    yield item
+            finally:
+                unregister_stream(stream_id)
+
+        return StreamingResponse(
+            verified_event_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        )
+
+    last_user_query = ""
+    for message in reversed(messages):
+        if message.get("role") == "user":
+            last_user_query = _message_text_plain(message.get("content")) or ""
+            break
+
+    if _is_simple_datetime_request(last_user_query):
+        stream_id = create_stream_id()
+        register_stream(stream_id, user["id"])
+        direct_answer = _build_datetime_answer(last_user_query, chat_request.client_timezone)
+        direct_meta = local_response_metadata(
+            "local_datetime",
+            model="zoner-local-capability",
+            prompt_modules=("local_datetime",),
+        )
+
+        async def direct_event_stream():
+            try:
+                async for item in _stream_direct_answer(stream_id, direct_answer, direct_meta):
+                    yield item
+            finally:
+                unregister_stream(stream_id)
+
+        return StreamingResponse(
+            direct_event_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        )
+
     # Real backend quota guard: do not start a Groq call when this user's
     # Vigzone daily plan is exhausted or too close to exhausted.
     key_status = authmod.get_user_key_status(user["id"])
@@ -3476,29 +3604,6 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
                 f"{APP_NAME} isn't configured — set GROQ_API_KEY in .env "
                 f"or in your deployment Variables (get a free key at {GROQ_KEYS_URL})."
             ),
-        )
-
-    last_user_query = ""
-    for m in reversed(messages):
-        if m.get("role") == "user":
-            last_user_query = _message_text_plain(m.get("content")) or ""
-            break
-
-    if _is_simple_datetime_request(last_user_query):
-        release_token_reservation(quota_reservation)
-        stream_id = create_stream_id()
-        register_stream(stream_id, user["id"])
-        direct_answer = _build_datetime_answer(last_user_query, chat_request.client_timezone)
-        async def direct_event_stream():
-            try:
-                async for item in _stream_direct_answer(stream_id, direct_answer):
-                    yield item
-            finally:
-                unregister_stream(stream_id)
-        return StreamingResponse(
-            direct_event_stream(),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
         )
 
     try:
@@ -3591,6 +3696,30 @@ async def chat_sync(request: Request, chat_request: ChatRequest, user: dict = De
         for message in chat_request.messages
     ])
 
+    verified = verified_product_response(messages)
+    if verified is not None:
+        direct_answer, direct_meta = verified
+        return JSONResponse(
+            {"role": "assistant", "content": direct_answer, "meta": direct_meta}
+        )
+
+    last_user_query = ""
+    for message in reversed(messages):
+        if message.get("role") == "user":
+            last_user_query = _message_text_plain(message.get("content")) or ""
+            break
+
+    if _is_simple_datetime_request(last_user_query):
+        return JSONResponse({
+            "role": "assistant",
+            "content": _build_datetime_answer(last_user_query, chat_request.client_timezone),
+            "meta": local_response_metadata(
+                "local_datetime",
+                model="zoner-local-capability",
+                prompt_modules=("local_datetime",),
+            ),
+        })
+
     key_status = authmod.get_user_key_status(user["id"])
     estimated_request_tokens = estimate_budgeted_request_tokens(messages)
     quota_reservation = _assert_chat_entitlements(
@@ -3609,16 +3738,6 @@ async def chat_sync(request: Request, chat_request: ChatRequest, user: dict = De
                 f"or in your deployment Variables (get a free key at {GROQ_KEYS_URL})."
             ),
         )
-    last_user_query = ""
-    for m in reversed(messages):
-        if m.get("role") == "user":
-            last_user_query = _message_text_plain(m.get("content")) or ""
-            break
-
-    if _is_simple_datetime_request(last_user_query):
-        release_token_reservation(quota_reservation)
-        return JSONResponse({"role": "assistant", "content": _build_datetime_answer(last_user_query, chat_request.client_timezone)})
-
     try:
         context_parts = {
             "workspace": authmod.get_workspace_context(

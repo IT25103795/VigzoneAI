@@ -589,7 +589,17 @@
     new_chat_topline: 'Start with a real task',
     new_chat_subtitle: 'Open a fresh chat for one focused goal. Tell Vigzone AI what you are trying to finish, attach useful files, or choose a starter below.',
     greetings: ['Back at it,', 'Welcome back,', 'Good to see you,', 'Hey there,'],
-    labels: { assistant: 'Vigzone AI', settings_signed_in: 'Signed in to Vigzone AI', api_default: 'Groq (default)', api_own: 'Groq (your key)' }
+    zoner: {
+      name: 'Zoner',
+      release: 'v0',
+      version: '0.1.0',
+      status: 'development_integration',
+      prompt_bundle_version: 'zoner-prompt-v0.9',
+      architecture: 'versioned_orchestration_runtime',
+      training_state: 'no_custom_weights',
+      private_data_training: false
+    },
+    labels: { assistant: 'Zoner', settings_signed_in: 'Signed in to Vigzone AI', api_default: 'Groq (default)', api_own: 'Groq (your key)' }
   };
 
   function applyLiveConfig(cfg = {}){
@@ -636,6 +646,29 @@
 
     const manifestLink = document.querySelector('link[rel="manifest"]');
     if (manifestLink) manifestLink.setAttribute('data-app-name', liveConfig.app_name || 'Vigzone AI');
+
+    const zoner = liveConfig.zoner || {};
+    const runtimeName = zoner.name || liveConfig.labels?.assistant || 'Zoner';
+    const runtimeRelease = zoner.release || 'v0';
+    const runtimeVersion = zoner.version || '';
+    const runtimeTitle = document.getElementById('zonerRuntimeTitle');
+    const runtimeSubtitle = document.getElementById('zonerRuntimeSubtitle');
+    const runtimeBadge = document.getElementById('zonerRuntimeBadge');
+    const runtimeArchitecture = document.getElementById('zonerRuntimeArchitecture');
+    const runtimeTraining = document.getElementById('zonerRuntimeTraining');
+    const runtimePolicy = document.getElementById('zonerRuntimePolicy');
+    if (runtimeTitle) runtimeTitle.textContent = `${runtimeName} ${runtimeRelease}`.trim();
+    if (runtimeSubtitle) runtimeSubtitle.textContent = `Versioned assistant runtime inside ${liveConfig.app_name || 'Vigzone AI'}.`;
+    if (runtimeBadge) runtimeBadge.textContent = runtimeVersion || runtimeRelease;
+    if (runtimeArchitecture) {
+      runtimeArchitecture.textContent = String(zoner.architecture || 'versioned orchestration runtime').replaceAll('_', ' ');
+    }
+    if (runtimeTraining) {
+      const weightState = zoner.training_state === 'no_custom_weights' ? 'No custom weights' : 'Training state disclosed';
+      const privacyState = zoner.private_data_training === false ? 'private chats not used for training' : 'see privacy policy';
+      runtimeTraining.textContent = `${weightState}; ${privacyState}`;
+    }
+    if (runtimePolicy) runtimePolicy.textContent = `Prompt policy ${zoner.prompt_bundle_version || 'versioned'}`;
 
     updateGreeting?.();
   }
@@ -3321,7 +3354,11 @@
       adminSystemNotes.innerHTML = notes.map(n => `<div class="admin-feedback-item"><div class="admin-feedback-top"><span>${escapeHtml(n.title || 'System')}</span><span>${escapeHtml(n.status || '')}</span></div><div class="admin-feedback-reason">${escapeHtml(n.value || '')}</div><div class="admin-feedback-text">${escapeHtml(n.note || '')}</div></div>`).join('') || '<div class="brain-empty">No system notes.</div>';
     }
     if (adminBadFeedbackList) {
-      adminBadFeedbackList.innerHTML = (data.bad_feedback || []).map(f => `<div class="admin-feedback-item"><div class="admin-feedback-top"><span>${escapeHtml(f.email || 'Unknown user')}</span><span>${escapeHtml(adminShortDate(f.created_at))}</span></div><div class="admin-feedback-reason">${escapeHtml(f.reason || 'No reason provided')}</div><div class="admin-user-sub">${escapeHtml(f.context?.model || 'unknown model')} · ${escapeHtml(f.context?.route_reason || 'unknown route')}</div><div class="admin-feedback-text">${escapeHtml(f.assistant_text || '')}</div></div>`).join('') || '<div class="brain-empty">No bad feedback yet. Great bro 😁</div>';
+      adminBadFeedbackList.innerHTML = (data.bad_feedback || []).map(f => {
+        const promptVersion = f.context?.zoner?.prompt_bundle_version;
+        const runtimeSuffix = promptVersion ? ` · ${escapeHtml(promptVersion)}` : '';
+        return `<div class="admin-feedback-item"><div class="admin-feedback-top"><span>${escapeHtml(f.email || 'Unknown user')}</span><span>${escapeHtml(adminShortDate(f.created_at))}</span></div><div class="admin-feedback-reason">${escapeHtml(f.reason || 'No reason provided')}</div><div class="admin-user-sub">${escapeHtml(f.context?.model || 'unknown model')} · ${escapeHtml(f.context?.route_reason || 'unknown route')}${runtimeSuffix}</div><div class="admin-feedback-text">${escapeHtml(f.assistant_text || '')}</div></div>`;
+      }).join('') || '<div class="brain-empty">No bad feedback yet. Great bro 😁</div>';
     }
     adminLastDailyRows = data.daily || [];
     adminLastFeedbackMix = data.feedback_mix || [];
@@ -4127,7 +4164,7 @@
   function renderQuotePreview(){
     const bar = document.getElementById('quotePreviewBar');
     if (!quotedMessage) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
-    const label = quotedMessage.role === 'user' ? 'You' : 'Vigzone AI';
+    const label = quotedMessage.role === 'user' ? 'You' : (liveConfig.labels?.assistant || 'Zoner');
     const snippet = truncateText(quotedMessage.fullText, 160);
     bar.style.display = 'block';
     bar.innerHTML = `
@@ -4346,6 +4383,21 @@
     const row = document.createElement('div');
     row.className = 'msg-feedback';
 
+    const initialMeta = typeof getMeta === 'function' ? getMeta() : (getMeta || {});
+    const runtimeReceipt = initialMeta?.zoner;
+    if (runtimeReceipt && typeof runtimeReceipt === 'object') {
+      const receiptBadge = document.createElement('span');
+      const receiptName = runtimeReceipt.name || 'Zoner';
+      const receiptRelease = runtimeReceipt.release || runtimeReceipt.version || '';
+      const receiptVersion = runtimeReceipt.version || receiptRelease;
+      const receiptPolicy = runtimeReceipt.prompt_bundle_version || 'versioned runtime';
+      receiptBadge.className = 'zoner-response-badge';
+      receiptBadge.textContent = [receiptName, receiptRelease].filter(Boolean).join(' ');
+      receiptBadge.title = `${receiptName} ${receiptVersion} · ${receiptPolicy}`;
+      receiptBadge.setAttribute('aria-label', receiptBadge.title);
+      row.appendChild(receiptBadge);
+    }
+
     const copyBtn = document.createElement('button');
     copyBtn.className = 'message-action-btn copy-response-btn';
     copyBtn.setAttribute('aria-label', 'Copy response');
@@ -4395,6 +4447,15 @@
       ['usage_id','model','routed_model','route_reason','routing_mode','fallback_used','retry_count','prompt_tokens','completion_tokens','total_tokens','cached_tokens','latency_ms','time_to_first_token_ms'].forEach(key => {
         if (rawMeta && rawMeta[key] !== undefined && rawMeta[key] !== null) responseMeta[key] = rawMeta[key];
       });
+      if (rawMeta?.zoner && typeof rawMeta.zoner === 'object') {
+        responseMeta.zoner = {};
+        ['name','release','version','prompt_bundle_version','retrieval_policy_version','tool_policy_version','evaluation_suite_version'].forEach(key => {
+          if (rawMeta.zoner[key] !== undefined && rawMeta.zoner[key] !== null) responseMeta.zoner[key] = rawMeta.zoner[key];
+        });
+      }
+      if (Array.isArray(rawMeta?.prompt_modules)) {
+        responseMeta.prompt_modules = rawMeta.prompt_modules.filter(module => typeof module === 'string').slice(0, 20);
+      }
       const liked = rating === 'up';
       upBtn.classList.toggle('done', liked);
       downBtn.classList.toggle('done', !liked);
@@ -4558,7 +4619,7 @@
     if (role !== 'user') {
       avatar = document.createElement('div');
       avatar.className = 'avatar';
-      avatar.innerHTML = `<img src="${VIGZONE_ICON}" alt="${liveConfig.app_name || 'Vigzone AI'}" width="30" height="30" />`;
+      avatar.innerHTML = `<img src="${VIGZONE_ICON}" alt="${liveConfig.labels?.assistant || 'Zoner'}" width="30" height="30" />`;
     }
     const bubble = document.createElement('div');
     bubble.className = 'bubble';
@@ -7017,7 +7078,7 @@ A strong website should include: hero section, clear navigation, services/featur
     msg.className = `msg ${role}`;
     const avatar = document.createElement('div');
     avatar.className = 'avatar';
-    avatar.textContent = role === 'user' ? 'You' : 'Vigzone AI';
+    avatar.textContent = role === 'user' ? 'You' : (liveConfig.labels?.assistant || 'Zoner');
     const bubble = document.createElement('div');
     bubble.className = 'bubble voice-bubble';
 

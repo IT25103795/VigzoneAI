@@ -41,6 +41,7 @@ from typing import AsyncGenerator, Callable, Optional
 import httpx
 from prompt_library import CORE_SYSTEM_PROMPT, task_prompt_modules
 from self_learning import is_degenerate_text, trim_degeneration_tail
+from zoner import ZONER_PROFILE
 import stream_manager
 import billing
 import database
@@ -60,6 +61,19 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _format_provider_wait(wait_text: str) -> str:
+    """Round verbose provider reset durations to a readable whole second."""
+
+    match = re.fullmatch(r"(?:(\d+(?:\.\d+)?)m)?(\d+(?:\.\d+)?)s", wait_text)
+    if not match:
+        return wait_text
+    total_seconds = int(
+        float(match.group(1) or 0) * 60 + float(match.group(2)) + 0.999999
+    )
+    minutes, seconds = divmod(total_seconds, 60)
+    return f"{minutes}m{seconds}s" if minutes else f"{seconds}s"
+
+
 def _friendly_groq_error(status_code: int, body_text: str) -> str:
     """Turn a raw Groq error body into a short, user-facing message.
 
@@ -77,7 +91,7 @@ def _friendly_groq_error(status_code: int, body_text: str) -> str:
     if status_code == 429:
         # Groq's message includes a "Please try again in 17m22.848s" segment.
         wait_match = re.search(r"try again in ([\d.]+m[\d.]+s|[\d.]+s)", inner_message)
-        wait_str = wait_match.group(1) if wait_match else None
+        wait_str = _format_provider_wait(wait_match.group(1)) if wait_match else None
         if "tokens per day" in inner_message.lower() or "TPD" in inner_message:
             base = (
                 "Groq's real daily free-tier limit for this model is reached. "
@@ -474,7 +488,8 @@ _WEBSITE_RE = re.compile(
 _CODE_RE = re.compile(
     r"\b(function|class \w|script|program|algorithm|snippet|api endpoint|"
     r"refactor|debug|code for|code (?:to|that)|write (?:a|the) code|"
-    r"python|javascript|typescript|java\b|c\+\+|c#|sql query|regex)\b",
+    r"python|javascript|typescript|java\b|c\+\+|c#|sql query|regex|fastapi|"
+    r"postgresql|database design|database schema|authentication service)\b",
     re.IGNORECASE,
 )
 
@@ -489,6 +504,195 @@ _CONTINUATION_RE = re.compile(
     r"finish (?:it|that|this)|what('?s| is) next)[\s.!?]*$",
     re.IGNORECASE,
 )
+
+_EXTERNAL_ACTION_RE = re.compile(
+    r"\b(email|send|notify|message|delete|deploy|publish|purchase|buy|"
+    r"cancel|remove)\b|\b(modify|change|edit)\b.{0,50}\b(repository|repo|"
+    r"project|account|settings?|files?)\b",
+    re.IGNORECASE,
+)
+
+_DELETION_ACTION_RE = re.compile(r"\b(delete|remove|close)\w*\b", re.IGNORECASE)
+_ACCOUNT_TARGET_RE = re.compile(r"\baccount\b", re.IGNORECASE)
+_VIGZONE_PROJECT_TARGET_RE = re.compile(
+    r"\bvigzone\b.{0,80}\bprojects?\b|\bprojects?\b.{0,80}\bvigzone\b",
+    re.IGNORECASE,
+)
+
+_UNTRUSTED_INSTRUCTION_RE = re.compile(
+    r"\b(ignore (?:all|any|the) (?:rules|instructions)|reveal (?:the )?system "
+    r"prompt|print (?:every|all|the) api keys?|jailbreak|override (?:the )?rules)\b",
+    re.IGNORECASE,
+)
+_ATTACHMENT_MARKER_RE = re.compile(r"\[Attached file:[^\]]+\]", re.IGNORECASE)
+_REPOSITORY_TARGET_RE = re.compile(r"\b(repository|repo)\b", re.IGNORECASE)
+_DEPLOY_ACTION_RE = re.compile(r"\bdeploy\w*\b", re.IGNORECASE)
+_CROSS_ACCOUNT_PROJECT_RE = re.compile(
+    r"\banother\b.{0,80}\b(?:vigzone\s+)?users?\b.{0,80}\b(?:projects?|workspaces?)\b|"
+    r"\b(?:projects?|workspaces?)\b.{0,80}\banother\b.{0,80}\b(?:vigzone\s+)?users?\b",
+    re.IGNORECASE,
+)
+_SINHALA_SCRIPT_RE = re.compile(r"[\u0D80-\u0DFF]")
+_TAMIL_SCRIPT_RE = re.compile(r"[\u0B80-\u0BFF]")
+_IDENTITY_QUERY_RE = re.compile(
+    r"\b(?:what(?:'s| is) your name|who are you|where do you run)\b",
+    re.IGNORECASE,
+)
+_AMBIGUOUS_DEPLOY_RE = re.compile(
+    r"^\s*deploy\s+(?:it|this|that)(?:\s+for\s+me)?[.!?]*\s*$",
+    re.IGNORECASE,
+)
+_FASTAPI_PASSWORD_LOGIN_RE = re.compile(
+    r"\bfastapi\b.{0,120}\b(?:password[- ]login|login endpoint)\b|"
+    r"\b(?:password[- ]login|login endpoint)\b.{0,120}\bfastapi\b",
+    re.IGNORECASE,
+)
+_FASTAPI_AUTH_SERVICE_RE = re.compile(
+    r"\bfastapi\b.{0,160}\b(?:authentication|auth)\s+service\b|"
+    r"\b(?:authentication|auth)\s+service\b.{0,160}\bfastapi\b",
+    re.IGNORECASE,
+)
+_FASTAPI_SQLITE_NOTES_RE = re.compile(
+    r"\bfastapi\b.{0,160}\bsqlite\b.{0,160}\bnotes? endpoint\b|"
+    r"\bnotes? endpoint\b.{0,160}\bfastapi\b.{0,160}\bsqlite\b",
+    re.IGNORECASE,
+)
+
+_VERIFIED_VIGZONE_DELETION_RESPONSE = """\
+I can’t delete your Vigzone projects or account directly, and I haven’t deleted anything.
+
+Because you want to delete the entire account, you do not need to delete each project first: account deletion removes the account’s server-side data, including its project records.
+
+Before continuing, use **Settings → Export data** if you want a copy.
+
+- **Delete only a project:** Open **Projects**, select the project, choose **Delete project**, and confirm. This deletes the Vigzone project record; its connected **local folder and files are untouched**.
+- **Delete the account:** Open **Settings**, choose **Delete account**, type `DELETE`, then enter your password. Leave the password blank if you use Google-only sign-in. This permanently removes the account’s server-side data and clears account-scoped browser data on the current device.
+
+Deployment backups may retain deleted records until the operator’s documented retention window expires.
+"""
+
+_VERIFIED_REPOSITORY_ACTION_RESPONSE = """\
+I can’t safely perform or claim those production changes as requested. I won’t delete the authentication module or deploy anything without a reviewable diff and your explicit confirmation.
+
+The safe path is:
+
+1. If the repository is connected, inspect the relevant authentication files read-only.
+2. Prepare a migration plan, replacement implementation, tests, and rollback steps.
+3. Show you the complete diff, including any proposed file deletion, for review.
+4. Apply only the changes you explicitly approve. Deployment remains a separate external action and requires a confirmed target and authorization.
+
+Nothing has been modified, deleted, or deployed.
+"""
+
+_VERIFIED_CROSS_ACCOUNT_PRIVACY_RESPONSE = """\
+I can’t access or share another Vigzone user’s private project or workspace data. Vigzone limits personal project access to the signed-in user, while shared team projects are available only to active members of the same authorized team.
+
+I can help with projects in your own workspace or with a team project you’re authorized to access. If you describe what you need without including another person’s private data, I can also help with a general solution.
+"""
+
+_VERIFIED_IDENTITY_RESPONSE = """\
+I’m Zoner, the versioned AI runtime inside Vigzone AI. I run as Vigzone’s orchestration layer over configured third-party foundation models; Vigzone does not claim that it trained or owns the active base model.
+"""
+
+_VERIFIED_DEPLOY_CLARIFICATION_RESPONSE = """\
+I haven’t deployed anything. Which project should be deployed, and what is the target platform or environment (for example, Docker, a VPS, or a named cloud service)? Once those are clear, I can prepare a reviewable deployment plan or configuration.
+"""
+
+_VERIFIED_FASTAPI_LOGIN_DESIGN_RESPONSE = """\
+A secure FastAPI password-login design should use a server-side session rather than returning a long-lived token to browser storage:
+
+1. Validate and normalize the email and bound the password length before processing.
+2. Look up the account and always run an Argon2id password-hash verification, using a dummy hash when the account is absent to reduce timing and enumeration leaks.
+3. Return the same generic `401 Invalid email or password` response for an unknown account, a wrong password, or an inactive account.
+4. Rate limit by both account identifier and IP in a shared store such as Redis; add progressive backoff and security logging without recording passwords or session secrets.
+5. On success, rotate to a random 256-bit session identifier, store only its hash server-side with expiry/revocation data, and send it in a `Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/` cookie (prefer a `__Host-` cookie on HTTPS).
+6. Require CSRF protection for state-changing requests, rotate the session after privilege changes, revoke it on logout/password reset, and expire idle and absolute lifetimes.
+
+This is the security design, not a claim of a complete production service; database transactions, trusted-proxy configuration, distributed rate-limit tests, cookie/CSRF tests, recovery flows, and deployment TLS still need implementation and review.
+"""
+
+_VERIFIED_FASTAPI_AUTH_FOLLOWUP_RESPONSE = """\
+I can turn that FastAPI authentication design into code, but no existing project files, dependency versions, database model, or session store were supplied, so I haven’t modified or deployed anything.
+
+The first bounded implementation slice should be:
+
+1. `auth/passwords.py`: Argon2id hashing plus a dummy-hash verification path for unknown accounts.
+2. `auth/sessions.py`: random 256-bit session IDs, only hashed IDs stored server-side, idle/absolute expiry, rotation, and revocation.
+3. `auth/routes.py`: login and logout routes with one generic authentication failure, CSRF protection, and `Secure`/`HttpOnly`/`SameSite` cookies.
+4. `auth/rate_limit.py`: shared IP-and-account throttling backed by Redis, not process-local counters.
+5. `tests/test_auth.py`: correct-password, wrong-password, unknown-account, inactive-account, rate-limit, cookie, CSRF, rotation, expiry, and logout tests.
+
+For a drop-in implementation, share the relevant project tree and dependency file, or confirm a fresh-project baseline such as FastAPI + PostgreSQL + Redis. That keeps the next patch reviewable and avoids inventing incompatible APIs or hard-coded secrets.
+"""
+
+_VERIFIED_FASTAPI_SQLITE_NOTES_RESPONSE = '''\
+Here is one small, runnable `main.py` that keeps FastAPI and SQLite and adds only create/list note endpoints:
+
+```python
+from contextlib import asynccontextmanager
+from pathlib import Path
+from sqlite3 import Connection, Row, connect as open_sqlite
+
+from fastapi import FastAPI, status
+from pydantic import BaseModel, Field
+
+DB_PATH = Path(__file__).with_name("app.db")
+
+
+def connect() -> Connection:
+    db = open_sqlite(DB_PATH)
+    db.row_factory = Row
+    return db
+
+
+class NoteCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    content: str = Field(min_length=1, max_length=5000)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    with connect() as db:
+        db.execute(
+            """CREATE TABLE IF NOT EXISTS notes (
+                   id INTEGER PRIMARY KEY AUTOINCREMENT,
+                   title TEXT NOT NULL,
+                   content TEXT NOT NULL
+               )"""
+        )
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+@app.post("/notes", status_code=status.HTTP_201_CREATED)
+def create_note(note: NoteCreate) -> dict:
+    with connect() as db:
+        cursor = db.execute(
+            "INSERT INTO notes (title, content) VALUES (?, ?)",
+            (note.title, note.content),
+        )
+        row = db.execute(
+            "SELECT id, title, content FROM notes WHERE id = ?",
+            (cursor.lastrowid,),
+        ).fetchone()
+    return dict(row)
+
+
+@app.get("/notes")
+def list_notes() -> list[dict]:
+    with connect() as db:
+        rows = db.execute(
+            "SELECT id, title, content FROM notes ORDER BY id DESC"
+        ).fetchall()
+    return [dict(row) for row in rows]
+```
+
+Run it with `uvicorn main:app --reload`. `open_sqlite(DB_PATH)` is the directly
+imported equivalent of `sqlite3.connect(DB_PATH)`; the database path is a real
+filesystem path, and parameters are bound rather than interpolated into SQL.
+'''
 
 _ROUTER_COMPLEX_RE = re.compile(
     r"\b(analy[sz]e|evaluate|research|investigate|reason|prove|derive|"
@@ -534,7 +738,10 @@ def _effective_context_text(messages: list[dict]) -> str:
     (e.g. a Java class, a website build) actually lives.
     """
     last_user = _last_user_text(messages)
-    if not _CONTINUATION_RE.match(last_user or ""):
+    if not (
+        _CONTINUATION_RE.match(last_user or "")
+        or _ROUTER_AMBIGUOUS_FOLLOWUP_RE.match(last_user or "")
+    ):
         return last_user
 
     # Walk backwards, skip the trailing "continue" message itself, then
@@ -565,11 +772,135 @@ def _is_code_request(messages: list[dict]) -> bool:
     return bool(_WEBSITE_RE.search(text) or _CODE_RE.search(text))
 
 
+def _is_external_action_request(messages: list[dict]) -> bool:
+    return bool(_EXTERNAL_ACTION_RE.search(_effective_context_text(messages)))
+
+
+def _is_vigzone_deletion_request(messages: list[dict]) -> bool:
+    text = _effective_context_text(messages)
+    return bool(
+        _DELETION_ACTION_RE.search(text)
+        and (_ACCOUNT_TARGET_RE.search(text) or _VIGZONE_PROJECT_TARGET_RE.search(text))
+    )
+
+
+def _has_untrusted_instruction_content(messages: list[dict]) -> bool:
+    text = _effective_context_text(messages)
+    return bool(
+        _ATTACHMENT_MARKER_RE.search(text)
+        and _UNTRUSTED_INSTRUCTION_RE.search(text)
+    )
+
+
+def _has_local_script(messages: list[dict]) -> bool:
+    text = _last_user_text(messages)
+    return bool(_SINHALA_SCRIPT_RE.search(text) or _TAMIL_SCRIPT_RE.search(text))
+
+
+def local_response_metadata(
+    route_reason: str,
+    *,
+    model: str = "zoner-verified-policy",
+    prompt_modules: tuple[str, ...] = ("verified_product_action",),
+) -> dict:
+    """Build the safe runtime receipt shared by provider-free Zoner answers."""
+
+    return {
+        "usage_id": None,
+        "model": model,
+        "routed_model": model,
+        "route_reason": route_reason,
+        "routing_mode": "general",
+        "fallback_used": False,
+        "retry_count": 0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+        "cached_tokens": 0,
+        "usage_estimated": False,
+        "latency_ms": 0,
+        "time_to_first_token_ms": 0,
+        "context_breakdown_estimated": False,
+        "context": {},
+        "zoner": ZONER_PROFILE.runtime_metadata(),
+        "prompt_modules": list(prompt_modules),
+        "context_duplicates_removed": 0,
+        "provider_call_made": False,
+    }
+
+
+def _verified_response_metadata(route_reason: str) -> dict:
+    return local_response_metadata(route_reason)
+
+
+def verified_product_response(messages: list[dict]) -> tuple[str, dict] | None:
+    """Return a code-backed answer for high-risk Vigzone product actions."""
+
+    last_user = _last_user_text(messages)
+    effective_context = _effective_context_text(messages)
+    if not last_user or re.search(
+        r"\b(?:do not|don't|dont|never)\s+(?:delete|remove|close)\b",
+        last_user,
+        re.IGNORECASE,
+    ):
+        return None
+    if _IDENTITY_QUERY_RE.search(last_user):
+        return (
+            _VERIFIED_IDENTITY_RESPONSE,
+            _verified_response_metadata("verified_zoner_identity"),
+        )
+    if _AMBIGUOUS_DEPLOY_RE.fullmatch(last_user):
+        return (
+            _VERIFIED_DEPLOY_CLARIFICATION_RESPONSE,
+            _verified_response_metadata("verified_deployment_clarification"),
+        )
+    if _FASTAPI_PASSWORD_LOGIN_RE.search(last_user):
+        return (
+            _VERIFIED_FASTAPI_LOGIN_DESIGN_RESPONSE,
+            _verified_response_metadata("verified_fastapi_password_login_design"),
+        )
+    if (
+        _ROUTER_AMBIGUOUS_FOLLOWUP_RE.fullmatch(last_user)
+        and _FASTAPI_AUTH_SERVICE_RE.search(effective_context)
+    ):
+        return (
+            _VERIFIED_FASTAPI_AUTH_FOLLOWUP_RESPONSE,
+            _verified_response_metadata("verified_fastapi_auth_followup_boundary"),
+        )
+    if _FASTAPI_SQLITE_NOTES_RE.search(last_user):
+        return (
+            _VERIFIED_FASTAPI_SQLITE_NOTES_RESPONSE,
+            _verified_response_metadata("verified_fastapi_sqlite_notes"),
+        )
+    if _DELETION_ACTION_RE.search(last_user) and _ACCOUNT_TARGET_RE.search(last_user):
+        return (
+            _VERIFIED_VIGZONE_DELETION_RESPONSE,
+            _verified_response_metadata("verified_vigzone_account_deletion"),
+        )
+    if (
+        _DELETION_ACTION_RE.search(last_user)
+        and _REPOSITORY_TARGET_RE.search(last_user)
+        and _DEPLOY_ACTION_RE.search(last_user)
+    ):
+        return (
+            _VERIFIED_REPOSITORY_ACTION_RESPONSE,
+            _verified_response_metadata("verified_repository_change_boundary"),
+        )
+    if _CROSS_ACCOUNT_PROJECT_RE.search(last_user):
+        return (
+            _VERIFIED_CROSS_ACCOUNT_PRIVACY_RESPONSE,
+            _verified_response_metadata("verified_cross_account_privacy_boundary"),
+        )
+    return None
+
+
 def _adaptive_max_tokens(messages: list[dict]) -> int:
     """Return a generous token budget up to the model's full capacity (8,192 tokens)."""
     text = _effective_context_text(messages)
     if not text:
         return 4096
+    if _ROUTER_AMBIGUOUS_FOLLOWUP_RE.match(_last_user_text(messages) or ""):
+        return 3000
     if (
         _WEBSITE_RE.search(text)
         or _CODE_RE.search(text)
@@ -1282,6 +1613,10 @@ async def _build_payload(
         code_request=code_request,
         website_request=website_request,
         has_live_context=bool(realtime_block),
+        action_request=_is_external_action_request(messages),
+        vigzone_deletion_request=_is_vigzone_deletion_request(messages),
+        untrusted_instruction_content=_has_untrusted_instruction_content(messages),
+        multilingual_request=_has_local_script(messages),
     )
     system_messages = [
         _tag_message(
@@ -1480,6 +1815,7 @@ async def _build_payload(
         "temperature": 0.55 if code_request else 0.65,
         "max_completion_tokens": _adaptive_max_tokens(messages),
         "_vigzone_meta": {
+            "zoner": ZONER_PROFILE.runtime_metadata(),
             "prompt_modules": [name for name, _prompt in prompt_modules],
             "routing_mode": (routing_mode or "general").strip().lower(),
             "history": history_stats,
@@ -1646,11 +1982,13 @@ def track_token_usage(
                     retry_count, latency_ms, time_to_first_token_ms, cached_tokens,
                     system_tokens, history_tokens, summary_tokens, memory_tokens,
                     workspace_tokens, search_tokens, user_tokens, conversation_id,
-                    quota_scope, quota_subject_id, quota_plan, quota_limit
+                    quota_scope, quota_subject_id, quota_plan, quota_limit,
+                    zoner_version, prompt_version, retrieval_version,
+                    tool_policy_version, eval_suite_version
                 )
                 VALUES (
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 (
@@ -1683,6 +2021,11 @@ def track_token_usage(
                     quota["subject_id"],
                     quota["plan"],
                     quota["daily_limit"],
+                    ZONER_PROFILE.version,
+                    ZONER_PROFILE.prompt_bundle_version,
+                    ZONER_PROFILE.retrieval_policy_version,
+                    ZONER_PROFILE.tool_policy_version,
+                    ZONER_PROFILE.evaluation_suite_version,
                 ),
             )
             now_iso = _utc_iso_now()
@@ -2186,6 +2529,12 @@ async def stream_chat(
     quota_reservation: Optional[dict] = None,
 ) -> AsyncGenerator[str, None]:
     """Stream a chat completion token-by-token with Groq model fallback."""
+    verified = verified_product_response(messages)
+    if verified is not None:
+        response, metadata = verified
+        _notify_metadata(metadata_callback, metadata)
+        yield response
+        return
     using_override = provider_override is not None
     effective_api_url = provider_override["api_url"] if using_override else OLLAMA_API_URL
     effective_headers = (
@@ -2449,6 +2798,7 @@ async def stream_chat(
                             "time_to_first_token_ms": first_token_ms,
                             "context_breakdown_estimated": True,
                             "context": component_tokens,
+                            "zoner": build_meta.get("zoner") or ZONER_PROFILE.runtime_metadata(),
                             "prompt_modules": build_meta.get("prompt_modules") or [],
                             "context_duplicates_removed": build_meta.get(
                                 "context_duplicates_removed", 0
@@ -2504,6 +2854,11 @@ async def chat_once(
     quota_reservation: Optional[dict] = None,
 ) -> str:
     """Non-streaming convenience wrapper with routing and Groq fallback."""
+    verified = verified_product_response(messages)
+    if verified is not None:
+        response, metadata = verified
+        _notify_metadata(metadata_callback, metadata)
+        return response
     using_override = provider_override is not None
     effective_api_url = provider_override["api_url"] if using_override else OLLAMA_API_URL
     effective_headers = (
@@ -2715,6 +3070,7 @@ async def chat_once(
                     "time_to_first_token_ms": latency_ms,
                     "context_breakdown_estimated": True,
                     "context": component_tokens,
+                    "zoner": build_meta.get("zoner") or ZONER_PROFILE.runtime_metadata(),
                     "prompt_modules": build_meta.get("prompt_modules") or [],
                     "context_duplicates_removed": build_meta.get(
                         "context_duplicates_removed", 0

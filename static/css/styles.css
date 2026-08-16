@@ -2740,6 +2740,40 @@ body.project-chat-active #input{padding-left:2px;}
       margin-top:2px;
       line-height:1.4;
     }
+    .zoner-runtime-section .settings-section-head{
+      margin-bottom:9px;
+    }
+    .zoner-runtime-badge{
+      flex:0 0 auto;
+      display:inline-flex;
+      align-items:center;
+      min-height:25px;
+      padding:4px 9px;
+      border:1px solid color-mix(in srgb, var(--accent-2) 38%, var(--border));
+      border-radius:999px;
+      background:color-mix(in srgb, var(--accent-2) 11%, var(--surface));
+      color:color-mix(in srgb, var(--accent-2) 72%, var(--text));
+      font-size:10.5px;
+      font-weight:800;
+      white-space:nowrap;
+    }
+    .zoner-runtime-facts{
+      display:flex;
+      flex-wrap:wrap;
+      gap:6px;
+    }
+    .zoner-runtime-facts span{
+      display:inline-flex;
+      align-items:center;
+      min-height:24px;
+      padding:4px 8px;
+      border:1px solid var(--border);
+      border-radius:999px;
+      background:var(--surface);
+      color:var(--text-muted);
+      font-size:10.5px;
+      line-height:1.3;
+    }
     .shared-links-list{
       display:flex;
       flex-direction:column;
@@ -4956,6 +4990,22 @@ body.project-chat-active #input{padding-left:2px;}
   gap:2px;
   margin-top:10px;
   opacity:.62;
+}
+.zoner-response-badge{
+  display:inline-flex;
+  align-items:center;
+  align-self:center;
+  min-height:23px;
+  padding:3px 8px;
+  margin-right:4px;
+  border:1px solid color-mix(in srgb, var(--accent-2) 30%, var(--border));
+  border-radius:999px;
+  background:color-mix(in srgb, var(--accent-2) 8%, transparent);
+  color:var(--text-muted);
+  font-size:10px;
+  font-weight:750;
+  line-height:1;
+  white-space:nowrap;
 }
 .msg.assistant .speaker-btn{
   margin-right:0;

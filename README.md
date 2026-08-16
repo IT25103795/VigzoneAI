@@ -6,11 +6,14 @@
 
 Vigzone AI is a private, multi-user AI workspace built with FastAPI and a responsive browser client. Chat, vision, and transcription use Groq. Image generation uses OpenAI when configured and otherwise uses a clearly labelled Pollinations fallback.
 
+Vigzone's versioned assistant runtime is **Zoner v0**. Zoner v0 combines Vigzone prompt policy, private-context retrieval, bounded tool context, routing, and offline evaluations over replaceable third-party foundation models. It does not claim custom-trained weights. Its current development status and production gates are recorded in [Zoner release readiness](zoner/RELEASE_READINESS.md).
+
 This release removes demo-only product behavior. Features either call a real backend/provider, work locally and say so, or report that required configuration is missing.
 
 ## Included
 
 - Streaming Groq chat with server-side model allowlists and exact usage capture when the provider reports it.
+- Zoner v0 component versioning, public runtime manifest, durable version telemetry, and a free offline evaluation corpus.
 - Adaptive backup-model request shaping with bounded replies, deterministic context compaction, and one safe retry after provider TPM/payload overflow.
 - Per-user accounts, hash-at-rest sessions, password reset/verification email, Google sign-in, account export, and account deletion.
 - Durable admin roles with a secure bootstrap path. An unverified signup cannot claim admin access by using an allowlisted email.
@@ -123,6 +126,8 @@ Users may validate and activate their own Groq key. It is encrypted at rest with
 
 ```bash
 python -m compileall -q .
+python -m zoner.evaluation validate
+python -m zoner.baseline plan --limit 3
 ruff check .
 pytest
 ```

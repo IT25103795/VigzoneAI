@@ -2,6 +2,8 @@
 
 Vigzone stores data for the signed-in account only. Automatic global "self-learning" has been removed.
 
+Zoner v0 performs no model training. Its checked-in evaluation corpus is product-authored and synthetic; private chats, uploads, memories, workspaces, team data, and feedback are not silently converted into training data.
+
 ## Stored locally on the server
 
 - Account profile, password hash or Google account identifier, verified role, and hashed sessions.

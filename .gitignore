@@ -43,6 +43,10 @@ uploads/
 # Logs
 *.log
 
+# Local Zoner response captures and private holdout evaluations
+zoner/results/
+zoner/evals/private/
+
 # Electron desktop dependencies and build outputs
 node_modules/
 out/
