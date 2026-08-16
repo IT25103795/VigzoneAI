@@ -4710,6 +4710,14 @@
 
   function parseProviderRetrySeconds(){ return 0; }
 
+  function streamErrorFromPayload(payload){
+    const error = new Error(payload?.error || 'Something went wrong.');
+    error.code = payload?.error_code || '';
+    const retryAfter = Number(payload?.retry_after_seconds);
+    error.retryAfterSeconds = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.ceil(retryAfter) : 0;
+    return error;
+  }
+
   function syncProviderCooldownSendControl(){
     const stillUploading = pendingFiles.some(file => file.status === 'uploading');
     sendBtn.disabled = streaming || stillUploading;
