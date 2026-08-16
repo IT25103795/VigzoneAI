@@ -1,0 +1,466 @@
+name: complete-gemini-fallback-repair-v2
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - .github/workflows/complete-gemini-fallback-repair-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Apply repair
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path("vigzone_ai.py")
+          s = p.read_text(encoding="utf-8")
+
+          # Replace duplicated legacy Gemini config as one bounded section.
+          a = s.index("# Gemini free-tier fallback", s.index("_AUTH_HEADERS"))
+          b = s.index('# Constants for the "bring your own Groq key"', a)
+          s = s[:a] + '''# Optional server-only Gemini fallback. Used only after every server-side Groq
+          # text candidate has been rate-limited. Keep this key separate from browser-safe
+          # Google OAuth/Drive credentials and never expose it to frontend code.
+          GEMINI_FALLBACK_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+          GEMINI_FALLBACK_MODEL = (
+              os.getenv("GEMINI_FALLBACK_MODEL", "gemini-3.6-flash").strip()
+              or "gemini-3.6-flash"
+          )
+
+
+          ''' + s[b:]
+
+          # Replace the duplicated legacy fallback helper block.
+          a = s.index("async def _gemini_fallback_stream(", s.index("def _should_try_fallback"))
+          b = s.index("def _untrusted_context", a)
+          helpers = r'''def _should_use_gemini_fallback(error: Optional[VigzoneAIError], *, using_override: bool, contains_image: bool) -> bool:
+              """Use shared Gemini only for final server-side Groq text 429s."""
+              return bool(
+                  GEMINI_FALLBACK_KEY
+                  and not using_override
+                  and not contains_image
+                  and error is not None
+                  and getattr(error, "code", "") == "provider_rate_limit"
+              )
+
+
+          def _gemini_text_parts(content) -> list[dict]:
+              if isinstance(content, str):
+                  return [{"text": content}] if content else []
+              if isinstance(content, list):
+                  out = []
+                  for part in content:
+                      if isinstance(part, dict) and part.get("type") == "text":
+                          text = str(part.get("text") or "")
+                          if text:
+                              out.append({"text": text})
+                  return out
+              text = str(content or "")
+              return [{"text": text}] if text else []
+
+
+          def _gemini_request_payload(messages: list[dict]) -> dict:
+              """Translate the already-built Zoner prompt/context into Gemini format."""
+              system_parts: list[dict] = []
+              contents: list[dict] = []
+              for message in messages:
+                  if not isinstance(message, dict):
+                      continue
+                  role = str(message.get("role") or "user").strip().lower()
+                  parts = _gemini_text_parts(message.get("content"))
+                  if not parts:
+                      continue
+                  if role == "system":
+                      system_parts.extend(parts)
+                      continue
+                  gemini_role = "model" if role == "assistant" else "user"
+                  if contents and contents[-1].get("role") == gemini_role:
+                      contents[-1]["parts"].extend(parts)
+                  else:
+                      contents.append({"role": gemini_role, "parts": parts})
+              if not contents:
+                  raise VigzoneAIError("Gemini fallback could not build a text request.")
+              payload: dict = {
+                  "contents": contents,
+                  "generationConfig": {"maxOutputTokens": 2048},
+              }
+              if system_parts:
+                  payload["systemInstruction"] = {"parts": system_parts}
+              return payload
+
+
+          def _gemini_headers() -> dict[str, str]:
+              return {"Content-Type": "application/json", "x-goog-api-key": GEMINI_FALLBACK_KEY}
+
+
+          def _gemini_url(*, stream: bool) -> str:
+              method = "streamGenerateContent?alt=sse" if stream else "generateContent"
+              return f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_FALLBACK_MODEL}:{method}"
+
+
+          def _gemini_response_text(data: dict) -> str:
+              chunks: list[str] = []
+              for candidate in data.get("candidates") or []:
+                  if not isinstance(candidate, dict):
+                      continue
+                  for part in (candidate.get("content") or {}).get("parts") or []:
+                      if isinstance(part, dict) and isinstance(part.get("text"), str):
+                          chunks.append(part["text"])
+              return "".join(chunks)
+
+
+          def _gemini_provider_error(status_code: int) -> VigzoneAIError:
+              if status_code in {401, 403}:
+                  return VigzoneAIError("Gemini fallback credentials were rejected. Check GEMINI_API_KEY on the server.")
+              if status_code == 404:
+                  return VigzoneAIError("The configured Gemini fallback model is unavailable.")
+              if status_code == 429:
+                  return VigzoneAIError("Groq and the Gemini fallback are both rate-limited right now. Please try again shortly.", code="provider_rate_limit")
+              if status_code >= 500:
+                  return VigzoneAIError("Groq is rate-limited and the Gemini fallback is temporarily unavailable.")
+              return VigzoneAIError(f"Gemini fallback failed with status {status_code}.")
+
+
+          async def _gemini_fallback_once(messages: list[dict]) -> str:
+              if not GEMINI_FALLBACK_KEY:
+                  raise VigzoneAIError("Gemini fallback is not configured.")
+              try:
+                  response = await _get_client().post(
+                      _gemini_url(stream=False),
+                      json=_gemini_request_payload(messages),
+                      headers=_gemini_headers(),
+                  )
+              except httpx.RequestError as exc:
+                  raise VigzoneAIError("Could not reach the Gemini fallback provider.") from exc
+              if response.status_code != 200:
+                  raise _gemini_provider_error(response.status_code)
+              try:
+                  data = response.json()
+              except ValueError as exc:
+                  raise VigzoneAIError("Gemini fallback returned invalid JSON.") from exc
+              text = _gemini_response_text(data if isinstance(data, dict) else {}).strip()
+              if not text:
+                  raise VigzoneAIError("Gemini fallback returned an empty completion.")
+              return text
+
+
+          async def _gemini_fallback_stream(messages: list[dict]) -> AsyncGenerator[str, None]:
+              if not GEMINI_FALLBACK_KEY:
+                  raise VigzoneAIError("Gemini fallback is not configured.")
+              try:
+                  async with _get_client().stream(
+                      "POST",
+                      _gemini_url(stream=True),
+                      json=_gemini_request_payload(messages),
+                      headers=_gemini_headers(),
+                  ) as response:
+                      if response.status_code != 200:
+                          await response.aread()
+                          raise _gemini_provider_error(response.status_code)
+                      async for line in response.aiter_lines():
+                          if not line or not line.startswith("data: "):
+                              continue
+                          raw = line[len("data: "):].strip()
+                          if not raw or raw == "[DONE]":
+                              continue
+                          try:
+                              data = json.loads(raw)
+                          except json.JSONDecodeError:
+                              continue
+                          text = _gemini_response_text(data if isinstance(data, dict) else {})
+                          if text:
+                              yield text
+              except httpx.RequestError as exc:
+                  raise VigzoneAIError("Could not reach the Gemini fallback provider.") from exc
+
+
+          '''
+          s = s[:a] + helpers + s[b:]
+
+          def patch_raise(source: str, start: int, end: int) -> str:
+              section = source[start:end]
+              hits = list(re.finditer(r"(?m)^(?P<i>[ ]+)raise err\s*$", section))
+              if len(hits) != 1:
+                  contexts = [section[max(0, h.start()-80):h.end()+80] for h in hits]
+                  raise SystemExit(f"expected one raise err, found {len(hits)}: {contexts}")
+              h = hits[0]
+              i = h.group("i")
+              replacement = (
+                  f"{i}if _should_use_gemini_fallback(\n"
+                  f"{i}    err, using_override=using_override, contains_image=contains_image\n"
+                  f"{i}):\n{i}    break\n{i}raise err"
+              )
+              return source[:start+h.start()] + replacement + source[start+h.end():]
+
+          stream_start = s.index("async def stream_chat(")
+          nonstream = s.index("# ── Non-streaming chat", stream_start)
+          s = patch_raise(s, stream_start, nonstream)
+          chat_start = s.index("async def chat_once(", nonstream)
+          s = patch_raise(s, chat_start, len(s))
+
+          stream_start = s.index("async def stream_chat(")
+          tail = s.index("\n    if last_error:\n        # Gemini fallback", stream_start)
+          nonstream = s.index("\n\n# ── Non-streaming chat", tail)
+          stream_tail = r'''    if last_error:
+              if _should_use_gemini_fallback(last_error, using_override=using_override, contains_image=contains_image):
+                  gemini_messages = (payload.get("messages") if isinstance(payload, dict) else None) or messages
+                  attempt_count += 1
+                  logger.warning("All Groq candidates were rate-limited. Falling back to Gemini %s.", GEMINI_FALLBACK_MODEL)
+                  full_text = ""
+                  async for chunk in _gemini_fallback_stream(gemini_messages):
+                      if not first_token_ms:
+                          first_token_ms = max(1, int((time.perf_counter() - request_started) * 1000))
+                      if quota_reservation is not None:
+                          quota_reservation["provider_accepted"] = True
+                      full_text += chunk
+                      yield chunk
+                  if not full_text.strip():
+                      raise VigzoneAIError("Gemini fallback returned an empty completion.")
+                  prompt_used = _estimate_payload_prompt_tokens(gemini_messages)
+                  completion_used = _estimate_tokens(full_text)
+                  component_tokens = _payload_component_tokens(payload) if isinstance(payload, dict) else {}
+                  latency_ms = max(1, int((time.perf_counter() - request_started) * 1000))
+                  usage_id = None
+                  if user_id and not IS_TESTING:
+                      usage_id = track_token_usage(
+                          user_id, prompt_used, completion_used,
+                          provider="gemini", estimated=True, model=GEMINI_FALLBACK_MODEL,
+                          routed_model=routed_model,
+                          route_reason=(route_reason if ROUTING_ANALYTICS_ENABLED else ""),
+                          routing_mode=routing_mode, fallback_used=True,
+                          retry_count=max(0, attempt_count - 1), latency_ms=latency_ms,
+                          time_to_first_token_ms=first_token_ms or latency_ms,
+                          component_tokens=component_tokens, conversation_id=conversation_id,
+                          quota_reservation=quota_reservation,
+                      )
+                  build_meta = payload.get("_vigzone_meta") if isinstance(payload, dict) else {}
+                  build_meta = build_meta or {}
+                  _notify_metadata(metadata_callback, {
+                      "usage_id": usage_id, "provider": "gemini", "model": GEMINI_FALLBACK_MODEL,
+                      "routed_model": routed_model, "route_reason": route_reason,
+                      "routing_mode": (routing_mode or "general").strip().lower(),
+                      "fallback_used": True, "retry_count": max(0, attempt_count - 1),
+                      "prompt_tokens": prompt_used, "completion_tokens": completion_used,
+                      "total_tokens": prompt_used + completion_used, "usage_estimated": True,
+                      "latency_ms": latency_ms, "time_to_first_token_ms": first_token_ms or latency_ms,
+                      "context_breakdown_estimated": True, "context": component_tokens,
+                      "zoner": build_meta.get("zoner") or ZONER_PROFILE.runtime_metadata(),
+                      "prompt_modules": build_meta.get("prompt_modules") or [],
+                      "context_duplicates_removed": build_meta.get("context_duplicates_removed", 0),
+                      "history": build_meta.get("history") or {},
+                  })
+                  return
+              raise last_error
+          raise VigzoneAIError("Groq returned no response.")'''
+          s = s[:tail+1] + stream_tail + s[nonstream:]
+
+          chat_start = s.index("async def chat_once(")
+          tail = s.index("\n    if last_error:\n        # Gemini fallback", chat_start)
+          chat_tail = r'''    if last_error:
+              if _should_use_gemini_fallback(last_error, using_override=using_override, contains_image=contains_image):
+                  gemini_messages = (payload.get("messages") if isinstance(payload, dict) else None) or messages
+                  attempt_count += 1
+                  logger.warning("All Groq candidates were rate-limited. Falling back to Gemini %s.", GEMINI_FALLBACK_MODEL)
+                  reply = await _gemini_fallback_once(gemini_messages)
+                  if quota_reservation is not None:
+                      quota_reservation["provider_accepted"] = True
+                  prompt_used = _estimate_payload_prompt_tokens(gemini_messages)
+                  completion_used = _estimate_tokens(reply)
+                  component_tokens = _payload_component_tokens(payload) if isinstance(payload, dict) else {}
+                  latency_ms = max(1, int((time.perf_counter() - request_started) * 1000))
+                  usage_id = None
+                  if user_id and not IS_TESTING:
+                      usage_id = track_token_usage(
+                          user_id, prompt_used, completion_used,
+                          provider="gemini", estimated=True, model=GEMINI_FALLBACK_MODEL,
+                          routed_model=routed_model,
+                          route_reason=(route_reason if ROUTING_ANALYTICS_ENABLED else ""),
+                          routing_mode=routing_mode, fallback_used=True,
+                          retry_count=max(0, attempt_count - 1), latency_ms=latency_ms,
+                          time_to_first_token_ms=latency_ms, component_tokens=component_tokens,
+                          conversation_id=conversation_id, quota_reservation=quota_reservation,
+                      )
+                  build_meta = payload.get("_vigzone_meta") if isinstance(payload, dict) else {}
+                  build_meta = build_meta or {}
+                  _notify_metadata(metadata_callback, {
+                      "usage_id": usage_id, "provider": "gemini", "model": GEMINI_FALLBACK_MODEL,
+                      "routed_model": routed_model, "route_reason": route_reason,
+                      "routing_mode": (routing_mode or "general").strip().lower(),
+                      "fallback_used": True, "retry_count": max(0, attempt_count - 1),
+                      "prompt_tokens": prompt_used, "completion_tokens": completion_used,
+                      "total_tokens": prompt_used + completion_used, "usage_estimated": True,
+                      "latency_ms": latency_ms, "time_to_first_token_ms": latency_ms,
+                      "context_breakdown_estimated": True, "context": component_tokens,
+                      "zoner": build_meta.get("zoner") or ZONER_PROFILE.runtime_metadata(),
+                      "prompt_modules": build_meta.get("prompt_modules") or [],
+                      "context_duplicates_removed": build_meta.get("context_duplicates_removed", 0),
+                      "history": build_meta.get("history") or {},
+                  })
+                  return reply
+              raise last_error
+          raise VigzoneAIError("Groq returned no response.")'''
+          s = s[:tail+1] + chat_tail + "\n"
+
+          quota_filter = "provider IN ('groq', 'groq_audio', 'groq_interrupted')"
+          if quota_filter not in s:
+              raise SystemExit("quota provider filter not found")
+          s = s.replace(quota_filter, "provider IN ('groq', 'gemini', 'groq_audio', 'groq_interrupted')", 1)
+          p.write_text(s, encoding="utf-8")
+
+          env = Path(".env.example")
+          e = env.read_text(encoding="utf-8")
+          if "GEMINI_API_KEY=" not in e:
+              anchor = "GROQ_TRANSCRIPTION_MODEL=whisper-large-v3-turbo\n"
+              if anchor not in e:
+                  raise SystemExit("env insertion point missing")
+              e = e.replace(anchor, anchor + "\n# Optional server-only text fallback after all server Groq text candidates hit 429.\nGEMINI_API_KEY=\nGEMINI_FALLBACK_MODEL=gemini-3.6-flash\n", 1)
+              env.write_text(e, encoding="utf-8")
+
+          readme = Path("README.md")
+          r = readme.read_text(encoding="utf-8")
+          r = r.replace(
+              "Chat, vision, and transcription use Groq. Image generation uses OpenAI when configured and otherwise uses a clearly labelled Pollinations fallback.",
+              "Chat, vision, and transcription use Groq by default; text chat can optionally fail over to Gemini after all server-side Groq candidates are rate-limited. Image generation uses OpenAI when configured and otherwise uses a clearly labelled Pollinations fallback.", 1)
+          gemini_doc = "- `GEMINI_API_KEY`: server-only Gemini text fallback after all configured server Groq candidates return rate limits. `GEMINI_FALLBACK_MODEL` defaults to `gemini-3.6-flash`; personal Groq keys and image chats do not use this shared fallback."
+          openai_doc = "- `OPENAI_API_KEY`: OpenAI image generation/editing (`gpt-image-2` by default)."
+          if gemini_doc not in r:
+              if openai_doc not in r:
+                  raise SystemExit("README insertion point missing")
+              r = r.replace(openai_doc, gemini_doc + "\n" + openai_doc, 1)
+          readme.write_text(r, encoding="utf-8")
+
+          tests = r'''"""Regression checks for the server Groq -> Gemini fallback."""
+          from __future__ import annotations
+          import asyncio, json
+          import httpx
+
+          class PostResponse:
+              headers = httpx.Headers()
+              def __init__(self, status_code, text="", body=None): self.status_code, self.text, self.body = status_code, text, body
+              def json(self): return self.body
+          class StreamResponse:
+              headers = httpx.Headers()
+              def __init__(self, status_code, body="", lines=None): self.status_code, self.body, self.lines = status_code, body.encode(), lines or []
+              async def aread(self): return self.body
+              async def aiter_lines(self):
+                  for line in self.lines: yield line
+          class StreamContext:
+              def __init__(self, response): self.response = response
+              async def __aenter__(self): return self.response
+              async def __aexit__(self, *_args): return False
+
+          def built(model, stream):
+              return {"model": model, "messages": [
+                  {"role":"system","content":"Zoner policy and private context"},
+                  {"role":"user","content":"Explain RAM simply"}],
+                  "stream": stream, "_vigzone_meta":{"prompt_modules":["core"]}}
+
+          def test_gemini_payload_keeps_built_zoner_context(monkeypatch):
+              import vigzone_ai
+              monkeypatch.setattr(vigzone_ai, "GEMINI_FALLBACK_KEY", "test-key")
+              payload = vigzone_ai._gemini_request_payload(built("x", False)["messages"])
+              assert payload["systemInstruction"]["parts"][0]["text"] == "Zoner policy and private context"
+              assert payload["contents"][-1]["parts"][0]["text"] == "Explain RAM simply"
+              assert payload["generationConfig"] == {"maxOutputTokens": 2048}
+
+          def test_chat_once_final_429_returns_gemini(monkeypatch):
+              import vigzone_ai
+              calls=[]
+              async def build(_m, model, stream, **_k): return built(model, stream)
+              class Client:
+                  async def post(self, url, **kwargs):
+                      calls.append((url, kwargs))
+                      if "api.groq.com" in url: return PostResponse(429, json.dumps({"error":{"message":"rate limited; try again in 5s"}}))
+                      return PostResponse(200, body={"candidates":[{"content":{"parts":[{"text":"Gemini answer"}]}}]})
+              client=Client(); metadata=[]
+              monkeypatch.setattr(vigzone_ai,"GEMINI_FALLBACK_KEY","test-key")
+              monkeypatch.setattr(vigzone_ai,"GEMINI_FALLBACK_MODEL","gemini-3.6-flash")
+              monkeypatch.setattr(vigzone_ai,"_build_payload",build)
+              monkeypatch.setattr(vigzone_ai,"_model_candidates",lambda *_a,**_k:["primary"])
+              monkeypatch.setattr(vigzone_ai,"_get_client",lambda:client)
+              reply=asyncio.run(vigzone_ai.chat_once([{"role":"user","content":"Explain RAM simply"}],metadata_callback=metadata.append))
+              assert reply == "Gemini answer" and len(calls) == 2
+              url, kwargs = calls[1]
+              assert "gemini-3.6-flash:generateContent" in url and "key=" not in url
+              assert kwargs["headers"]["x-goog-api-key"] == "test-key"
+              assert kwargs["json"]["systemInstruction"]["parts"][0]["text"] == "Zoner policy and private context"
+              assert metadata[-1]["provider"] == "gemini" and metadata[-1]["fallback_used"] is True
+
+          def test_stream_final_429_streams_gemini(monkeypatch):
+              import vigzone_ai
+              calls=[]
+              async def build(_m, model, stream, **_k): return built(model, stream)
+              class Client:
+                  def stream(self, method, url, **kwargs):
+                      calls.append((method,url,kwargs))
+                      if "api.groq.com" in url: return StreamContext(StreamResponse(429, body=json.dumps({"error":{"message":"rate limited; try again in 5s"}})))
+                      return StreamContext(StreamResponse(200, lines=['data: {"candidates":[{"content":{"parts":[{"text":"Gemini "}]}}]}','data: {"candidates":[{"content":{"parts":[{"text":"stream"}]}}]}']))
+              client=Client(); metadata=[]
+              monkeypatch.setattr(vigzone_ai,"GEMINI_FALLBACK_KEY","test-key")
+              monkeypatch.setattr(vigzone_ai,"GEMINI_FALLBACK_MODEL","gemini-3.6-flash")
+              monkeypatch.setattr(vigzone_ai,"_build_payload",build)
+              monkeypatch.setattr(vigzone_ai,"_model_candidates",lambda *_a,**_k:["primary"])
+              monkeypatch.setattr(vigzone_ai,"_get_client",lambda:client)
+              async def collect(): return "".join([c async for c in vigzone_ai.stream_chat([{"role":"user","content":"Explain RAM simply"}],metadata_callback=metadata.append)])
+              assert asyncio.run(collect()) == "Gemini stream" and len(calls) == 2
+              _,url,kwargs=calls[1]
+              assert "gemini-3.6-flash:streamGenerateContent?alt=sse" in url and "key=" not in url
+              assert kwargs["headers"]["x-goog-api-key"] == "test-key"
+              assert metadata[-1]["provider"] == "gemini"
+
+          def test_shared_fallback_excludes_byok_and_images(monkeypatch):
+              import vigzone_ai
+              monkeypatch.setattr(vigzone_ai,"GEMINI_FALLBACK_KEY","test-key")
+              err=vigzone_ai.VigzoneAIError("limited",code="provider_rate_limit")
+              assert not vigzone_ai._should_use_gemini_fallback(err,using_override=True,contains_image=False)
+              assert not vigzone_ai._should_use_gemini_fallback(err,using_override=False,contains_image=True)
+          '''
+          Path("tests/test_gemini_fallback.py").write_text(tests, encoding="utf-8")
+
+          for f in ("diff.txt","find_user.py","insert_admin.py","list_users.py","list_users2.py","update_admin.py"):
+              Path(f).unlink(missing_ok=True)
+          PY
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Compile
+        run: python -m compileall -q .
+      - name: Focused tests
+        run: pytest -q tests/test_gemini_fallback.py tests/test_model_and_streams.py
+        env:
+          APP_MODE: testing
+          GROQ_API_KEY: gsk_test
+          ENCRYPTION_SECRET: ci-only-encryption-secret-not-for-production-use
+      - name: Full suite
+        run: pytest tests/
+        env:
+          APP_MODE: testing
+          GROQ_API_KEY: gsk_test
+          ENCRYPTION_SECRET: ci-only-encryption-secret-not-for-production-use
+      - name: Lint
+        run: ruff check vigzone_ai.py tests/test_gemini_fallback.py
+      - name: Commit repaired implementation
+        shell: bash
+        run: |
+          git config user.name "Vigzone Repair Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git rm .github/workflows/complete-gemini-fallback-repair.yml .github/workflows/complete-gemini-fallback-repair-v2.yml
+          git add -A
+          git status --short
+          git commit -m "fix: repair Gemini fallback and deploy safety"
+          git push origin master
