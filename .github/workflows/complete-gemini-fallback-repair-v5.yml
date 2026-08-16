@@ -1,0 +1,119 @@
+name: complete-gemini-fallback-repair-v5
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - .github/workflows/complete-gemini-fallback-repair-v5.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Apply corrected repair and consistency fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path('.github/workflows/complete-gemini-fallback-repair-v2.yml').read_text(encoding='utf-8')
+          start_marker = "          python - <<'PY'\n"
+          end_marker = "\n          PY\n"
+          start = workflow.index(start_marker) + len(start_marker)
+          end = workflow.index(end_marker, start)
+          script = textwrap.dedent(workflow[start:end])
+          script = script.replace(r"raise err\s*$", r"raise err[ \t]*$", 1)
+
+          def fix_generated_tail(source: str, variable: str) -> str:
+              marker = f"{variable} = r'''"
+              block_start = source.index(marker) + len(marker)
+              block_end = source.index("'''", block_start)
+              raw = source[block_start:block_end]
+              lines = raw.splitlines()
+              if len(lines) < 2:
+                  raise SystemExit(f'{variable} block unexpectedly short')
+              fixed = lines[0] + '\n' + '\n'.join('    ' + line for line in lines[1:])
+              return source[:block_start] + fixed + source[block_end:]
+
+          script = fix_generated_tail(script, 'stream_tail')
+          script = fix_generated_tail(script, 'chat_tail')
+          exec(compile(script, '<guarded-gemini-repair>', 'exec'), {'__name__': '__main__'})
+
+          # Gemini fallback usage belongs to the same shared AI quota as Groq.
+          db_test = Path('tests/test_database_backend.py')
+          db_text = db_test.read_text(encoding='utf-8')
+          old_filter = "provider IN ('groq', 'groq_audio', 'groq_interrupted')"
+          new_filter = "provider IN ('groq', 'gemini', 'groq_audio', 'groq_interrupted')"
+          if db_text.count(old_filter) != 2:
+              raise SystemExit(f'expected 2 old quota filters in database test, found {db_text.count(old_filter)}')
+          db_test.write_text(db_text.replace(old_filter, new_filter), encoding='utf-8')
+
+          # Keep the page and service worker on one UI asset revision so cached
+          # app.js cannot lag behind the stylesheet/Vigi/projects bundle.
+          index = Path('static/index.html')
+          index_text = index.read_text(encoding='utf-8')
+          old_revision = "const UI_ASSET_REVISION = 'billing-r7';"
+          old_app = '/static/js/app.js?v=billing-r7'
+          if old_revision not in index_text or old_app not in index_text:
+              raise SystemExit('expected billing-r7 UI references not found in index.html')
+          index_text = index_text.replace(old_revision, "const UI_ASSET_REVISION = 'vigi-desktop-r4';", 1)
+          index_text = index_text.replace(old_app, '/static/js/app.js?v=vigi-desktop-r4', 1)
+          index.write_text(index_text, encoding='utf-8')
+
+          ui_test = Path('tests/test_chat_ui_behavior.py')
+          ui_text = ui_test.read_text(encoding='utf-8')
+          old_sw = "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r31';"
+          new_sw = "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r32';"
+          if old_sw not in ui_text:
+              raise SystemExit('expected stale r31 service-worker assertion not found')
+          ui_test.write_text(ui_text.replace(old_sw, new_sw, 1), encoding='utf-8')
+          PY
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Compile
+        run: python -m compileall -q .
+
+      - name: Focused Gemini and stream tests
+        run: pytest -q tests/test_gemini_fallback.py tests/test_model_and_streams.py tests/test_database_backend.py tests/test_chat_ui_behavior.py
+        env:
+          APP_MODE: testing
+          GROQ_API_KEY: gsk_test
+          ENCRYPTION_SECRET: ci-only-encryption-secret-not-for-production-use
+
+      - name: Full suite
+        run: pytest tests/
+        env:
+          APP_MODE: testing
+          GROQ_API_KEY: gsk_test
+          ENCRYPTION_SECRET: ci-only-encryption-secret-not-for-production-use
+
+      - name: Lint repaired Python files
+        run: ruff check vigzone_ai.py tests/test_gemini_fallback.py tests/test_database_backend.py tests/test_chat_ui_behavior.py
+
+      - name: Commit repaired implementation
+        shell: bash
+        run: |
+          git config user.name "Vigzone Repair Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git rm .github/workflows/complete-gemini-fallback-repair.yml \
+                 .github/workflows/complete-gemini-fallback-repair-v2.yml \
+                 .github/workflows/complete-gemini-fallback-repair-v3.yml \
+                 .github/workflows/complete-gemini-fallback-repair-v4.yml \
+                 .github/workflows/complete-gemini-fallback-repair-v5.yml
+          git add -A
+          git status --short
+          git commit -m "fix: repair Gemini fallback and deploy safety"
+          git push origin master
