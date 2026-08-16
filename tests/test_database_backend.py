@@ -30,12 +30,12 @@ def test_quota_usage_provider_filter_is_psycopg_safe():
 
     source = open("vigzone_ai.py", encoding="utf-8").read()
     assert "provider LIKE 'groq%'" not in source
-    assert "provider IN ('groq', 'groq_audio', 'groq_interrupted')" in source
+    assert "provider IN ('groq', 'gemini', 'groq_audio', 'groq_interrupted')" in source
 
     sql = database.postgres_sql(
         """SELECT COALESCE(SUM(total_tokens), 0)
              FROM token_usage
-            WHERE provider IN ('groq', 'groq_audio', 'groq_interrupted')
+            WHERE provider IN ('groq', 'gemini', 'groq_audio', 'groq_interrupted')
               AND ts >= ?"""
     )
     query = PostgresQuery(Transformer())

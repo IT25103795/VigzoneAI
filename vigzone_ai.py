@@ -289,14 +289,14 @@ VISION_FALLBACK_MODELS = [
 
 _AUTH_HEADERS = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
 
-# Gemini free-tier fallback - activates when Groq is rate-limited.
-GEMINI_FALLBACK_KEY = os.getenv("GOOGLE_API_KEY", "").strip()
-GEMINI_FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.0-flash")
-
-
-# Gemini free-tier fallback - activates when Groq is rate-limited.
-GEMINI_FALLBACK_KEY = os.getenv("GOOGLE_API_KEY", "").strip()
-GEMINI_FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.0-flash")
+# Optional server-only Gemini fallback. Used only after every server-side Groq
+# text candidate has been rate-limited. Keep this key separate from browser-safe
+# Google OAuth/Drive credentials and never expose it to frontend code.
+GEMINI_FALLBACK_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_FALLBACK_MODEL = (
+    os.getenv("GEMINI_FALLBACK_MODEL", "gemini-3.6-flash").strip()
+    or "gemini-3.6-flash"
+)
 
 
 # Constants for the "bring your own Groq key" feature — these are used
@@ -1606,157 +1606,145 @@ def _should_try_fallback(status_code: int) -> bool:
 
 
 
-async def _gemini_fallback_stream(
-    messages: list[dict],
-    system_prompt: str = "",
-) -> AsyncGenerator[str, None]:
-    """Stream from Gemini 2.0 Flash when all Groq models are rate-limited."""
-    if not GEMINI_FALLBACK_KEY:
-        raise VigzoneAIError("Gemini fallback unavailable (no GOOGLE_API_KEY).")
-
-    gemini_contents = []
-    for msg in messages:
-        role = msg.get("role", "user")
-        content = msg.get("content", "")
-        if role == "system":
-            continue
-        if isinstance(content, list):
-            parts = [{"text": p.get("text", "")} for p in content if p.get("type") == "text"]
-            if not parts:
-                parts = [{"text": "[image]"}]
-        else:
-            parts = [{"text": str(content)}]
-        gemini_role = "model" if role == "assistant" else "user"
-        gemini_contents.append({"role": gemini_role, "parts": parts})
-
-    sys_parts = []
-    if system_prompt:
-        sys_parts.append({"text": system_prompt})
-    for msg in messages:
-        if msg.get("role") == "system":
-            text = msg.get("content", "")
-            if isinstance(text, str) and text.strip():
-                sys_parts.append({"text": text})
-
-    payload: dict = {
-        "contents": gemini_contents,
-        "generationConfig": {"temperature": 0.7, "maxOutputTokens": 2048},
-    }
-    if sys_parts:
-        payload["systemInstruction"] = {"parts": sys_parts}
-
-    url = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        + GEMINI_FALLBACK_MODEL
-        + ":streamGenerateContent?alt=sse&key=" + GEMINI_FALLBACK_KEY
+def _should_use_gemini_fallback(error: Optional[VigzoneAIError], *, using_override: bool, contains_image: bool) -> bool:
+    """Use shared Gemini only for final server-side Groq text 429s."""
+    return bool(
+        GEMINI_FALLBACK_KEY
+        and not using_override
+        and not contains_image
+        and error is not None
+        and getattr(error, "code", "") == "provider_rate_limit"
     )
-    client = _get_client()
+
+
+def _gemini_text_parts(content) -> list[dict]:
+    if isinstance(content, str):
+        return [{"text": content}] if content else []
+    if isinstance(content, list):
+        out = []
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "text":
+                text = str(part.get("text") or "")
+                if text:
+                    out.append({"text": text})
+        return out
+    text = str(content or "")
+    return [{"text": text}] if text else []
+
+
+def _gemini_request_payload(messages: list[dict]) -> dict:
+    """Translate the already-built Zoner prompt/context into Gemini format."""
+    system_parts: list[dict] = []
+    contents: list[dict] = []
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        role = str(message.get("role") or "user").strip().lower()
+        parts = _gemini_text_parts(message.get("content"))
+        if not parts:
+            continue
+        if role == "system":
+            system_parts.extend(parts)
+            continue
+        gemini_role = "model" if role == "assistant" else "user"
+        if contents and contents[-1].get("role") == gemini_role:
+            contents[-1]["parts"].extend(parts)
+        else:
+            contents.append({"role": gemini_role, "parts": parts})
+    if not contents:
+        raise VigzoneAIError("Gemini fallback could not build a text request.")
+    payload: dict = {
+        "contents": contents,
+        "generationConfig": {"maxOutputTokens": 2048},
+    }
+    if system_parts:
+        payload["systemInstruction"] = {"parts": system_parts}
+    return payload
+
+
+def _gemini_headers() -> dict[str, str]:
+    return {"Content-Type": "application/json", "x-goog-api-key": GEMINI_FALLBACK_KEY}
+
+
+def _gemini_url(*, stream: bool) -> str:
+    method = "streamGenerateContent?alt=sse" if stream else "generateContent"
+    return f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_FALLBACK_MODEL}:{method}"
+
+
+def _gemini_response_text(data: dict) -> str:
+    chunks: list[str] = []
+    for candidate in data.get("candidates") or []:
+        if not isinstance(candidate, dict):
+            continue
+        for part in (candidate.get("content") or {}).get("parts") or []:
+            if isinstance(part, dict) and isinstance(part.get("text"), str):
+                chunks.append(part["text"])
+    return "".join(chunks)
+
+
+def _gemini_provider_error(status_code: int) -> VigzoneAIError:
+    if status_code in {401, 403}:
+        return VigzoneAIError("Gemini fallback credentials were rejected. Check GEMINI_API_KEY on the server.")
+    if status_code == 404:
+        return VigzoneAIError("The configured Gemini fallback model is unavailable.")
+    if status_code == 429:
+        return VigzoneAIError("Groq and the Gemini fallback are both rate-limited right now. Please try again shortly.", code="provider_rate_limit")
+    if status_code >= 500:
+        return VigzoneAIError("Groq is rate-limited and the Gemini fallback is temporarily unavailable.")
+    return VigzoneAIError(f"Gemini fallback failed with status {status_code}.")
+
+
+async def _gemini_fallback_once(messages: list[dict]) -> str:
+    if not GEMINI_FALLBACK_KEY:
+        raise VigzoneAIError("Gemini fallback is not configured.")
     try:
-        async with client.stream(
-            "POST", url, json=payload,
-            headers={"Content-Type": "application/json"},
-        ) as resp:
-            if resp.status_code != 200:
-                await resp.aread()
-                raise VigzoneAIError(
-                    "Gemini fallback failed (HTTP " + str(resp.status_code) + ")."
-                )
-            async for line in resp.aiter_lines():
+        response = await _get_client().post(
+            _gemini_url(stream=False),
+            json=_gemini_request_payload(messages),
+            headers=_gemini_headers(),
+        )
+    except httpx.RequestError as exc:
+        raise VigzoneAIError("Could not reach the Gemini fallback provider.") from exc
+    if response.status_code != 200:
+        raise _gemini_provider_error(response.status_code)
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise VigzoneAIError("Gemini fallback returned invalid JSON.") from exc
+    text = _gemini_response_text(data if isinstance(data, dict) else {}).strip()
+    if not text:
+        raise VigzoneAIError("Gemini fallback returned an empty completion.")
+    return text
+
+
+async def _gemini_fallback_stream(messages: list[dict]) -> AsyncGenerator[str, None]:
+    if not GEMINI_FALLBACK_KEY:
+        raise VigzoneAIError("Gemini fallback is not configured.")
+    try:
+        async with _get_client().stream(
+            "POST",
+            _gemini_url(stream=True),
+            json=_gemini_request_payload(messages),
+            headers=_gemini_headers(),
+        ) as response:
+            if response.status_code != 200:
+                await response.aread()
+                raise _gemini_provider_error(response.status_code)
+            async for line in response.aiter_lines():
                 if not line or not line.startswith("data: "):
                     continue
-                data = line[6:]
-                if data.strip() == "[DONE]":
-                    break
+                raw = line[len("data: "):].strip()
+                if not raw or raw == "[DONE]":
+                    continue
                 try:
-                    chunk = json.loads(data)
+                    data = json.loads(raw)
                 except json.JSONDecodeError:
                     continue
-                for cand in chunk.get("candidates") or []:
-                    for part in (cand.get("content") or {}).get("parts") or []:
-                        text = part.get("text", "")
-                        if text:
-                            yield text
+                text = _gemini_response_text(data if isinstance(data, dict) else {})
+                if text:
+                    yield text
     except httpx.RequestError as exc:
-        raise VigzoneAIError(
-            "Gemini fallback network error: " + type(exc).__name__
-        ) from exc
-
-
-
-async def _gemini_fallback_stream(
-    messages: list[dict],
-    system_prompt: str = "",
-) -> AsyncGenerator[str, None]:
-    """Stream from Gemini 2.0 Flash when all Groq models are rate-limited."""
-    if not GEMINI_FALLBACK_KEY:
-        raise VigzoneAIError("Gemini fallback unavailable (no GOOGLE_API_KEY).")
-
-    gemini_contents = []
-    for msg in messages:
-        role = msg.get("role", "user")
-        content = msg.get("content", "")
-        if role == "system":
-            continue
-        if isinstance(content, list):
-            parts = [{"text": p.get("text", "")} for p in content if p.get("type") == "text"]
-            if not parts:
-                parts = [{"text": "[image]"}]
-        else:
-            parts = [{"text": str(content)}]
-        gemini_role = "model" if role == "assistant" else "user"
-        gemini_contents.append({"role": gemini_role, "parts": parts})
-
-    sys_parts = []
-    if system_prompt:
-        sys_parts.append({"text": system_prompt})
-    for msg in messages:
-        if msg.get("role") == "system":
-            text = msg.get("content", "")
-            if isinstance(text, str) and text.strip():
-                sys_parts.append({"text": text})
-
-    payload: dict = {
-        "contents": gemini_contents,
-        "generationConfig": {"temperature": 0.7, "maxOutputTokens": 2048},
-    }
-    if sys_parts:
-        payload["systemInstruction"] = {"parts": sys_parts}
-
-    url = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        + GEMINI_FALLBACK_MODEL
-        + ":streamGenerateContent?alt=sse&key=" + GEMINI_FALLBACK_KEY
-    )
-    client = _get_client()
-    try:
-        async with client.stream(
-            "POST", url, json=payload,
-            headers={"Content-Type": "application/json"},
-        ) as resp:
-            if resp.status_code != 200:
-                await resp.aread()
-                raise VigzoneAIError(
-                    "Gemini fallback failed (HTTP " + str(resp.status_code) + ")."
-                )
-            async for line in resp.aiter_lines():
-                if not line or not line.startswith("data: "):
-                    continue
-                data = line[6:]
-                if data.strip() == "[DONE]":
-                    break
-                try:
-                    chunk = json.loads(data)
-                except json.JSONDecodeError:
-                    continue
-                for cand in chunk.get("candidates") or []:
-                    for part in (cand.get("content") or {}).get("parts") or []:
-                        text = part.get("text", "")
-                        if text:
-                            yield text
-    except httpx.RequestError as exc:
-        raise VigzoneAIError(
-            "Gemini fallback network error: " + type(exc).__name__
-        ) from exc
+        raise VigzoneAIError("Could not reach the Gemini fallback provider.") from exc
 
 
 def _untrusted_context(label: str, text: str, max_chars: int = 18_000) -> str:
@@ -2384,7 +2372,7 @@ def _refresh_quota_counter(
                COALESCE(SUM(user_tokens), 0)
         FROM token_usage
         WHERE quota_scope = ? AND quota_subject_id = ?
-          AND provider IN ('groq', 'groq_audio', 'groq_interrupted') AND ts >= ?
+          AND provider IN ('groq', 'gemini', 'groq_audio', 'groq_interrupted') AND ts >= ?
         """,
         (quota["scope"], quota["subject_id"], day_start),
     ).fetchone()
@@ -2860,6 +2848,10 @@ async def stream_chat(
                                 candidates[candidate_index + 1],
                             )
                             break
+                        if _should_use_gemini_fallback(
+                            err, using_override=using_override, contains_image=contains_image
+                        ):
+                            break
                         raise err
 
                     if quota_reservation is not None:
@@ -3042,24 +3034,56 @@ async def stream_chat(
                 raise last_error from e
 
     if last_error:
-        # Gemini fallback - activates when ALL Groq models hit rate limit.
-        # GOOGLE_API_KEY is already in .env, completely separate quota.
-        if (
-            GEMINI_FALLBACK_KEY
-            and not using_override
-            and not contains_image
-            and getattr(last_error, "code", "") == "provider_rate_limit"
-        ):
-            logger.warning(
-                "All Groq candidates rate-limited. Falling back to Gemini %s.",
-                GEMINI_FALLBACK_MODEL,
-            )
-            async for chunk in _gemini_fallback_stream(messages, system_prompt=SYSTEM_PROMPT):
+        if _should_use_gemini_fallback(last_error, using_override=using_override, contains_image=contains_image):
+            gemini_messages = (payload.get("messages") if isinstance(payload, dict) else None) or messages
+            attempt_count += 1
+            logger.warning("All Groq candidates were rate-limited. Falling back to Gemini %s.", GEMINI_FALLBACK_MODEL)
+            full_text = ""
+            async for chunk in _gemini_fallback_stream(gemini_messages):
+                if not first_token_ms:
+                    first_token_ms = max(1, int((time.perf_counter() - request_started) * 1000))
+                if quota_reservation is not None:
+                    quota_reservation["provider_accepted"] = True
+                full_text += chunk
                 yield chunk
+            if not full_text.strip():
+                raise VigzoneAIError("Gemini fallback returned an empty completion.")
+            prompt_used = _estimate_payload_prompt_tokens(gemini_messages)
+            completion_used = _estimate_tokens(full_text)
+            component_tokens = _payload_component_tokens(payload) if isinstance(payload, dict) else {}
+            latency_ms = max(1, int((time.perf_counter() - request_started) * 1000))
+            usage_id = None
+            if user_id and not IS_TESTING:
+                usage_id = track_token_usage(
+                    user_id, prompt_used, completion_used,
+                    provider="gemini", estimated=True, model=GEMINI_FALLBACK_MODEL,
+                    routed_model=routed_model,
+                    route_reason=(route_reason if ROUTING_ANALYTICS_ENABLED else ""),
+                    routing_mode=routing_mode, fallback_used=True,
+                    retry_count=max(0, attempt_count - 1), latency_ms=latency_ms,
+                    time_to_first_token_ms=first_token_ms or latency_ms,
+                    component_tokens=component_tokens, conversation_id=conversation_id,
+                    quota_reservation=quota_reservation,
+                )
+            build_meta = payload.get("_vigzone_meta") if isinstance(payload, dict) else {}
+            build_meta = build_meta or {}
+            _notify_metadata(metadata_callback, {
+                "usage_id": usage_id, "provider": "gemini", "model": GEMINI_FALLBACK_MODEL,
+                "routed_model": routed_model, "route_reason": route_reason,
+                "routing_mode": (routing_mode or "general").strip().lower(),
+                "fallback_used": True, "retry_count": max(0, attempt_count - 1),
+                "prompt_tokens": prompt_used, "completion_tokens": completion_used,
+                "total_tokens": prompt_used + completion_used, "usage_estimated": True,
+                "latency_ms": latency_ms, "time_to_first_token_ms": first_token_ms or latency_ms,
+                "context_breakdown_estimated": True, "context": component_tokens,
+                "zoner": build_meta.get("zoner") or ZONER_PROFILE.runtime_metadata(),
+                "prompt_modules": build_meta.get("prompt_modules") or [],
+                "context_duplicates_removed": build_meta.get("context_duplicates_removed", 0),
+                "history": build_meta.get("history") or {},
+            })
             return
         raise last_error
     raise VigzoneAIError("Groq returned no response.")
-
 
 # ── Non-streaming chat ────────────────────────────────────────────────────────
 async def chat_once(
@@ -3206,6 +3230,10 @@ async def chat_once(
                         candidates[candidate_index + 1],
                     )
                     break
+                if _should_use_gemini_fallback(
+                    err, using_override=using_override, contains_image=contains_image
+                ):
+                    break
                 raise err
 
             if quota_reservation is not None:
@@ -3303,20 +3331,45 @@ async def chat_once(
             return reply
 
     if last_error:
-        # Gemini fallback - activates when ALL Groq models hit rate limit.
-        # GOOGLE_API_KEY is already in .env, completely separate quota.
-        if (
-            GEMINI_FALLBACK_KEY
-            and not using_override
-            and not contains_image
-            and getattr(last_error, "code", "") == "provider_rate_limit"
-        ):
-            logger.warning(
-                "All Groq candidates rate-limited. Falling back to Gemini %s.",
-                GEMINI_FALLBACK_MODEL,
-            )
-            async for chunk in _gemini_fallback_stream(messages, system_prompt=SYSTEM_PROMPT):
-                yield chunk
-            return
+        if _should_use_gemini_fallback(last_error, using_override=using_override, contains_image=contains_image):
+            gemini_messages = (payload.get("messages") if isinstance(payload, dict) else None) or messages
+            attempt_count += 1
+            logger.warning("All Groq candidates were rate-limited. Falling back to Gemini %s.", GEMINI_FALLBACK_MODEL)
+            reply = await _gemini_fallback_once(gemini_messages)
+            if quota_reservation is not None:
+                quota_reservation["provider_accepted"] = True
+            prompt_used = _estimate_payload_prompt_tokens(gemini_messages)
+            completion_used = _estimate_tokens(reply)
+            component_tokens = _payload_component_tokens(payload) if isinstance(payload, dict) else {}
+            latency_ms = max(1, int((time.perf_counter() - request_started) * 1000))
+            usage_id = None
+            if user_id and not IS_TESTING:
+                usage_id = track_token_usage(
+                    user_id, prompt_used, completion_used,
+                    provider="gemini", estimated=True, model=GEMINI_FALLBACK_MODEL,
+                    routed_model=routed_model,
+                    route_reason=(route_reason if ROUTING_ANALYTICS_ENABLED else ""),
+                    routing_mode=routing_mode, fallback_used=True,
+                    retry_count=max(0, attempt_count - 1), latency_ms=latency_ms,
+                    time_to_first_token_ms=latency_ms, component_tokens=component_tokens,
+                    conversation_id=conversation_id, quota_reservation=quota_reservation,
+                )
+            build_meta = payload.get("_vigzone_meta") if isinstance(payload, dict) else {}
+            build_meta = build_meta or {}
+            _notify_metadata(metadata_callback, {
+                "usage_id": usage_id, "provider": "gemini", "model": GEMINI_FALLBACK_MODEL,
+                "routed_model": routed_model, "route_reason": route_reason,
+                "routing_mode": (routing_mode or "general").strip().lower(),
+                "fallback_used": True, "retry_count": max(0, attempt_count - 1),
+                "prompt_tokens": prompt_used, "completion_tokens": completion_used,
+                "total_tokens": prompt_used + completion_used, "usage_estimated": True,
+                "latency_ms": latency_ms, "time_to_first_token_ms": latency_ms,
+                "context_breakdown_estimated": True, "context": component_tokens,
+                "zoner": build_meta.get("zoner") or ZONER_PROFILE.runtime_metadata(),
+                "prompt_modules": build_meta.get("prompt_modules") or [],
+                "context_duplicates_removed": build_meta.get("context_duplicates_removed", 0),
+                "history": build_meta.get("history") or {},
+            })
+            return reply
         raise last_error
     raise VigzoneAIError("Groq returned no response.")

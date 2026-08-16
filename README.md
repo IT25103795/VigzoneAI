@@ -4,7 +4,7 @@
 
 # Vigzone AI 5.0
 
-Vigzone AI is a private, multi-user AI workspace built with FastAPI and a responsive browser client. Chat, vision, and transcription use Groq. Image generation uses OpenAI when configured and otherwise uses a clearly labelled Pollinations fallback.
+Vigzone AI is a private, multi-user AI workspace built with FastAPI and a responsive browser client. Chat, vision, and transcription use Groq by default; text chat can optionally fail over to Gemini after all server-side Groq candidates are rate-limited. Image generation uses OpenAI when configured and otherwise uses a clearly labelled Pollinations fallback.
 
 Vigzone's versioned assistant runtime is **Zoner v0**. Zoner v0 combines Vigzone prompt policy, private-context retrieval, bounded tool context, routing, and offline evaluations over replaceable third-party foundation models. It does not claim custom-trained weights. Its current development status and production gates are recorded in [Zoner release readiness](zoner/RELEASE_READINESS.md).
 
@@ -114,6 +114,7 @@ See [DEPLOYMENT.md](DEPLOYMENT.md), [SECURITY.md](SECURITY.md), and [PRIVACY.md]
 
 ## Optional providers
 
+- `GEMINI_API_KEY`: server-only Gemini text fallback after all configured server Groq candidates return rate limits. `GEMINI_FALLBACK_MODEL` defaults to `gemini-3.6-flash`; personal Groq keys and image chats do not use this shared fallback.
 - `OPENAI_API_KEY`: OpenAI image generation/editing (`gpt-image-2` by default).
 - SMTP settings: verification and password-reset email. Without SMTP, those delivery flows report that email is not configured.
 - Google OAuth settings: Google sign-in.

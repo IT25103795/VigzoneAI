@@ -84,7 +84,7 @@ def test_chat_ui_asset_revision_is_consistent():
 
     assert index.count("vigi-desktop-r4") == 5
     assert "const UI_ASSET_REVISION = 'vigi-desktop-r4';" in service_worker
-    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r31';" in service_worker
+    assert "const VIGZONE_SW_VERSION = 'vigzone-v5.0.0-production-r32';" in service_worker
     assert "/static/icons/vigzone-doodles.svg?v=doodle-r1" in service_worker
 
 
