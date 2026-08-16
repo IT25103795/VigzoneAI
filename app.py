@@ -3658,7 +3658,14 @@ async def chat(request: Request, chat_request: ChatRequest, user: dict = Depends
 
             except VigzoneAIError as e:
                 logger.error("Chat stream failed: %s", e)
-                yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+                error_payload = {
+                    "error": str(e),
+                    "error_code": getattr(e, "code", "provider_error"),
+                }
+                retry_after_seconds = getattr(e, "retry_after_seconds", None)
+                if retry_after_seconds is not None:
+                    error_payload["retry_after_seconds"] = retry_after_seconds
+                yield f"data: {json.dumps(error_payload, ensure_ascii=False)}\n\n"
             except Exception:
                 # Safety net: any *unexpected* exception (e.g. a malformed
                 # streaming API chunk) used to propagate out of this generator

@@ -64,14 +64,40 @@ logger = logging.getLogger(__name__)
 def _format_provider_wait(wait_text: str) -> str:
     """Round verbose provider reset durations to a readable whole second."""
 
-    match = re.fullmatch(r"(?:(\d+(?:\.\d+)?)m)?(\d+(?:\.\d+)?)s", wait_text)
-    if not match:
+    total_seconds = _provider_wait_seconds(wait_text)
+    if total_seconds is None:
         return wait_text
-    total_seconds = int(
-        float(match.group(1) or 0) * 60 + float(match.group(2)) + 0.999999
-    )
     minutes, seconds = divmod(total_seconds, 60)
     return f"{minutes}m{seconds}s" if minutes else f"{seconds}s"
+
+
+def _provider_wait_seconds(wait_text: str) -> Optional[int]:
+    """Convert Groq's minute/second reset text to rounded-up seconds."""
+
+    match = re.fullmatch(r"(?:(\d+(?:\.\d+)?)m)?(\d+(?:\.\d+)?)s", wait_text)
+    if not match:
+        return None
+    return int(
+        float(match.group(1) or 0) * 60 + float(match.group(2)) + 0.999999
+    )
+
+
+def _groq_retry_after_seconds(status_code: int, body_text: str) -> Optional[int]:
+    """Extract a trustworthy retry delay from a Groq rate-limit response."""
+
+    if status_code != 429:
+        return None
+    try:
+        parsed = json.loads(body_text)
+        inner_message = parsed.get("error", {}).get("message", "")
+    except (json.JSONDecodeError, AttributeError):
+        inner_message = body_text
+    wait_match = re.search(
+        r"try again in ([\d.]+m[\d.]+s|[\d.]+s)",
+        inner_message,
+        flags=re.IGNORECASE,
+    )
+    return _provider_wait_seconds(wait_match.group(1)) if wait_match else None
 
 
 def _friendly_groq_error(status_code: int, body_text: str) -> str:
@@ -385,6 +411,27 @@ SYSTEM_PROMPT = CORE_SYSTEM_PROMPT
 
 class VigzoneAIError(Exception):
     """Raised when the chat backend fails."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "provider_error",
+        retry_after_seconds: Optional[int] = None,
+    ):
+        super().__init__(message)
+        self.code = code
+        self.retry_after_seconds = retry_after_seconds
+
+
+def _groq_provider_error(status_code: int, body_text: str) -> VigzoneAIError:
+    """Build a user-safe provider error with machine-readable retry metadata."""
+
+    return VigzoneAIError(
+        _friendly_groq_error(status_code, body_text),
+        code="provider_rate_limit" if status_code == 429 else "provider_error",
+        retry_after_seconds=_groq_retry_after_seconds(status_code, body_text),
+    )
 
 
 class UsageLimitError(VigzoneAIError):
@@ -2633,9 +2680,7 @@ async def stream_chat(
                             )
                             continue
 
-                        err = VigzoneAIError(
-                            _friendly_groq_error(resp.status_code, body_text)
-                        )
+                        err = _groq_provider_error(resp.status_code, body_text)
                         last_error = err
                         can_fallback = (
                             _should_try_fallback(resp.status_code)
@@ -2966,9 +3011,7 @@ async def chat_once(
                     )
                     continue
 
-                err = VigzoneAIError(
-                    _friendly_groq_error(resp.status_code, resp.text)
-                )
+                err = _groq_provider_error(resp.status_code, resp.text)
                 last_error = err
                 can_fallback = (
                     _should_try_fallback(resp.status_code)

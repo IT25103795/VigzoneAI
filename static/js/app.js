@@ -436,6 +436,10 @@
   let streaming = false;
   let currentStreamId = null;
   let isPaused = false;
+  let providerCooldownUntil = 0;
+  let providerCooldownTimer = null;
+  let providerCooldownReadyTimer = null;
+  let providerCooldownBubble = null;
 
   function emitVigiActivity(state, detail = {}){
     document.dispatchEvent(new CustomEvent('vigzone:activity', {
@@ -4699,6 +4703,130 @@
     return bubble;
   }
 
+  function providerCooldownSecondsRemaining(){
+    return Math.max(0, Math.ceil((providerCooldownUntil - Date.now()) / 1000));
+  }
+
+  function formatProviderCooldown(seconds){
+    const safeSeconds = Math.max(0, Math.ceil(Number(seconds) || 0));
+    const minutes = Math.floor(safeSeconds / 60);
+    const remainder = safeSeconds % 60;
+    return minutes ? `${minutes}m ${remainder}s` : `${remainder}s`;
+  }
+
+  function parseProviderRetrySeconds(message){
+    const match = String(message || '').match(
+      /try again in (?:about )?(?:(\d+(?:\.\d+)?)m)?\s*(\d+(?:\.\d+)?)s/i
+    );
+    if (!match) return 0;
+    return Math.ceil((Number(match[1]) || 0) * 60 + (Number(match[2]) || 0));
+  }
+
+  function streamErrorFromPayload(payload){
+    const error = new Error(payload?.error || 'Something went wrong.');
+    error.code = payload?.error_code || '';
+    const retryAfter = Number(payload?.retry_after_seconds);
+    error.retryAfterSeconds = Number.isFinite(retryAfter) && retryAfter > 0
+      ? Math.ceil(retryAfter)
+      : parseProviderRetrySeconds(error.message);
+    return error;
+  }
+
+  function isProviderRateLimitError(error){
+    return error?.code === 'provider_rate_limit' || /Groq's real .*limit is reached/i.test(error?.message || '');
+  }
+
+  function syncProviderCooldownSendControl(remaining = providerCooldownSecondsRemaining()){
+    const stillUploading = pendingFiles.some(file => file.status === 'uploading');
+    const coolingDown = remaining > 0;
+    sendBtn.disabled = streaming || stillUploading || coolingDown;
+    const label = coolingDown ? `Groq ready in ${formatProviderCooldown(remaining)}` : 'Send message';
+    sendBtn.setAttribute('aria-label', label);
+    sendBtn.title = label;
+  }
+
+  function removeEarlierProviderErrors(keepBubble){
+    chatInner.querySelectorAll('.bubble.error-bubble').forEach(existing => {
+      if (existing === keepBubble) return;
+      if (isProviderRateLimitError({message: existing.textContent || ''})) {
+        existing.closest('.msg')?.remove();
+      }
+    });
+  }
+
+  function showProviderCooldown(bubble, error){
+    const retrySeconds = Math.max(
+      0,
+      Math.ceil(Number(error?.retryAfterSeconds) || parseProviderRetrySeconds(error?.message))
+    );
+    if (!isProviderRateLimitError(error) || retrySeconds <= 0) return false;
+
+    if (providerCooldownTimer) window.clearInterval(providerCooldownTimer);
+    if (providerCooldownReadyTimer) window.clearTimeout(providerCooldownReadyTimer);
+    removeEarlierProviderErrors(bubble);
+
+    providerCooldownUntil = Date.now() + retrySeconds * 1000;
+    providerCooldownBubble = bubble;
+    bubble.classList.add('error-bubble', 'provider-cooldown-bubble');
+    bubble.classList.remove('provider-cooldown-ready');
+    bubble.innerHTML = `
+      <div class="provider-cooldown-card" role="status" aria-live="polite">
+        <div class="provider-cooldown-heading">
+          <span class="provider-cooldown-icon" aria-hidden="true">!</span>
+          <strong>Groq cooldown</strong>
+          <span class="provider-cooldown-countdown"></span>
+        </div>
+        <p class="provider-cooldown-message"></p>
+        <div class="provider-cooldown-track" aria-hidden="true"><span></span></div>
+        <small>Vigzone's usage circle is separate from Groq's live provider quota.</small>
+      </div>`;
+    syncAssistantOutputPresentation(bubble, true);
+
+    const countdown = bubble.querySelector('.provider-cooldown-countdown');
+    const message = bubble.querySelector('.provider-cooldown-message');
+    const progress = bubble.querySelector('.provider-cooldown-track span');
+
+    const update = () => {
+      const remaining = providerCooldownSecondsRemaining();
+      if (!bubble.isConnected && providerCooldownBubble === bubble) providerCooldownBubble = null;
+      if (remaining > 0) {
+        countdown.textContent = `Ready in ${formatProviderCooldown(remaining)}`;
+        message.textContent = 'Please wait for this live timer before sending the message again.';
+        progress.style.width = `${Math.max(0, Math.min(100, ((providerCooldownUntil - Date.now()) / (retrySeconds * 1000)) * 100))}%`;
+        syncProviderCooldownSendControl(remaining);
+        return;
+      }
+
+      window.clearInterval(providerCooldownTimer);
+      providerCooldownTimer = null;
+      providerCooldownUntil = 0;
+      countdown.textContent = 'Ready now';
+      message.textContent = 'The cooldown has ended. You can send your message again.';
+      progress.style.width = '0%';
+      bubble.classList.remove('error-bubble');
+      bubble.classList.add('provider-cooldown-ready');
+      syncProviderCooldownSendControl(0);
+      providerCooldownReadyTimer = window.setTimeout(() => {
+        if (providerCooldownBubble === bubble) providerCooldownBubble = null;
+        bubble.closest('.msg')?.remove();
+        providerCooldownReadyTimer = null;
+      }, 4500);
+    };
+
+    update();
+    providerCooldownTimer = window.setInterval(update, 250);
+    scrollLatestIfFollowing();
+    return true;
+  }
+
+  function showAssistantError(bubble, error, fallback = 'Something went wrong.'){
+    if (showProviderCooldown(bubble, error)) return true;
+    bubble.classList.add('error-bubble');
+    bubble.innerHTML = `⚠ ${escapeHtml(error?.message || fallback)}`;
+    syncAssistantOutputPresentation(bubble, true);
+    return false;
+  }
+
   function renderAll(){
     chatInner.innerHTML = '';
     if (messages.length === 0) {
@@ -5395,6 +5523,14 @@ A strong website should include: hero section, clear navigation, services/featur
       return sendImageGenRequest(text);
     }
 
+    const cooldownRemaining = providerCooldownSecondsRemaining();
+    if (!offlineNow && cooldownRemaining > 0) {
+      syncProviderCooldownSendControl(cooldownRemaining);
+      providerCooldownBubble?.scrollIntoView?.({behavior:'smooth', block:'center'});
+      suiteToast?.(`Groq will be ready in ${formatProviderCooldown(cooldownRemaining)}.`);
+      return;
+    }
+
     const readyFiles = pendingFiles.filter(f => f.status === 'ready');
     const stillUploading = pendingFiles.some(f => f.status === 'uploading');
     if (stillUploading) return; // wait for uploads to finish
@@ -5547,7 +5683,7 @@ A strong website should include: hero section, clear navigation, services/featur
           }
           let parsed;
           try { parsed = JSON.parse(raw); } catch { continue; }
-          if (parsed.error) throw new Error(parsed.error);
+          if (parsed.error) throw streamErrorFromPayload(parsed);
           if (parsed.stream_id) {
             currentStreamId = parsed.stream_id;
             console.log('Stream ID:', currentStreamId);
@@ -5592,9 +5728,7 @@ A strong website should include: hero section, clear navigation, services/featur
         setOfflineUiState?.();
         suiteToast?.('Connection failed — answered with local offline knowledge.');
       } else {
-        assistantBubble.classList.add('error-bubble');
-        assistantBubble.innerHTML = `⚠ ${escapeHtml(err.message || 'Something went wrong.')}`;
-        syncAssistantOutputPresentation(assistantBubble, true);
+        showAssistantError(assistantBubble, err);
       }
       if (requestIsCoding) vigiOutcome = {state:'error', detail:{source:'chat', phase:'generation'}};
     } finally {
@@ -5844,8 +5978,7 @@ A strong website should include: hero section, clear navigation, services/featur
 
 
   function updateSendButtonState(){
-    const stillUploading = pendingFiles.some(f => f.status === 'uploading');
-    sendBtn.disabled = streaming || stillUploading;
+    syncProviderCooldownSendControl();
     pauseBtn.classList.toggle('active', streaming);
     emitVigiActivity(streaming ? 'thinking' : 'ready');
     updatePauseButtonState();
@@ -6628,7 +6761,7 @@ A strong website should include: hero section, clear navigation, services/featur
           if (raw === '[DONE]' || raw === '[CANCELLED]') continue;
           let parsed;
           try { parsed = JSON.parse(raw); } catch { continue; }
-          if (parsed.error) throw new Error(parsed.error);
+          if (parsed.error) throw streamErrorFromPayload(parsed);
           if (parsed.meta && typeof parsed.meta === 'object') responseMeta = { ...responseMeta, ...parsed.meta };
           if (parsed.content) {
             fullReply += parsed.content;
@@ -6649,9 +6782,7 @@ A strong website should include: hero section, clear navigation, services/featur
       saveConversation();
     } catch (err) {
       pacedReply.cancel();
-      assistantBubble.classList.add('error-bubble');
-      assistantBubble.innerHTML = `⚠ ${escapeHtml(err.message || 'Something went wrong getting a reply.')}`;
-      syncAssistantOutputPresentation(assistantBubble, true);
+      showAssistantError(assistantBubble, err, 'Something went wrong getting a reply.');
     }
 
     clearAvatarThinkingState(avatarEl, thinkingTagEl);
@@ -7011,7 +7142,7 @@ A strong website should include: hero section, clear navigation, services/featur
           if (raw === '[DONE]' || raw === '[CANCELLED]') continue;
           let parsed;
           try { parsed = JSON.parse(raw); } catch { continue; }
-          if (parsed.error) throw new Error(parsed.error);
+          if (parsed.error) throw streamErrorFromPayload(parsed);
           if (parsed.meta && typeof parsed.meta === 'object') responseMeta = { ...responseMeta, ...parsed.meta };
           if (parsed.content) {
             fullReply += parsed.content;
@@ -7039,12 +7170,13 @@ A strong website should include: hero section, clear navigation, services/featur
       pacedReply.cancel();
       clearAvatarThinkingState(avatarEl, thinkingTagEl);
       stopUsageCycleLiveUpdates();
-      assistantBubble.classList.add('error-bubble');
-      assistantBubble.innerHTML = `⚠ ${escapeHtml(err.message || 'Something went wrong.')}`;
-      syncAssistantOutputPresentation(assistantBubble, true);
+      const coolingDown = showAssistantError(assistantBubble, err);
       if (!liveVoiceActive) return;
-      setLiveVoiceState(null, "Couldn't get a reply — listening again");
-      setTimeout(() => { if (liveVoiceActive) liveListenLoop(); }, 1200);
+      setLiveVoiceState(null, coolingDown ? 'Groq is cooling down' : "Couldn't get a reply — listening again");
+      const listenDelay = coolingDown
+        ? (providerCooldownSecondsRemaining() + 1) * 1000
+        : 1200;
+      setTimeout(() => { if (liveVoiceActive) liveListenLoop(); }, listenDelay);
     }
   }
 

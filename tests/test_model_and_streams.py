@@ -455,10 +455,14 @@ def test_groq_quota_wait_is_rounded_for_users():
         }
     )
     friendly = vigzone_ai._friendly_groq_error(429, body)
+    error = vigzone_ai._groq_provider_error(429, body)
 
     assert "daily free-tier limit" in friendly
     assert "33m38s" in friendly
     assert "439999999" not in friendly
+    assert error.code == "provider_rate_limit"
+    assert error.retry_after_seconds == 2018
+    assert str(error) == friendly
 
 
 def test_stream_controls_are_owner_bound_and_pause_is_async():
